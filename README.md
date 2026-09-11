@@ -4,7 +4,7 @@
 
 **[Download Windows preview](https://github.com/SirRanjid/analog-key-mapper/releases)** · [Build from source](docs/building.md#compile-from-source) · [User guide](docs/user-guide.md) · [Compatibility and test status](docs/status.md)
 
-![Analog Key Mapper showing keyboard assignments and the Keys tab](docs/images/mapping.png)
+![Analog Key Mapper showing keyboard mappings, controller selection, lighting and USB connection controls](docs/images/controller.png)
 
 ## Make each key work your way
 
@@ -32,9 +32,9 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 Wired TK75 TMR model 3591 input and experimental **single-controller Xbox 360 output** have been observed on the documented test setup. ANSI layouts and PS5-style editing are included; real DualSense output is not enabled. Other keyboards, wireless input, every game and all failure cases are not yet verified. A live preview is not proof of game compatibility. [Read the current limits](docs/status.md).
 
 <details>
-<summary>Controller and response-curve views</summary>
+<summary>Key settings and response-curve views</summary>
 
-![Controller selection, output preview, lighting and USB connection controls](docs/images/controller.png)
+![Keyboard assignments and the Keys tab](docs/images/mapping.png)
 
 ![Square response-curve editor beside the unchanged keyboard layout](docs/images/response-curve.png)
 
