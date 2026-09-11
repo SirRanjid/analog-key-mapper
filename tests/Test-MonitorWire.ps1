@@ -4,12 +4,14 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
-# These three files contain only text/packet codecs and heartbeat state.
+# These files contain only text/packet codecs and heartbeat/transaction state.
 # No ManagedMonitorSource, MonitorStreamHost, ReaderSession, active HID code,
 # trust verifier, executable loader, native call or process start is included.
 Add-Type -Path @(
     (Join-Path $workspace 'src\App\MonitorWire.cs'),
     (Join-Path $workspace 'src\MonitorHostProtocol.cs'),
+    (Join-Path $workspace 'src\Tk75RgbProtocol.cs'),
+    (Join-Path $workspace 'src\Tk75RgbExchange.cs'),
     (Join-Path $workspace 'src\Tk75TravelReport.cs')
 )
 $script:wireAssertions = 0

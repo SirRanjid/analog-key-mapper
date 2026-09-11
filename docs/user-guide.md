@@ -79,6 +79,10 @@ The app saves the keyboard's current lighting before changing it and keeps resto
 
 If recovery pauses, keep the backups and follow the displayed reason. An onboard keyboard-profile change may require returning to the previous onboard profile before restoration. Onboard keyboard profiles and the mapper's JSON profiles are different settings.
 
+## Background startup — unreleased source
+
+The latest source adds an optional **Start with Windows · in tray** setting, a separate **Reconnect controllers at startup** option, and **Minimize to tray**. These are not included in the published `0.1.0-preview.2` download. Manual launch opens the editor; closing with **X** or tray **Exit** still performs normal shutdown and lighting restoration. See [background startup and tray controls](background-startup.md) for the exact behavior and current helper limitation.
+
 ## Troubleshooting
 
 | Symptom | Check |

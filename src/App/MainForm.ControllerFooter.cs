@@ -44,6 +44,7 @@ namespace Tk75.App
             UiText.PreserveText(allOffButton);
             allOffButton.Click += delegate
             {
+                CancelStartupReconnect();
                 try { Attempt(delegate { runtime.Disable("Manuell deaktiviert"); }); }
                 finally { RefreshKeyboardSuppression(false); UpdateControllerConnectionUi(); }
             };

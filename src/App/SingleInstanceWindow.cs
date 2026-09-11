@@ -16,11 +16,16 @@ namespace Tk75.App
     {
         readonly Mutex mutex;
         readonly string executablePath;
+        readonly string activationName;
+        ActivationWindow activationWindow;
         bool owns, disposed;
         internal bool IsOwner { get { return owns; } }
 
-        SingleInstanceWindow(Mutex mutex, bool owns, string executablePath)
-        { this.mutex = mutex; this.owns = owns; this.executablePath = executablePath; }
+        SingleInstanceWindow(Mutex mutex, bool owns, string executablePath, string activationName)
+        {
+            this.mutex = mutex; this.owns = owns; this.executablePath = executablePath; this.activationName = activationName;
+            if (owns) activationWindow = new ActivationWindow(activationName);
+        }
 
         internal static SingleInstanceWindow Acquire(string baseDirectory)
         {
@@ -37,7 +42,7 @@ namespace Tk75.App
                 bool owns;
                 try { owns = mutex.WaitOne(0, false); }
                 catch (AbandonedMutexException) { owns = true; }
-                return new SingleInstanceWindow(mutex, owns, path);
+                return new SingleInstanceWindow(mutex, owns, path, "AnalogKeyMapper.Activate." + identity);
             }
             catch { mutex.Dispose(); throw; }
         }
@@ -45,6 +50,16 @@ namespace Tk75.App
         internal void BringExistingToFront()
         {
             if (owns || disposed) return;
+            // A tray application has no visible MainWindowHandle. A tiny hidden
+            // top-level window remains addressable without polling or a thread.
+            IntPtr activation = FindWindow(null, activationName);
+            if (activation != IntPtr.Zero)
+            {
+                uint processId; GetWindowThreadProcessId(activation, out processId);
+                AllowSetForegroundWindow(processId);
+                PostMessage(activation, ActivationWindow.ShowMessage, IntPtr.Zero, IntPtr.Zero);
+                return;
+            }
             // MainWindowHandle can still be zero during the first instance's
             // startup; that instance will show its own window normally. Do not
             // open a second UI or wait indefinitely for it to become responsive.
@@ -72,11 +87,18 @@ namespace Tk75.App
             catch (Exception) { }
         }
 
+        internal void OnShowRequested(Action show)
+        { if (activationWindow != null) activationWindow.SetShowAction(show); }
+
         public void Dispose()
         {
             if (disposed) return;
             disposed = true;
-            try { if (owns) { owns = false; mutex.ReleaseMutex(); } }
+            try
+            {
+                if (activationWindow != null) { activationWindow.Dispose(); activationWindow = null; }
+                if (owns) { owns = false; mutex.ReleaseMutex(); }
+            }
             finally { mutex.Dispose(); }
         }
 
@@ -89,5 +111,33 @@ namespace Tk75.App
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         static extern bool SetForegroundWindow(IntPtr window);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern IntPtr FindWindow(string className, string windowName);
+        [DllImport("user32.dll")]
+        static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool AllowSetForegroundWindow(uint processId);
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool PostMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+
+        sealed class ActivationWindow : NativeWindow, IDisposable
+        {
+            internal const int ShowMessage = 0x8000 + 73;
+            Action show;
+            bool pending;
+            internal ActivationWindow(string name)
+            { CreateHandle(new CreateParams { Caption = name, Style = unchecked((int)0x80000000), ExStyle = 0x80 }); }
+            internal void SetShowAction(Action action)
+            { show = action; if (pending && show != null) { pending = false; show(); } }
+            protected override void WndProc(ref Message message)
+            {
+                if (message.Msg == ShowMessage)
+                { if (show == null) pending = true; else show(); return; }
+                base.WndProc(ref message);
+            }
+            public void Dispose() { show = null; if (Handle != IntPtr.Zero) DestroyHandle(); }
+        }
     }
 }

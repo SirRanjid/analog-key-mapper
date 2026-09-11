@@ -12,6 +12,7 @@ namespace Tk75.App
     public sealed class MappingSession : IDisposable
     {
         public const double MaximumInputAgeMilliseconds = 500;
+        const double PreviewIntervalSeconds = 0.033;
         readonly object gate = new object();
         readonly ManualResetEvent stopping = new ManualResetEvent(false);
         readonly AutoResetEvent changed = new AutoResetEvent(false);
@@ -41,6 +42,10 @@ namespace Tk75.App
         readonly PreviewSnapshot unavailablePreview = ErrorPreview("Die Tastatur liest keine aktuellen Eingabedaten.");
         string status = "Nur lesen - Controller aus";
         bool disposed, keyboardMode;
+        volatile bool previewActive = true;
+        bool previewClockValid;
+        double previewPrevious;
+        long previewComputations;
 
         public MappingSession(WorkspaceStore workspace)
             : this(RequireWorkspace(workspace), ControllerOutputs.Create, null, null, true) { }
@@ -85,7 +90,20 @@ namespace Tk75.App
         { get { lock (gate) { try { return !disposed && output != null && output.IsConnected; } catch { return false; } } } }
         public ControllerFrame Frame { get { lock (gate) return CopyFrame(frame); } }
         public PreviewSnapshot Preview { get { lock (gate) return preview.Copy(); } }
+        internal long PreviewComputations { get { lock (gate) return previewComputations; } }
         public bool KeyboardMode { get { lock (gate) return keyboardMode; } }
+
+        // Display demand never arms, pauses or resets actual output processing.
+        // A newly visible route starts a fresh preview history and clock; time
+        // spent hidden must not advance its smoothing or rapid-trigger history.
+        public void SetPreviewActive(bool value)
+        {
+            lock (gate)
+            {
+                CheckDisposed(); if (previewActive == value) return;
+                previewActive = value; ResetPreview(null); changed.Set();
+            }
+        }
 
         // The same gate as Submit makes return from this method a neutral-output
         // boundary. The caller may release Windows-key suppression afterwards.
@@ -397,6 +415,7 @@ namespace Tk75.App
         void ResetProcessing() { states.Clear(); inputStates.Clear(); }
         void ResetPreview(string error)
         {
+            previewClockValid = false;
             previewStates.Clear(); previewInputStates.Clear(); preview = new PreviewSnapshot();
             if (error != null) preview.Errors.Add(error);
         }
@@ -405,12 +424,20 @@ namespace Tk75.App
         {
             var watch = Stopwatch.StartNew(); double previous = watch.Elapsed.TotalSeconds;
             WaitHandle[] signals = { stopping, changed };
-            while (WaitHandle.WaitAny(signals, Interlocked.CompareExchange(ref output, null, null) == null ? 16 : 4) != 0)
+            for (;;)
             {
-                double now = watch.Elapsed.TotalSeconds, dt = now - previous; previous = now;
+                int interval = Interlocked.CompareExchange(ref output, null, null) != null ? 4 : previewActive ? 16 : Timeout.Infinite;
+                if (WaitHandle.WaitAny(signals, interval) == 0) return;
+                // Hidden/disconnected time is not an input-processing interval.
+                double now = watch.Elapsed.TotalSeconds, dt = interval == Timeout.Infinite ? 0 : now - previous; previous = now;
                 lock (gate)
                 {
                     if (disposed) return;
+                    // No device output and no display consumer: configuration,
+                    // reader changes, Enable and preview activation wake this
+                    // worker explicitly. Do not capture input or compose frames
+                    // merely because one of those settings changed while idle.
+                    if (output == null && !previewActive) continue;
                     bool previewComputed = false;
                     try
                     {
@@ -420,12 +447,21 @@ namespace Tk75.App
                             if (output != null) DisableLocked("Eingabeverbindung unterbrochen - Controller aus");
                             ResetProcessing(); frame = unavailableFrame;
                             previewStates.Clear(); previewInputStates.Clear(); preview = unavailablePreview;
+                            previewClockValid = false;
                             continue;
                         }
                         // Both paths observe the same detached input. Preview states
                         // remain independent of output arming and unrelated missing keys.
                         var raw = CurrentInputLocked();
-                        preview = MappingEngine.ComposePreview(raw, calibrations, profile, previewStates, previewInputStates, Math.Min(dt, 0.1));
+                        if (previewActive && (!previewClockValid || now - previewPrevious >= PreviewIntervalSeconds))
+                        {
+                            double previewDt = previewClockValid ? Math.Min(now - previewPrevious, 0.1) : 0;
+                            preview = MappingEngine.ComposePreview(raw, calibrations, profile, previewStates, previewInputStates, previewDt);
+                            previewPrevious = now; previewClockValid = true; previewComputations++;
+                        }
+                        // A deliberately skipped display update keeps its own
+                        // history. An output-only error must not restart it at
+                        // the faster output cadence on the following tick.
                         previewComputed = true;
                         UpdateStartupReleaseLocked(raw);
                         if (keyboardMode)

@@ -32,12 +32,19 @@ namespace Tk75.App
                     }
                     return 0;
                 }
-                if (args.Length != 0) throw new ArgumentException(UiText.Get("Unbekannte Startoption.", "Unknown startup option."));
+                bool background = WindowsStartup.IsBackgroundArgument(args);
+                if (args.Length != 0 && !background) throw new ArgumentException(UiText.Get("Unbekannte Startoption.", "Unknown startup option."));
                 using (var instance = SingleInstanceWindow.Acquire(AppDomain.CurrentDomain.BaseDirectory))
                 {
-                    if (!instance.IsOwner) { instance.BringExistingToFront(); return 0; }
+                    if (!instance.IsOwner) { if (!background) instance.BringExistingToFront(); return 0; }
                     using (var navigation = new MouseNavigationFilter())
-                    using (var form = new MainForm(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data"), false)) Application.Run(form);
+                    using (var form = new MainForm(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data"), false))
+                    {
+                        form.InitializeTray(true);
+                        instance.OnShowRequested(form.RestoreFromTray);
+                        if (background) RunInBackground(form);
+                        else Application.Run(form);
+                    }
                 }
                 return 0;
             }
@@ -46,6 +53,19 @@ namespace Tk75.App
                 if (args.Length > 0 && args[0] == "--render-preview") Console.Error.WriteLine(ex.ToString());
                 else MessageBox.Show(UiText.Get(ex.Message), UiText.Get("Analog Key Mapper konnte nicht starten", "Analog Key Mapper could not start"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
+            }
+        }
+
+        internal static void RunInBackground(MainForm form)
+        {
+            // Application.Run makes ApplicationContext.MainForm visible. Keep
+            // the context windowless and wire only the normal exit event.
+            using (var context = new ApplicationContext())
+            {
+                FormClosedEventHandler closed = delegate { context.ExitThread(); };
+                form.FormClosed += closed;
+                try { form.StartInBackground(); Application.Run(context); }
+                finally { form.FormClosed -= closed; }
             }
         }
     }

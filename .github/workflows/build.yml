@@ -34,7 +34,8 @@ jobs:
             'Test-MultiMappingIntegration.ps1', 'Test-IsolatedOutput.ps1',
             'Test-RgbOverridePlan.ps1', 'Test-Tk75RgbProtocol.ps1',
             'Test-Tk75RgbExchange.ps1', 'Test-VisualKeyboard.ps1',
-            'Test-AppUi.ps1', 'Test-RgbLifecycle.ps1'
+            'Test-AppUi.ps1', 'Test-BackgroundUi.ps1',
+            'Test-MonitorWire.ps1', 'Test-RgbLifecycle.ps1'
           )
           foreach ($suite in $suites) {
             & pwsh -NoLogo -NoProfile -File (Join-Path 'tests' $suite)

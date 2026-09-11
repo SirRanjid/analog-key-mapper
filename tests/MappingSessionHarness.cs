@@ -80,6 +80,7 @@ public static class MappingSessionHarness
         int submits, nonzero, invalid, neutralCalls, disposeCalls, afterDispose;
         ControllerFrame last = new ControllerFrame();
         public Action ConnectHook, SubmitHook;
+        public Action<ControllerFrame> ObserveSubmit;
         public volatile bool ThrowNeutral, ThrowDispose, ThrowSubmit, DropOnSubmit;
         public string Status { get { return "Synthetic output"; } }
         public bool IsConnected { get { lock (gate) return connected; } }
@@ -96,6 +97,8 @@ public static class MappingSessionHarness
         {
             Action hook = Interlocked.Exchange(ref SubmitHook, null);
             if (hook != null) hook();
+            Action<ControllerFrame> observer = ObserveSubmit;
+            if (observer != null) observer(value);
             lock (gate)
             {
                 if (disposeCalls != 0) { afterDispose++; throw new InvalidOperationException("Submit after Dispose"); }
@@ -375,9 +378,132 @@ public static class MappingSessionHarness
         }
     }
 
+    static void PreviewDemand()
+    {
+        using (var f = new Fixture(false))
+        {
+            FakeOutput output = f.Arm(); f.Input.Set(14, 80, 0);
+            Wait(delegate { return f.Session.Preview.LeftY == .8 && output.Last.LeftY == .8; }, "Visible preview and actual output initially observe the same input.");
+            long before = f.Session.PreviewComputations;
+            int submitted = output.Submits;
+            var elapsed = Stopwatch.StartNew(); Thread.Sleep(220);
+            long computations = f.Session.PreviewComputations - before;
+            Check(computations > 0 && computations <= Math.Ceiling(elapsed.Elapsed.TotalMilliseconds / 33) + 1,
+                "Visible preview has its own 33ms cadence (updates=" + computations + ").");
+            Check(output.Submits > submitted + 3, "Actual output continues independently of the slower visible preview.");
+            f.Session.SetPreviewActive(false);
+            before = f.Session.PreviewComputations; submitted = output.Submits;
+            f.Input.Set(14, 35, 0);
+            Wait(delegate { return output.Last.LeftY == .35 && output.Submits >= submitted + 5; }, "Hidden preview leaves current output and heartbeat submissions active.");
+            Check(f.Session.PreviewComputations == before && f.Session.Preview.BindingResults.Count == 0,
+                "Hidden preview performs no composition and exposes no retained display state.");
+            Check(f.Session.Enabled && output.NeutralCalls == 1 && output.DisposeCalls == 0,
+                "Hiding the preview does not neutralize or disconnect its controller.");
+            f.Session.SetPreviewActive(true);
+            Wait(delegate { return f.Session.Preview.LeftY == .35; }, "Reactivated preview resumes from the latest actual input.");
+        }
+        using (var f = new Fixture(false))
+        using (var firstVisible = new ManualResetEvent(false))
+        {
+            f.Profile.Bindings[0].Processing.SmoothingTimeConstant = .2;
+            f.Session.Configure(f.Profile, f.Calibrations);
+            FakeOutput output = f.Arm(); f.Input.Set(14, 100, 0);
+            Wait(delegate { return output.Last.LeftY > .7 && f.Session.Preview.LeftY > .7; }, "Both independent smoothing histories have advanced before hiding.");
+            f.Session.SetPreviewActive(false);
+            long hiddenRevision = f.Session.PreviewComputations;
+            Thread.Sleep(120);
+            int observed = 0; double firstPreview = -1, liveOutput = -1;
+            output.ObserveSubmit = delegate(ControllerFrame value) {
+                if (f.Session.PreviewComputations <= hiddenRevision || Interlocked.CompareExchange(ref observed, 1, 0) != 0) return;
+                firstPreview = f.Session.Preview.LeftY; liveOutput = value.LeftY; firstVisible.Set();
+            };
+            f.Session.SetPreviewActive(true);
+            Check(firstVisible.WaitOne(1500), "Output observes the first reactivated display snapshot without UI scheduling.");
+            output.ObserveSubmit = null;
+            Check(firstPreview == 0 && liveOutput > .7, "Reactivation resets preview history and dt without resetting real output smoothing.");
+            Wait(delegate { return f.Session.PreviewComputations >= hiddenRevision + 5; }, "Reactivated preview continues beyond its first update.");
+            Check(f.Session.Preview.LeftY > .45, "Preview smoothing advances by its own 33ms intervals rather than output's 4ms dt.");
+        }
+        using (var f = new Fixture(false))
+        {
+            f.Profile.Inputs.Add(new KeyInputSettings { KeyIndex = 14, RapidTriggerEnabled = true, ActuationPoint = .5, PressMovement = .05, ReleaseMovement = .05 });
+            f.Session.Configure(f.Profile, f.Calibrations); FakeOutput output = f.Arm(); f.Input.Set(14, 80, 0);
+            Wait(delegate { return f.Session.Preview.LeftY > 0 && output.Last.LeftY > 0; }, "Rapid-trigger preview begins with genuine activation.");
+            f.Session.SetPreviewActive(false); f.Input.Set(14, 20, 0);
+            Wait(delegate { return Neutral(output.Last); }, "Actual rapid-trigger release still runs while hidden.");
+            f.Input.Set(14, 30, 0);
+            Wait(delegate { return output.Last.LeftY > 0; }, "Live rapid-trigger history can re-press below initial actuation while hidden.");
+            f.Session.SetPreviewActive(true);
+            Wait(delegate { return f.Session.Preview.InputResults.ContainsKey(14); }, "Reactivated rapid-trigger preview is computed.");
+            Check(f.Session.Preview.LeftY == 0 && output.Last.LeftY > 0,
+                "Preview reactivation starts fresh physical history without changing live rapid-trigger history.");
+        }
+        foreach (bool disconnect in new[] { false, true })
+        using (var f = new Fixture(false))
+        {
+            FakeOutput output = f.Arm(); f.Input.Set(14, 80, 0);
+            Wait(delegate { return output.Nonzero > 0; }, "Hidden safety test starts with active output.");
+            f.Session.SetPreviewActive(false);
+            long before = f.Session.PreviewComputations;
+            if (disconnect) f.Input.Reading = false; else f.Input.Set(14, 80, 501);
+            Wait(delegate { return !f.Session.Enabled && output.DisposeCalls > 0; }, "Hidden preview preserves " + (disconnect ? "input-loss" : "stale-input") + " disarming.");
+            Check(Neutral(output.Last) && f.Session.PreviewComputations == before, "Safety neutralization does not require display computation.");
+        }
+    }
+
+    static void DormantHiddenSession()
+    {
+        using (var f = new Fixture(false))
+        {
+            f.Session.SetPreviewActive(false);
+            int reads = f.Input.SnapshotCalls; long previews = f.Session.PreviewComputations;
+            Thread.Sleep(100);
+            Check(f.Input.SnapshotCalls == reads && f.Session.PreviewComputations == previews,
+                "A hidden disconnected session sleeps without polling input or composing preview.");
+            f.Session.Configure(f.Profile, f.Calibrations);
+            Thread.Sleep(45);
+            Check(f.Input.SnapshotCalls == reads && f.Session.PreviewComputations == previews,
+                "Configuration wakes a dormant session without creating unwanted input-processing ticks.");
+            f.Input.Set(14, 70, 0); f.Session.SetPreviewActive(true);
+            Wait(delegate { return f.Session.Preview.LeftY == .7; }, "Preview activation wakes a dormant worker with current input.");
+            f.Session.SetPreviewActive(false); f.Input.Set(14, 0, 0);
+            FakeOutput output = f.Arm(); f.Input.Set(14, 60, 0);
+            Wait(delegate { return output.Last.LeftY == .6 && output.Submits >= 3; }, "Explicit Enable wakes a dormant hidden worker into normal active output.");
+            Check(f.Session.Preview.BindingResults.Count == 0, "Enabled hidden output does not reactivate display work.");
+            f.Session.Disable("test dormant stop"); reads = f.Input.SnapshotCalls;
+            Thread.Sleep(100);
+            Check(f.Input.SnapshotCalls == reads, "Disabling hidden output returns its worker to indefinite event wait.");
+        }
+        using (var f = new Fixture(false))
+        {
+            f.Session.SetPreviewActive(false);
+            int captures = 0;
+            f.Session.SetReader(new ReaderSession { IsReading = true, Snapshot = delegate(double age) {
+                Interlocked.Increment(ref captures); return new Dictionary<int, double> { { 14, 0 }, { 9, 0 } };
+            } });
+            Thread.Sleep(60);
+            Check(captures == 0, "Replacing the reader preserves dormant hidden state without capturing new input.");
+            f.Session.SetPreviewActive(true);
+            Wait(delegate { return Interlocked.CompareExchange(ref captures, 0, 0) > 0 && f.Session.Preview.HasValidInput; },
+                "Preview activation after a source change wakes against the new reader.");
+            f.Session.SetPreviewActive(false);
+            using (var finished = new ManualResetEvent(false))
+            {
+                Exception failure = null;
+                var disposer = new Thread(delegate() { try { f.Session.Dispose(); } catch (Exception ex) { failure = ex; } finally { finished.Set(); } });
+                disposer.IsBackground = true; disposer.Start();
+                Check(finished.WaitOne(1500), "Dispose wakes and joins an indefinitely sleeping worker.");
+                Check(failure == null, "Dormant worker disposal succeeds without handle or wake races.");
+                disposer.Join();
+            }
+        }
+    }
+
     public static string Run()
     {
         checks = 0;
+        PreviewDemand();
+        DormantHiddenSession();
         using (var f = new Fixture(false))
         {
             FakeOutput output = f.Arm(); f.Input.Set(14, 85, 0);
@@ -432,10 +558,10 @@ public static class MappingSessionHarness
             f.Input.Set(14, 85, 0); f.Input.Remove(9);
             Wait(delegate { return output.Submits >= submits + 3; }, "Keyboard mode keeps a neutral frame heartbeat when an unused key is missing");
             Check(output.Nonzero == nonzero && output.Invalid == 0 && f.Session.Enabled && Neutral(f.Session.Frame), "Keyboard mode never submits mapped values and keeps valid reader connected");
-            Check(f.Session.Preview.LeftY == .85 && f.Session.Preview.HasValidInput, "Input preview remains independent of the keyboard-mode output pause");
+            Wait(delegate { return f.Session.Preview.LeftY == .85 && f.Session.Preview.HasValidInput; }, "Input preview remains independent of the keyboard-mode output pause");
             f.Input.Remove(14); submits = output.Submits;
             Wait(delegate { return output.Submits >= submits + 3; }, "An empty detached input snapshot still permits neutral-only output while reader is valid");
-            Check(f.Session.Enabled && !f.Session.Preview.HasValidInput, "Empty paused input is not faked as a measured value");
+            Wait(delegate { return f.Session.Enabled && !f.Session.Preview.HasValidInput; }, "Empty paused input is not faked as a measured value");
             f.Input.Set(14, 85, 0);
             Reject(delegate { f.Session.SetKeyboardMode(false); }, "Resuming with missing required input must fail strict validation");
             Check(!f.Session.Enabled && output.DisposeCalls == 1 && Neutral(output.Last), "Failed resume removes the output without sending a partial value");

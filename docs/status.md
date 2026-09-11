@@ -6,6 +6,8 @@ The release offers an unsigned Windows x64 package and a separate complete sourc
 
 ## Current known issue
 
+The unreleased tray-startup update (`0.1.0.3`) was also blocked at the main application's normal process start on the development machine (Code Integrity event 3077). Its synthetic background UI tests passed, including the actual windowless message-loop entry; the installed unsigned executable could not start, and Windows autostart was left disabled. See [background startup and validation](background-startup.md). This does not change the already published preview.2 assets.
+
 Windows application control blocked the latest optimized output-helper executable on the development machine at process startup (Code Integrity event 3077). The helper compiled and its Go package tests passed; it did not run for a new live acceptance or resource measurement. No protection settings were changed and no alternate-host retry was used.
 
 The successful two-Xbox/two-DualSense observations below apply to the preceding helper build. They must not be read as a successful live test of the final optimized executable. A 32-device live test has not been completed. See [the detailed acceptance record](multi-controller-acceptance.md).

@@ -6,6 +6,7 @@ data/
 captures/
 tests/tmp/
 tests/synthetic-app-ui-*/
+tests/synthetic-background-ui-*/
 tests/rlc-*/
 .cache/
 .vs/
@@ -16,4 +17,3 @@ tests/rlc-*/
 *.key
 .env
 .env.*
-

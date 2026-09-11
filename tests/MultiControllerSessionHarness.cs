@@ -8,13 +8,15 @@ using Tk75.Mapping;
 // output, process launcher, GUI control or previously blocked test is loaded.
 public static class MultiControllerSessionHarness
 {
-    sealed class Fake : IControllerSession
+    sealed class Fake : IControllerSession, IPreviewDemandSession
     {
         public bool Active, Disposed, FailEnable, FailConfigure, FailInput, FailDisable, FailMode, KeyboardMode;
         public int ConfigureCalls, EnableCalls, DisableCalls, DisposeCalls, ModeCalls;
         public Action EnableHook, DisableHook;
         public Action NeutralHook, RemoveHook;
         public int NeutralCalls, RemoveCalls;
+        public bool PreviewActive;
+        public int PreviewDemandCalls;
         public Profile Profile;
         public object Source;
         public string LastReason;
@@ -24,6 +26,7 @@ public static class MultiControllerSessionHarness
         public ControllerFrame Frame { get { return CurrentFrame; } }
         public PreviewSnapshot Preview { get { return CurrentPreview.Copy(); } }
         public string Status { get { return Active ? "connected" : "disconnected"; } }
+        public void SetPreviewActive(bool value) { PreviewActive = value; PreviewDemandCalls++; }
         public void Configure(Profile profile, IDictionary<int, Calibration> calibration)
         {
             if (Disposed) throw new ObjectDisposedException("Fake");
@@ -89,6 +92,48 @@ public static class MultiControllerSessionHarness
         Profile profile = ControllerRouting.Add(new Profile(), "player2", "Player 2", ControllerKind.Xbox360);
         profile = MappingAssignments.Add(profile, new[] { 1 }, OutputTarget.LeftXPositive, "main");
         return MappingAssignments.Add(profile, new[] { 2 }, OutputTarget.RightTrigger, "player2");
+    }
+    static void PreviewDemandFollowsVisibilityAndSelection()
+    {
+        using (var fixture = new Fixture())
+        {
+            var runtime = fixture.Runtime; runtime.Configure(TwoPlayers(), Calibration());
+            Fake first = fixture.Slot("main"), second = fixture.Slot("player2");
+            runtime.EnableController("main"); runtime.EnableController("player2");
+            int firstConfigure = first.ConfigureCalls, secondConfigure = second.ConfigureCalls;
+            int firstDisable = first.DisableCalls, secondDisable = second.DisableCalls;
+            int firstMode = first.ModeCalls, secondMode = second.ModeCalls;
+            Check(first.PreviewActive && !second.PreviewActive, "Only the selected controller initially computes a preview.");
+            runtime.SetPreviewActive(false);
+            Check(!first.PreviewActive && !second.PreviewActive, "Hidden display disables preview demand on all controllers.");
+            runtime.SelectedControllerId = "player2";
+            Check(!first.PreviewActive && !second.PreviewActive, "Changing selection while hidden cannot reactivate any preview.");
+            runtime.SetPreviewActive(true);
+            Check(!first.PreviewActive && second.PreviewActive, "Showing the display activates its current selection immediately.");
+            int calls = first.PreviewDemandCalls + second.PreviewDemandCalls;
+            runtime.SetPreviewActive(true); runtime.SelectedControllerId = "player2";
+            Check(first.PreviewDemandCalls + second.PreviewDemandCalls == calls, "Repeated live refreshes do not reset preview demand or history.");
+            for (int i = 0; i < 4; i++)
+            {
+                runtime.SelectedControllerId = "main";
+                Check(first.PreviewActive && !second.PreviewActive, "First controller regains preview demand after a selection switch.");
+                runtime.SelectedControllerId = "player2";
+                Check(!first.PreviewActive && second.PreviewActive, "Second controller regains preview demand without starvation.");
+            }
+            Check(first.Enabled && second.Enabled && first.ConfigureCalls == firstConfigure && second.ConfigureCalls == secondConfigure &&
+                first.DisableCalls == firstDisable && second.DisableCalls == secondDisable && first.ModeCalls == firstMode && second.ModeCalls == secondMode,
+                "Preview visibility and selection do not configure, pause, disable or reconnect either output.");
+            runtime.SetPreviewActive(false);
+            runtime.Configure(ControllerRouting.Add(TwoPlayers(), "third", "Third", ControllerKind.DualSense), Calibration());
+            Check(!first.PreviewActive && !second.PreviewActive && !fixture.Slot("third").PreviewActive,
+                "Newly configured controllers inherit hidden preview demand.");
+            runtime.SelectedControllerId = "third"; runtime.SetPreviewActive(true);
+            Check(!first.PreviewActive && !second.PreviewActive && fixture.Slot("third").PreviewActive,
+                "A new selected controller receives display demand when shown.");
+            runtime.Configure(TwoPlayers(), Calibration());
+            Check(runtime.SelectedControllerId == "main" && first.PreviewActive && !second.PreviewActive,
+                "Removing the selected controller transfers preview demand to the valid fallback selection.");
+        }
     }
     static void ControllerOperationsById()
     {
@@ -210,6 +255,7 @@ public static class MultiControllerSessionHarness
     {
         checks = 0;
         ControllerOperationsById();
+        PreviewDemandFollowsVisibilityAndSelection();
         GroupReleasePhases();
         using (var fixture = new Fixture(1))
         {

@@ -13,7 +13,7 @@ namespace Tk75.App
             if (store == null) throw new ArgumentNullException("store");
             return delegate { return new ProductionSession(store); };
         }
-        sealed class ProductionSession : IControllerSession
+        sealed class ProductionSession : IControllerSession, IPreviewDemandSession
         {
             readonly MappingSession inner;
             public ProductionSession(WorkspaceStore store) { inner = new MappingSession(store); }
@@ -21,6 +21,7 @@ namespace Tk75.App
             public ControllerFrame Frame { get { return inner.Frame; } }
             public PreviewSnapshot Preview { get { return inner.Preview; } }
             public string Status { get { return inner.Status; } }
+            public void SetPreviewActive(bool value) { inner.SetPreviewActive(value); }
             public void Configure(Profile profile, IDictionary<int, Calibration> calibration) { inner.Configure(profile, calibration); }
             public void SetInputSource(object value)
             {

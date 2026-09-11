@@ -9,7 +9,7 @@ foreach ($checksumFile in Get-ChildItem -LiteralPath $checksumRoot -Recurse -For
     $checksumRelative = $checksumFile.FullName.Substring($checksumRoot.Length + 1).Replace('\', '/')
     if ($checksumRelative -eq 'SHA256SUMS.txt') { continue }
     if ($checksumRelative -match '(^|/)(\.git|\.cache|data|captures)(/|$)') { continue }
-    if (-not $BuildOutput -and $checksumRelative -match '^(bin|build|release|tests/tmp|tests/synthetic-app-ui-[^/]+|tests/rlc-[^/]+)/') { continue }
+    if (-not $BuildOutput -and $checksumRelative -match '^(bin|build|release|tests/tmp|tests/synthetic-(app|background)-ui-[^/]+|tests/rlc-[^/]+)/') { continue }
     if ($checksumFile.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse points are not valid checksum inputs.' }
     $checksumRecords += [pscustomobject]@{Path=$checksumRelative;Hash=(Get-FileHash -LiteralPath $checksumFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
 }
@@ -17,4 +17,3 @@ if ($checksumRecords.Count -eq 0) { throw 'No files were selected for checksums.
 $checksumLines = @($checksumRecords | Sort-Object Path | ForEach-Object { $_.Hash + '  ' + $_.Path })
 [IO.File]::WriteAllLines((Join-Path $checksumRoot 'SHA256SUMS.txt'), $checksumLines, (New-Object Text.UTF8Encoding($false)))
 Write-Output ('Wrote SHA256SUMS.txt for {0} files.' -f $checksumLines.Count)
-

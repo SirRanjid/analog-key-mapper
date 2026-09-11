@@ -54,6 +54,7 @@ namespace Tk75.App
 
         public MainForm(string dataPath, bool preview)
         {
+            previewMode = preview;
             Text = "Analog · Keyboard Mapper"; ClientSize = new Size(1440, 880); MinimumSize = new Size(1080, 740);
             Font = new Font("Segoe UI", 9.5f); BackColor = ModernTheme.Background; StartPosition = FormStartPosition.CenterScreen;
             store = new WorkspaceStore(dataPath); runtime = new MultiControllerSession(store);
@@ -72,7 +73,7 @@ namespace Tk75.App
             }
             if (profilePath == null) { history = new EditHistory(new Profile { Name = Tr("Neues Profil", "New profile") }); profilePath = store.NewProfilePath(); SaveProfile(); }
             Configure(); ReloadProfiles(); ReloadPresets(); SyncOutputMode(); RefreshKeys(); RefreshBindings(); focusEnabled.Checked = focus.Enabled;
-            Shown += delegate { ChooseInitialDetails(); if (!preview) { applicationInputActive = true; modeShortcutRegistrationActive = true; RefreshModeShortcutRegistration(); ApplyKeyboardSuppressionPreference(); StartDeviceDiscovery(); uiTimer.Start(); } UiText.Apply(this); RefreshInputModeUi(); RefreshStopShortcutUi(); };
+            Shown += delegate { StartUiSession(); };
             HandleDestroyed += delegate { ReleaseShortcutRegistrations(); };
             HandleCreated += delegate { if (modeShortcutRegistrationActive) RefreshModeShortcutRegistration(); };
             if (preview)
@@ -94,9 +95,11 @@ namespace Tk75.App
                 if (!rgbCloseFinished)
                 {
                     CancelMappingDrag();
+                    SaveControllerReconnectState();
                     runtime.Disable("Anwendung wird geschlossen");
                     keyboardSuppression.SetEnabled(false);
-                    try { SaveProfile(); } catch (Exception ex) { if (MessageBox.Show(this, UiText.Get(ex.Message) + Tr("\nOhne Speichern beenden?", "\nExit without saving?"), Tr("Speichern fehlgeschlagen", "Saving failed"), MessageBoxButtons.YesNo) != DialogResult.Yes) { args.Cancel = true; return; } }
+                    try { SaveProfile(); } catch (Exception ex) { if (MessageBox.Show(this, UiText.Get(ex.Message) + Tr("\nOhne Speichern beenden?", "\nExit without saving?"), Tr("Speichern fehlgeschlagen", "Saving failed"), MessageBoxButtons.YesNo) != DialogResult.Yes) { CancelControllerReconnectSave(); args.Cancel = true; return; } }
+                    PersistControllerReconnectState();
                     if (BeginRgbCloseRestore()) { args.Cancel = true; return; }
                 }
                 closing = true; StopDeviceDiscovery(); uiTimer.Stop(); ReleaseShortcutRegistrations(); keyboardSuppression.Dispose(); runtime.Dispose(); if (reader != null) reader.Dispose();
@@ -313,7 +316,7 @@ namespace Tk75.App
         static IEnumerable<Control> Descendants(Control parent) { foreach (Control child in parent.Controls) { yield return child; foreach (Control item in Descendants(child)) yield return item; } }
         Profile ReadProfile(string path) { if (new FileInfo(path).Length > 4194304) throw new InvalidDataException(Tr("Profil ist zu groß.", "The profile file is too large.")); return ProfileJson.Deserialize(File.ReadAllText(path)); }
         void SaveProfile() { FlushInputDraft(); if (profilePath != null) WorkspaceStore.WriteAtomic(profilePath, ProfileJson.Serialize(history.Current)); }
-        void LoadProfile(string path) { var profile = ReadProfile(path); inputDirty = false; history = new EditHistory(profile); profilePath = path; ResetProfileInputMode(); Configure(); ReloadProfiles(); RefreshKeys(); RefreshBindings(); SyncBehavior(); store.Event("Profile changed"); }
+        void LoadProfile(string path) { var profile = ReadProfile(path); CancelStartupReconnect(); inputDirty = false; history = new EditHistory(profile); profilePath = path; ResetProfileInputMode(); Configure(); ReloadProfiles(); RefreshKeys(); RefreshBindings(); SyncBehavior(); store.Event("Profile changed"); }
         void ReloadProfiles()
         {
             updating = true;
@@ -359,6 +362,8 @@ namespace Tk75.App
         void UpdateLive()
         {
             if (closing || deviceDetachInProgress) return;
+            bool showLive = Visible && WindowState != FormWindowState.Minimized;
+            runtime.SetPreviewActive(showLive);
             ++ticks;
             // Input safety, lighting recovery and foreground rules must keep
             // running even when the window does not need a visual refresh.
@@ -366,7 +371,8 @@ namespace Tk75.App
             RefreshRgbLighting();
             UpdateDetectedLayout();
             if (ticks % 30 == 0 && activeMappingDrag == null) CheckForeground();
-            if (!Visible || WindowState == FormWindowState.Minimized) return;
+            TryReconnectStartupControllers();
+            if (!showLive) return;
 
             RefreshInputModeUi();
             UpdateControllerConnectionUi();
@@ -456,7 +462,7 @@ namespace Tk75.App
         }
         protected override void WndProc(ref Message message)
         {
-            if (message.Msg == 0x0312 && message.WParam.ToInt32() == DisableHotkey && !deviceDetachInProgress && IsCurrentShortcutMessage(message, true)) { runtime.Disable("Abschalter – Controller aus"); RefreshKeyboardSuppression(false); }
+            if (message.Msg == 0x0312 && message.WParam.ToInt32() == DisableHotkey && !deviceDetachInProgress && IsCurrentShortcutMessage(message, true)) { CancelStartupReconnect(); runtime.Disable("Abschalter – Controller aus"); RefreshKeyboardSuppression(false); }
             if (message.Msg == 0x0312 && message.WParam.ToInt32() == ModeHotkey && !deviceDetachInProgress && IsCurrentShortcutMessage(message, false)) Attempt(ToggleInputMode);
             if (message.Msg == 0x0219) OnDeviceChange(message);
             base.WndProc(ref message);

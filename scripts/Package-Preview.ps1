@@ -1,9 +1,9 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([string] $Version = '0.1.0-preview.2')
+param([string] $Version = '0.1.0-preview.3')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-if ($Version -notmatch '^\d+\.\d+\.\d+-preview\.\d+$') { throw 'Use a preview version such as 0.1.0-preview.2.' }
+if ($Version -notmatch '^\d+\.\d+\.\d+-preview\.\d+$') { throw 'Use a preview version such as 0.1.0-preview.3.' }
 $packageRoot = Split-Path -Parent $PSScriptRoot
 $packageBin = Join-Path $packageRoot 'bin'
 & (Join-Path $PSScriptRoot 'Verify-Checksums.ps1') -Directory $packageRoot
@@ -49,8 +49,8 @@ Profiles offer 32 output slots, freely assigned to Xbox or DualSense. Windows
 allows at most four XInput controllers, including physical ones. DualSense uses
 HID separately and does not consume those XInput slots. An earlier helper build
 passed real-device acceptance with two Xbox plus two DualSense outputs.
-Windows application control blocked the latest optimized helper on the
-development machine; this exact executable has not completed live validation.
+Windows application control blocked the latest main app and optimized helper
+on the development machine; the installed app has not completed a live start.
 Larger configurations have not yet been load-tested. See the status link above.
 Common buttons, triggers and sticks are supported. No PS5-console, touchpad,
 motion-sensor or other DualSense-extra compatibility is guaranteed.

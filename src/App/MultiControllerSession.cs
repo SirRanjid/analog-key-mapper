@@ -21,6 +21,13 @@ namespace Tk75.App
         ControllerRelease PrepareDisable(string reason);
     }
 
+    // Optional for detached test/custom endpoints. Every production session
+    // implements display demand separately from its actual output lifecycle.
+    public interface IPreviewDemandSession
+    {
+        void SetPreviewActive(bool value);
+    }
+
     public sealed partial class MultiControllerSession : IDisposable
     {
         public const int MaximumConnectedXboxControllers = 4;
@@ -32,6 +39,7 @@ namespace Tk75.App
         string configurationError;
         object inputSource;
         bool disposed, keyboardMode;
+        bool previewActive = true;
 
         sealed class Slot
         {
@@ -64,9 +72,28 @@ namespace Tk75.App
                 {
                     CheckDisposed();
                     if (value == null || !slots.ContainsKey(value)) throw new ArgumentException("Unknown controller.", "value");
-                    // Selection changes no mapping, worker, output or device state.
-                    selected = value;
+                    // Only display demand follows selection. Actual mapping and
+                    // output state stay independent for every connected route.
+                    if (selected == value) return;
+                    selected = value; UpdatePreviewDemandLocked();
                 }
+            }
+        }
+        public void SetPreviewActive(bool value)
+        {
+            lock (gate)
+            {
+                CheckDisposed(); if (previewActive == value) return;
+                previewActive = value; UpdatePreviewDemandLocked();
+            }
+        }
+        void UpdatePreviewDemandLocked()
+        {
+            foreach (KeyValuePair<string, Slot> entry in slots)
+            {
+                if (entry.Value.Failure != null) continue;
+                var demand = entry.Value.Session as IPreviewDemandSession;
+                if (demand != null) demand.SetPreviewActive(previewActive && entry.Key == selected);
             }
         }
         public bool Enabled { get { lock (gate) { Slot slot; return !disposed && slots.TryGetValue(selected, out slot) && slot.Failure == null && slot.Session.Enabled; } } }
@@ -212,6 +239,8 @@ namespace Tk75.App
                                 if (Object.ReferenceEquals(existing, endpoint)) throw new InvalidOperationException("A controller session cannot belong to multiple slots.");
                             created.Add(endpoint);
                             slot = new Slot { Session = endpoint };
+                            var demand = endpoint as IPreviewDemandSession;
+                            if (demand != null) demand.SetPreviewActive(false);
                             endpoint.SetInputSource(inputSource);
                         }
                         slot.Session.Configure(routes[definition.Id], calibration);
@@ -225,6 +254,7 @@ namespace Tk75.App
                         if (!next.ContainsKey(old.Key)) old.Value.Session.Dispose();
                     slots.Clear(); foreach (KeyValuePair<string, Slot> item in next) slots.Add(item.Key, item.Value);
                     if (!slots.ContainsKey(selected)) selected = definitions[0].Id;
+                    UpdatePreviewDemandLocked();
                     configurationError = null;
                 }
                 catch (Exception ex)

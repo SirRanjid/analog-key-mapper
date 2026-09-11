@@ -230,6 +230,7 @@ namespace Tk75.App
         void SetControllerConnectionForId(string controllerId, bool connect)
         {
             if (closing || deviceDetachInProgress || rgbClosePending) return;
+            CancelStartupReconnect();
             try
             {
                 Attempt(delegate
