@@ -25,7 +25,7 @@ The latest recorded targeted development runs passed:
 
 | Suite | Assertions | What it exercises |
 | --- | ---: | --- |
-| [App UI](../tests/Test-AppUi.ps1) | 6,511 | Real controls with synthetic sources: tabs, fixed layout, bulk edits, keyboard/controller drag images, connection gestures and aborts. |
+| [App UI](../tests/Test-AppUi.ps1) | 6,513 | Real controls with synthetic sources: tabs, fixed layout, bulk edits, keyboard/controller drag images, connection gestures and aborts. |
 | [Visual keyboard](../tests/Test-VisualKeyboard.ps1) | 1,407 | Layouts, geometry, selection, accessibility and own-control rendering. |
 | [RGB lifecycle](../tests/Test-RgbLifecycle.ps1) | 143 | Real app worker and ReaderSession with a simulated device: restore during writes, failed confirmations, queue coalescing, deadlines, retry limits and immutable backups. |
 
