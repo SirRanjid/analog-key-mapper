@@ -1,0 +1,5 @@
+# Preserve exact bytes across clones and source archives for SHA-256 verification.
+* -text
+*.png binary
+*.cur binary
+

@@ -1,0 +1,25 @@
+name: Bug report
+description: Report a reproducible problem with mapping, the interface or a supported keyboard.
+body:
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Explain what you expected and what you saw.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest mapping or action sequence that shows the problem.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Setup
+      description: App version, Windows version, keyboard model, USB connection and controller type. Do not include serial numbers or full device paths.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Optional screenshot or diagnostics
+      description: Remove personal paths, account details, serial numbers and unrelated applications before sharing.

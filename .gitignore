@@ -1,0 +1,19 @@
+# Local output, settings and temporary files
+bin/
+build/
+release/
+data/
+captures/
+tests/tmp/
+tests/synthetic-app-ui-*/
+tests/rlc-*/
+.cache/
+.vs/
+*.user
+*.suo
+*.pfx
+*.p12
+*.key
+.env
+.env.*
+

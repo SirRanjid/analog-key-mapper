@@ -1,0 +1,41 @@
+name: Build and offline checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify download and compile
+        run: |
+          ./Build.bat --no-pause
+          if ($LASTEXITCODE -ne 0) { throw 'Build.bat failed.' }
+      - name: Run focused offline checks
+        run: |
+          $suites = @(
+            'Test-MappingCore.ps1', 'Test-MappingAssignments.ps1',
+            'Test-BezierCurve.ps1', 'Test-ControllerRouting.ps1',
+            'Test-RgbOverridePlan.ps1', 'Test-Tk75RgbProtocol.ps1',
+            'Test-Tk75RgbExchange.ps1', 'Test-VisualKeyboard.ps1',
+            'Test-AppUi.ps1', 'Test-RgbLifecycle.ps1'
+          )
+          foreach ($suite in $suites) {
+            & pwsh -NoLogo -NoProfile -File (Join-Path 'tests' $suite)
+            if ($LASTEXITCODE -ne 0) { throw ('Failed: ' + $suite) }
+          }
+          'Compilation and synthetic checks only. No driver or real controller was started.' >> $env:GITHUB_STEP_SUMMARY

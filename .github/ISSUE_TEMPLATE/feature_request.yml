@@ -1,0 +1,13 @@
+name: Feature request
+description: Suggest an improvement to the mapper.
+body:
+  - type: textarea
+    attributes:
+      label: What would you like to do?
+      description: Describe the task and how the proposed change would help.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Suggested behavior
+      description: Examples or small sketches are welcome.

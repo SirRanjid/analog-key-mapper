@@ -1,0 +1,258 @@
+{
+  "SchemaVersion": 1,
+  "Upstream": "https://github.com/Alia5/VIIPER",
+  "UpstreamRevision": "6b71b148a2243fab77ee1a46f4e22e00bd7d5a04",
+  "UpstreamVersion": "v0.7.0",
+  "Files": [
+    {
+      "Path": "cmd/tk75-output-host/backend_windows.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "fdc1adfa261ec0ef7693ba46c7bf62c69658d35c7d8ffef2caeee06563e88317"
+    },
+    {
+      "Path": "cmd/tk75-output-host/dualsense_backend_windows.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "ea19d0375f39190cf98d52fc0c47fd0f616ad08acc9054b30cabf8ed3c6bff84"
+    },
+    {
+      "Path": "cmd/tk75-output-host/dualsense_hid_windows.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "fbfe4b7c4122b55ead6e8e3b838044c1ca2f51401cc462503d2b7fda54465391"
+    },
+    {
+      "Path": "cmd/tk75-output-host/dualsense_windows.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "6abaa0c0402246ccdb6964baa45e16b3ddef5f25371f308ce53a1a16162c465b"
+    },
+    {
+      "Path": "cmd/tk75-output-host/host_test.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "ec8bea7af508c3d9ea8ba2157574083e47e11352f691704ead0b48db2cc3a81c"
+    },
+    {
+      "Path": "cmd/tk75-output-host/host.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "ede5274ecbc9a3778976c0074b4ece226e140acaafdbe2dc0af5eb28883611b0"
+    },
+    {
+      "Path": "cmd/tk75-output-host/main.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "a54cbb12458f222cf7a619d7d009eb60ff5bebd9fbfde67bb37ad1230816981b"
+    },
+    {
+      "Path": "cmd/tk75-output-host/native_windows_test.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "db2269e11353d11ae8b6402fa436e13186d1de0a055e841a61d7735bd5b08614"
+    },
+    {
+      "Path": "cmd/tk75-output-host/native_windows.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "062232d71588b72237ebe7cbd944fed71920ebbd2533fafedc5debe56d0cdd6e"
+    },
+    {
+      "Path": "cmd/tk75-output-host/pad_test.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "b87196deb06c21ad7228d9d8d971c3f64f5f00849de5534877f3db3048fa4511"
+    },
+    {
+      "Path": "device/context.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "8f28dd028a84863e86616522481060c8e02e2111611936a5742d5017d115c281"
+    },
+    {
+      "Path": "device/dualsense/const.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "3cab6e572f4a9c86f9b9bfcf2f7e982d7b88fda9e5dc1a0f9c228399a1f4e9c4"
+    },
+    {
+      "Path": "device/dualsense/descriptor.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "a65201c264df920dea4b72a3fc5693e0c495d59e3af46b4b734bd33bd2f57caf"
+    },
+    {
+      "Path": "device/dualsense/device.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "3e881b89059ee58f75d4bf20127195865e39c6cc2773f92496fe34f5d408021d"
+    },
+    {
+      "Path": "device/dualsense/ds_handler.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "d66f9c1a7167cb6cb43425aa885f9b8f787fc241c33e11cf0b8e96334af8fad2"
+    },
+    {
+      "Path": "device/dualsense/dsedge_handler.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "dbd0e4d7f2cce4515a5b448d2b17be330d7895f902f0f88d0b44032a790582c9"
+    },
+    {
+      "Path": "device/dualsense/helpers.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "df7509463a40510c43e1252d0c229183a3e40c4ba7a17f8a751d3d1443a9207a"
+    },
+    {
+      "Path": "device/dualsense/serial_dedupe.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "977cbb27fec63b757a26e014790a1b48cc2f98a06343db53f99e3cd8252189e5"
+    },
+    {
+      "Path": "device/dualsense/state.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "6f39af11bd4836b40fa2e63572193b5920445fea3495c96a2905f0d644687521"
+    },
+    {
+      "Path": "device/errors.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "4edfd3f639c4f374d1a2f99129f9e4853cbbc453c25d71fa2f83107b4bce88d5"
+    },
+    {
+      "Path": "device/options.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "e775b18497e147ac303fb07380f6c713054605c53a603eb19eeacadf7159a70c"
+    },
+    {
+      "Path": "device/report.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "5637793f168476e2bf87b3f9b9aa6d520aa07b9bb5aef7cdf72b639f93a823aa"
+    },
+    {
+      "Path": "device/xbox360/const.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "681c541da57271a86bdd3d36f449731de2e2a26897954f9bb297373938c86146"
+    },
+    {
+      "Path": "device/xbox360/device.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "a48541f9313589421e04048ab627f921e56ceb3c867eb411652670a8ba5ffa99"
+    },
+    {
+      "Path": "device/xbox360/handler.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "d46899ce563bf9af40e0fb733ed39264eddec39c2cd83f2049ac848eb2750e92"
+    },
+    {
+      "Path": "device/xbox360/inputstate.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "c2ccb19abc32b63d561db21ba681ff82e93038666ad6b6ca63d1184566e7e428"
+    },
+    {
+      "Path": "internal/log/logging.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "099b98340d2e750c98ad5dde1125e0fc490a1a2cfe880f4cb839ede693e20aa0"
+    },
+    {
+      "Path": "internal/log/rawlogger.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "a8e4772ba63939d86f5eec739e680ff0bb8b80d53c8073ac35a95603958e8034"
+    },
+    {
+      "Path": "internal/server/api/auth/auth.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "a3deaf3b49e05a030dcef14c573a6f760e18461be2e95143ecc80e0e0352270f"
+    },
+    {
+      "Path": "internal/server/api/auth/conn.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "1b97b8f93bd5f0b7423c91d26df13af810b5b4a424e49db088fabe0e449fda16"
+    },
+    {
+      "Path": "internal/server/api/auth/handshake.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "2ae8d2a941d38f3493b21a137cbb8980a2c005515cc77f660ce8e292c37773a0"
+    },
+    {
+      "Path": "internal/server/api/autoattach_windows.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "2a5305f03ff0831f27ba53f099d44cc40c8e7cbfd1fe087c01ed3902b572a16b"
+    },
+    {
+      "Path": "internal/server/api/autoattach.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "d12ac47f09da7f654b1f75a04a2cfc49eb566318d62bcb07b73edfa39df61163"
+    },
+    {
+      "Path": "internal/server/api/config_windows.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "dad3da25d1cce8fe4bb0d173fe0599e91a41508150cb703952c47f0752d286f8"
+    },
+    {
+      "Path": "internal/server/api/config.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "daa635aecdb89559fe66fee432d82da751fa41234bbf93f168ce45b3bec701d0"
+    },
+    {
+      "Path": "internal/server/api/device_registry.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "0ecad94fd14921c467d491c940069a5a19b9db6aee1a9dc4cd5af42ab777f8bb"
+    },
+    {
+      "Path": "internal/server/api/device_stream_handler.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "1614fc7689d3035d141c33223fa7621a1d87d5d1261bea5ef0f8379e7cbe28e3"
+    },
+    {
+      "Path": "internal/server/api/error/apierror.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "b99e8b236007f116e72f60362e8c385fb0ce649ba144733393295afd0948412c"
+    },
+    {
+      "Path": "internal/server/api/router.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "468e02b5b1efa07e98cf9ee12ae86a9f4fc14d20bf9b066b876a892af1d1dd17"
+    },
+    {
+      "Path": "internal/server/api/server.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "d27e18d137c7ccc10aa9f576610b131cb6d1814c9c4c64750de6cddc5919a059"
+    },
+    {
+      "Path": "internal/server/usb/config.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "19cfd8a884650c23382b21fff40ecf22a07d6cd835023e6d3b7d5f92ea537153"
+    },
+    {
+      "Path": "internal/server/usb/server.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "607d39bac224fb2d7329765d75501fee05b6137eee8d268a8042ad9d7cf04a4d"
+    },
+    {
+      "Path": "usb/device.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "1446d3903b0f9226d55ea513abb1be47c9ee70ce97ac2aaade2b2469ee5da7d3"
+    },
+    {
+      "Path": "usb/hid/constants.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "5e7c6eaca67de2ecace601880b1dcbf975260c7b30ae21df184e9eff657b7e7b"
+    },
+    {
+      "Path": "usb/hid/hid.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "1fe6bed452299c98ac5be465b9c1e8ae881ed578913b0dc1257251052eec943a"
+    },
+    {
+      "Path": "usb/hid/items.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "9d9e96d77f01c17f043e452cded737501db5ca63a5a0d4da380f51f306eaaf21"
+    },
+    {
+      "Path": "usb/usbdesc.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "6f40eaf7f8c1a3955ad5fa4e32490243b19e65539985e8e5897fcf5918c35ee2"
+    },
+    {
+      "Path": "usbip/usbip.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "38750db73f0b2f7abe450534152add0352093c276b11d6274f781e64522063cd"
+    },
+    {
+      "Path": "viipertypes/structs.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "68bc9da4e2e6c69756a135ff78cf4d4d22a4827ff08a25beb40d13ee5a7edb42"
+    },
+    {
+      "Path": "virtualbus/virtualbus.go",
+      "Origin": "VIIPER upstream",
+      "SHA256": "6f1dba1f0e9e83a298e933d2b3f3ebaf99f55fdbbc52767456ab1175f287a5db"
+    }
+  ]
+}

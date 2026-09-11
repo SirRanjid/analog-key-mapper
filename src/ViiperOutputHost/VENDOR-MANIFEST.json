@@ -1,0 +1,512 @@
+{
+  "SchemaVersion": 1,
+  "GeneratedBy": "go mod vendor",
+  "GoVersion": "go1.27.1 windows/amd64",
+  "Modules": [
+    "golang.org/x/crypto v0.52.0",
+    "golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f",
+    "golang.org/x/sys v0.45.0"
+  ],
+  "Files": [
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20/chacha_arm64.go",
+      "SHA256": "50974d7653c355d8356aaa33318f1df5d9127b5dc96a38b5d88e91aeb188feb4"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20/chacha_arm64.s",
+      "SHA256": "73036d54d1961a9e5cb8ce57298bd7803443dbe0de7cae4a9143b62d3a7d84b5"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20/chacha_generic.go",
+      "SHA256": "34403e82b1387b4402b00ce30c1364508c333f4bdbe671321690c6ebaa8d3180"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20/chacha_noasm.go",
+      "SHA256": "bbdb67ceb30ef13efc54e17935f47e00744b96754e03364e606d4f1f8f9085c1"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20/chacha_ppc64x.go",
+      "SHA256": "d83241a12aa5c46556dcf04fccae879774eb446295023090e7e431190401ca8a"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20/chacha_ppc64x.s",
+      "SHA256": "3b83ee23c4bf3d2eb44614bec03f62227775dc10240d4a980142865550193b6d"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20/chacha_s390x.go",
+      "SHA256": "c754fd607f74f77626e35539e66d1054ade460b7381cdcba612b2f9b422f1751"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20/chacha_s390x.s",
+      "SHA256": "0e56fbb71b8404dbb2e58f9ff0b14e433fb32be3db313865c350bc1abd76d012"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20/xor.go",
+      "SHA256": "c3adc8555766e36629b4dd3fcd579969d2d2737c65a379db997253a2b7b18072"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20poly1305/chacha20poly1305_amd64.go",
+      "SHA256": "bae40d20a6077f0f5570b28086cdc4cb6e51aaa757e54b32ba99770f8b234869"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20poly1305/chacha20poly1305_amd64.s",
+      "SHA256": "4146e78a518ac6030aff76b7ced4b007d50757c63acca363403f180134093af8"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20poly1305/chacha20poly1305_generic.go",
+      "SHA256": "f3e04c8517e163f94ec2bb6e7b634ef239432ed7422b1d8695cfc446c8551181"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20poly1305/chacha20poly1305_noasm.go",
+      "SHA256": "0ff7a84348991f03aa8c9a74472b112036cb8149218aa284ed034c2ea011afc6"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20poly1305/chacha20poly1305.go",
+      "SHA256": "08400b984074331e97c7e2a1d9701f14cb8f9919b3eb3e0d1bb8e3549961cac2"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20poly1305/fips140only_compat.go",
+      "SHA256": "595592ad52faf110bc044732de053f1912de573d66ec72b399b518cf4c692ba3"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20poly1305/fips140only_go1.26.go",
+      "SHA256": "60368cae6d4d630509309819d7f397532c6f7812978c12983bca375e4ae810aa"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/chacha20poly1305/xchacha20poly1305.go",
+      "SHA256": "7325ab1f70b6ab4a241ca0237f050202ddb35225a690c8146006e51a6ceeb685"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/internal/alias/alias_purego.go",
+      "SHA256": "f048d9f5c89a4611ce845d46126445867f434cb746cdc5d7fedc43607fd89b7f"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/internal/alias/alias.go",
+      "SHA256": "7bb0ef254a7e9360ec43e3129fad11d27edcc611bf87c12dba089f6e381f462e"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/internal/poly1305/mac_noasm.go",
+      "SHA256": "f5308cd6f14bab1b00963eeae8137d63fc5452db7f7d49276a56f457bfd89d2d"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/internal/poly1305/poly1305.go",
+      "SHA256": "c4b20ab7330e47ee155a775f69ae3b0e432c75d74ad005cf764228a69ddf6da6"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/internal/poly1305/sum_amd64.s",
+      "SHA256": "f8959555c2e70f460ba88bca1f37705d6c570c0f99f37650a907e9391a960446"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/internal/poly1305/sum_asm.go",
+      "SHA256": "ce5f94aedd0ce3349a8a8655607bd0159d354902e3298169cf9350fe235382b7"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/internal/poly1305/sum_generic.go",
+      "SHA256": "b0094a2895d5bda42dcaaf57c0b31fc914c3b6c6aa6237aab0100a6d78346933"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/internal/poly1305/sum_loong64.s",
+      "SHA256": "10438482cc98025392f22df374b5ad97fddb1dacbd3570ca8243be7fd155b9fe"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/internal/poly1305/sum_ppc64x.s",
+      "SHA256": "b879522e9c8a5650016a967ded7b0895ffa5fd6d6f2875903147840d37ee5705"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/internal/poly1305/sum_s390x.go",
+      "SHA256": "2c397170a5922ad79a20b44cc8daf82c5a263b9c2578df685f03973f6b1fc931"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/internal/poly1305/sum_s390x.s",
+      "SHA256": "e6e9f457d640052142a2e8ca672498c73d73be426d5262576e2ecb81b5d13d6d"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/LICENSE",
+      "SHA256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+    },
+    {
+      "Path": "vendor/golang.org/x/crypto/PATENTS",
+      "SHA256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
+    },
+    {
+      "Path": "vendor/golang.org/x/exp/constraints/constraints.go",
+      "SHA256": "ba7fcd6666b783a7127b0efe1811a2aed770528bac9761b40d1aa61a4de6fcfe"
+    },
+    {
+      "Path": "vendor/golang.org/x/exp/LICENSE",
+      "SHA256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+    },
+    {
+      "Path": "vendor/golang.org/x/exp/PATENTS",
+      "SHA256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/asm_aix_ppc64.s",
+      "SHA256": "5a50f8f52ea89a7c638bdd6798f576523ecfc1e4ec2cb657d445f1a7dc0dfab2"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/asm_darwin_arm64_gc.s",
+      "SHA256": "6f6f35fbf284f205f49db2410b6554bd72aa1fc8ccf35f30a619482277e31ccd"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/asm_darwin_x86_gc.s",
+      "SHA256": "21022bf7461861b3744775075f4a4ef960c036cc469914684f87a4da9fc8b3a8"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/byteorder.go",
+      "SHA256": "825146fd4557b1cbd8161fa28bb4be8820089848d695316edeecb7fd5a551f8a"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_aix.go",
+      "SHA256": "1e9265c7703fe4b8b2bd6813e05f2fc15a83eb60e237dcafa0911b5b19a7e25f"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_arm.go",
+      "SHA256": "23e6d65d2ba6bf988f6413643cb336b49b438b2b15659c0b22c2d0c63a25e3c0"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_arm64.go",
+      "SHA256": "8497751085f331e75f297ed0eef3ceb7c31725f63e3a142a543ec2d29befae36"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_arm64.s",
+      "SHA256": "704264fabff92f961c0bc68f0cb3cc49a21f62141e44ba709caf0ee2eccb0e5d"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_darwin_arm64_other.go",
+      "SHA256": "70f4e3eefb56f34752172c26187dcb8f86439b1d61abeefa5ca0a454d8762c6f"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_darwin_arm64.go",
+      "SHA256": "b8d13328eed17809afb4f807512caded369fdbd2ecdd78f80d54651079bb12a3"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_darwin_x86.go",
+      "SHA256": "4d90cd4b64eed4f9bbfe8e6c4b856f785659d6f22f56f8f6cf1b172c10e9c518"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_gc_arm64.go",
+      "SHA256": "58e20a70f4400b4969c85e01f017f36bd6eeb240fb1c49799cd18ccdf8bd8bc2"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_gc_s390x.go",
+      "SHA256": "9af08f2d1f95402635813d6303faae72ddd1218fc27115252002282da415f7e8"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_gc_x86.go",
+      "SHA256": "2eec0a58e170f14b054a9d0c006fede8cd5c075c5d7cde1fbab688b4b793588e"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_gc_x86.s",
+      "SHA256": "74ac7fc7ef9c56c3306238cf031ea8ef7c0312a7116cb9fba6d07f0b1382df80"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_gccgo_arm64.go",
+      "SHA256": "7aad4d607a87b279d42f484a3ad479819991678faaa3767be85ecd42292d5f2a"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_gccgo_s390x.go",
+      "SHA256": "89f09aa36fdb1fef1a4ec171178cc12daf4f49e6ee368fec496c482d04ddf145"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_gccgo_x86.c",
+      "SHA256": "50585132982aa1dda61a887bb62f468a1a843cf1993d59a4b0fe6ca2e8a5c8f7"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_gccgo_x86.go",
+      "SHA256": "60315ffb16a8330d4653429d52c60d2b087073487b79366bfd640a858f56453c"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_linux_arm.go",
+      "SHA256": "5c2f68fd8e53218eb96b8d67375564242a6bf825021a4ecbc8347af6f47898c0"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_linux_arm64.go",
+      "SHA256": "1f0f5c5f113cf222529b724855e636312388dc5f2bac1d4b71620422ea9baf4a"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_linux_loong64.go",
+      "SHA256": "d6231726a9727715da997a63711856ab9ec8f3b20d0a7c37e77e9fd6166e7e72"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_linux_mips64x.go",
+      "SHA256": "2527fa939ae3ba4ff7a7a5190c865cdde199d079e5f25b7aa52b1b56e4e11016"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_linux_noinit.go",
+      "SHA256": "620abd97199a2230f59165a2bc58c3ba780b6801ec0246cfb7319553dd795226"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_linux_ppc64x.go",
+      "SHA256": "01d1a98f48bec3bbb204e88898ba6b5441d30671cb502790e9091471d25d304a"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_linux_riscv64.go",
+      "SHA256": "7baf73edc4f429f64143e32cc07f44e0da06061af81cf45ed01b1bd549e953dc"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_linux_s390x.go",
+      "SHA256": "290f658b0d8e7e9dd93d3b908cd202f13b3a4f228071d4211f4e1947050dbbcc"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_linux.go",
+      "SHA256": "cf0f4c7211c4cc912689fecbd30bd4747b6dadf577b065ac03823d74ae1ac870"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_loong64.go",
+      "SHA256": "9e680f8d3915c412a40896bb2dfddf20620839598ecaace0f1cd490b4f446cea"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_loong64.s",
+      "SHA256": "254c8be780a37245bf80cf206a706d5ab0ede28ddf2d867c5c0368749f4125f5"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_mips64x.go",
+      "SHA256": "77a333aebca444ef9f718d27df30422a9ac88cba29add1029c30d3dc1c6dc781"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_mipsx.go",
+      "SHA256": "35bb6ba0d168ee41f3763110d65e39e8f6271995b59e6422dc65690fb69e2a9a"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_netbsd_arm64.go",
+      "SHA256": "b250e2406e45f0c972605266c3d67dd7a6ad614cb0fba5467d87facf62464436"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_openbsd_arm64.go",
+      "SHA256": "681c260436ffe0d3d591bc99e9e08a3218e0017589552a7f6a374fcd4a54aad8"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_openbsd_arm64.s",
+      "SHA256": "5ab9396eff64294fd703389dfae36d4d794f6261c79b6cbfc347699b38f361cc"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_other_arm.go",
+      "SHA256": "54da156f719d6aee6e14693c79a062680db425f5580d6222d56e57c53e228ca6"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_other_arm64.go",
+      "SHA256": "d19d8a37ad7b797aa4c5113c8210d93b0aa6aa9399378e786a92b51d6e73a29d"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_other_mips64x.go",
+      "SHA256": "f0ff8ddcebee1e3652369ff24d1f09c22702048266e0c64e0ebac908247c0829"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_other_ppc64x.go",
+      "SHA256": "0baab277f0a08d9b958cd1dc3c06f35ebd63c453bfff47adb65e7bbdbf94cb97"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_other_riscv64.go",
+      "SHA256": "f4595d128c37d0b779b788170d6e7976b0b488644b3df07774c0ffbfb4fac28c"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_other_x86.go",
+      "SHA256": "6f447bdafdc6f75593b29977c4f43a39f743043d4f286c542a8b93fa7fad3bf9"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_ppc64x.go",
+      "SHA256": "63aa31373ef16a2ca856ca2a1e54496d4cc91602ebf64bf5df99fbdfc334a896"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_riscv64.go",
+      "SHA256": "b19cf4854d2b32f81268f780d279abc4ac4fd47bb7f88abc07a7ea2fcc98690f"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_s390x.go",
+      "SHA256": "0abc36c54a82044ad48a406a2828e522f24b70247c922a79330cf8f616debbef"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_s390x.s",
+      "SHA256": "2ab869aa3b38626aba388fa6db352a3be80f1efdfd2085bdf97c2ef594a5e777"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_wasm.go",
+      "SHA256": "0da8add0ce546dfed3a844f94ce693137b6833712c016561f598e6d8b08c474e"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_windows_arm64.go",
+      "SHA256": "908ca3b754cda425b194ca564edf0ecdd8923f75b2e0864f3f52a35a6e30253b"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_windows.go",
+      "SHA256": "af3d72b6e5d5b0d6e801eaff989e8a38f6d26ad253faf057fa618682a1875a36"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_x86.go",
+      "SHA256": "6a9cdf0eca762b62d0e49e1f3bc9b5c68f23fecbdb888d12ef27bc32bc3893b9"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_zos_s390x.go",
+      "SHA256": "53b684a51586ff413570961780bea6526a6eab2568dce27c15efdf0d8e421d05"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu_zos.go",
+      "SHA256": "ff82e534d4d81726e13f34919386becdcb65cb9fc24c0f5835314e00fe13070d"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/cpu.go",
+      "SHA256": "b56854737e8d803d582232f9790f7dda2d8ff69e5982f6cdbdd2a150be540922"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/endian_big.go",
+      "SHA256": "005d2761cef8d501304f73be92a7f43174bf738a380c9d5d7bc0cac926075f57"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/endian_little.go",
+      "SHA256": "c6bc70c372d9e1fe86fcf295f406b17bf04bf8d1af25c2456f58520cdaef3be9"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/hwcap_linux.go",
+      "SHA256": "4101df793fddf76dfae477f917928008bc4a797446cd4ad44cde6e906c3f8713"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/parse.go",
+      "SHA256": "bb57db6688bac4a712dbd888a4bf15a1ba2b278f11fcc291c9bb590429a11be3"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/proc_cpuinfo_linux.go",
+      "SHA256": "dfdf71a1c8d94e7cc44117cadb1cf6f66fa2e8cdfb873dd5f1d85831d19841aa"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/runtime_auxv_go121.go",
+      "SHA256": "6eee9d1a593dce53d22545dc5d5f6ed9127a43e6568ef5f5521920946510d445"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/runtime_auxv.go",
+      "SHA256": "d898ace395866bed261d403c8cd0ea6eab6d6d77f52042204957e389c38938cf"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/syscall_aix_gccgo.go",
+      "SHA256": "a384f5e0e1f961a15295f30078e8c8cf16ec28672b659b7ff80829ccf8a2a848"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/syscall_aix_ppc64_gc.go",
+      "SHA256": "33f76a8da28ee51d3db32944949fc2ddcb9870ba0f2d22d29732dfcf2a6ba119"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/syscall_darwin_arm64_gc.go",
+      "SHA256": "2ec90937ba10bdeb3a646e3fcefd531bd99ce0c3653eaa6c8de2c6d86362e758"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/syscall_darwin_x86_gc.go",
+      "SHA256": "66059b45534544bdcde771fa793eca91d04de079e21adc4b2732e0912a57900a"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/cpu/zcpu_windows.go",
+      "SHA256": "f6f4da36899a0308a16b8c80589bf1eb807520f5132ab9ec63bf8edb23bc5596"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/LICENSE",
+      "SHA256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/PATENTS",
+      "SHA256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/aliases.go",
+      "SHA256": "8209f09b0195574766435d50f0b769dd76a460777ff194c53952db22c4d54d77"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/dll_windows.go",
+      "SHA256": "1c62d9345dd0c1d8e660792c1955a407b2049210c3bd2d8000004375f07afed9"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/env_windows.go",
+      "SHA256": "fcfa69bb220a15cc151240ecc57bb144cf25c6628e899bc72d8217171376ab5b"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/eventlog.go",
+      "SHA256": "0162de9581d94b7f73c2125e310a8c08d1f5f6ec9d99d68b450ea330cdab33e0"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/exec_windows.go",
+      "SHA256": "9c4824d3c8a1d54189f9d81e54a5786971b338c6d8b116ad188c1746212534a8"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/memory_windows.go",
+      "SHA256": "070342979027b739e224a8d35c5dabd9ac6ea662b9a58954446f27103c2443c4"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/mkerrors.bash",
+      "SHA256": "1e8ad2fee707012f9df5b217fb17fc08bbe65677d249d167d065c7d83c215e43"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/mkknownfolderids.bash",
+      "SHA256": "3b7f6ac42ae1e73aa8d06d4f89f18b91916f153b030e9c01e15d41959b6b5fc6"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/mksyscall.go",
+      "SHA256": "ece9a0ac70f7ee5765046bed09762c27e22b7a3777ab82d65ba696806cdcd264"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/race.go",
+      "SHA256": "bda47d77e2bd07cbdb9471188672b735973fbf85e9f6494a0c7fb397d53f20fa"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/race0.go",
+      "SHA256": "fd656479b0761b07939c12b95733002fe0437f33e6a9b317cdaf8b3fe3e116e4"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/security_windows.go",
+      "SHA256": "094bc64d586f16c90c6befc3a2383434e9a4acd37afcac301c6c365afa54305c"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/service.go",
+      "SHA256": "88b18aaac8358e790f5f723acac90799e84b813bc02c9c7ddad2e0f15a0503d7"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/setupapi_windows.go",
+      "SHA256": "72097fc028210a5700ede92673d155af6de97210292770bfb31363691dad07c4"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/str.go",
+      "SHA256": "6c8cc24a3e0c11c6b4950dbb49a5f7eb72e65fcb861a8cd71cdad376125a43cb"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/syscall_windows.go",
+      "SHA256": "d75d66eeda8a3d3cbf22318df8c52ee27ee6c96fc88d65708332afe70be136f0"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/syscall.go",
+      "SHA256": "60b6c688bece9fb3550cb369311b55dc33d1e2350a93f9c8a5f8fa0cd8ddb2cc"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/types_windows_386.go",
+      "SHA256": "02d259fd40882f68a35913b0c1d3320054804d92a4a7a4e6b86b1816c1b90258"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/types_windows_amd64.go",
+      "SHA256": "c375406875cabc6447a9a8ca917eccab2227ea33a17ac3ed02a3a8fca0af8ce1"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/types_windows_arm.go",
+      "SHA256": "e4dade4b688c7dea2a0d89a819d6917f3ab7be2514e462d7eb2fc2052cdc625c"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/types_windows_arm64.go",
+      "SHA256": "c375406875cabc6447a9a8ca917eccab2227ea33a17ac3ed02a3a8fca0af8ce1"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/types_windows.go",
+      "SHA256": "aa21367ca0c4650e6c8721dc77763ee63fcb087b4736a92a7bb5f8ff26906489"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/zerrors_windows.go",
+      "SHA256": "fdf634bbd093494501a9aec0660aa53b434fdc2c2bb989e8d0925323e511358d"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/zknownfolderids_windows.go",
+      "SHA256": "3815bbaa8adf5400041954decc56e8889eb56eb20bfc30053e7799703af0fc95"
+    },
+    {
+      "Path": "vendor/golang.org/x/sys/windows/zsyscall_windows.go",
+      "SHA256": "c40bdeba110bf46782feb55976a00c88c2ae51d8c812de5ae023326eeb083c92"
+    },
+    {
+      "Path": "vendor/modules.txt",
+      "SHA256": "5941950cb5854d38afbb2d76410d99c4053c27c22214388d4258c9bbda218655"
+    }
+  ]
+}
