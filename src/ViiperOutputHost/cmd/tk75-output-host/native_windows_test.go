@@ -6,8 +6,14 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"hash/fnv"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 func TestNativeCandidateLayout(t *testing.T) {
@@ -61,30 +67,63 @@ func TestNativeOwnershipRejectsOtherOrReusedPort(t *testing.T) {
 
 // This transport performs no system call, opens no socket and creates no device.
 type fakeNativeTransport struct {
-	items     []nativeOwnership
-	calls     []uint32
-	closed    bool
-	attachErr error
-	badStop   bool
+	items         []nativeOwnership
+	shared        *fakeNativeTransport
+	calls         []uint32
+	closed        bool
+	attachErr     error
+	badStop       bool
+	listCalls     int
+	listError     error
+	listSizes     []int
+	listDeadlines []time.Time
+	beforeList    func(int)
+	idleCheck     func() error
 }
 
-func (f *fakeNativeTransport) idle(context.Context) error { return nil }
-func (f *fakeNativeTransport) close() error               { f.closed = true; return nil }
+func (f *fakeNativeTransport) idle(context.Context) error {
+	if f.idleCheck != nil {
+		return f.idleCheck()
+	}
+	return nil
+}
+func (f *fakeNativeTransport) close() error { f.closed = true; return nil }
 func (f *fakeNativeTransport) call(ctx context.Context, code uint32, in []byte, outSize int) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	f.calls = append(f.calls, code)
+	state := f
+	if f.shared != nil {
+		state = f.shared
+	}
 	switch code {
 	case nativeIOCTLAttachOnce:
 		if len(in) != 1120 || outSize != 8 || binary.LittleEndian.Uint32(in) != 1120 {
 			return nil, errors.New("bad attach layout")
 		}
+		port := int32(7)
+		for {
+			occupied := false
+			for _, item := range state.items {
+				occupied = occupied || item.Port == port
+			}
+			if !occupied {
+				break
+			}
+			port++
+		}
+		bus, _ := nativeCString(in[8:40])
+		serviceText, _ := nativeCString(in[40:72])
+		host, _ := nativeCString(in[72:1097])
+		serial, _ := nativeCString(in[1100:1116])
+		service, _ := strconv.ParseUint(serviceText, 10, 16)
+		state.items = append(state.items, nativeOwnership{Port: port, Host: host, Service: uint16(service), BusID: bus, Serial: serial})
 		if f.attachErr != nil {
 			return nil, f.attachErr
 		}
 		out := make([]byte, 8)
-		binary.LittleEndian.PutUint32(out[4:], 7)
+		binary.LittleEndian.PutUint32(out[4:], uint32(port))
 		return out, nil
 	case nativeIOCTLStopOwn:
 		if len(in) != 1104 || outSize != 1104 || in[8] == 0 || in[40] == 0 || in[72] == 0 {
@@ -95,9 +134,22 @@ func (f *fakeNativeTransport) call(ctx context.Context, code uint32, in []byte, 
 		}
 		return append([]byte(nil), in...), nil
 	case nativeIOCTLList:
-		out := make([]byte, 4+1128*len(f.items))
+		f.listCalls++
+		f.listSizes = append(f.listSizes, outSize)
+		deadline, _ := ctx.Deadline()
+		f.listDeadlines = append(f.listDeadlines, deadline)
+		if f.beforeList != nil {
+			f.beforeList(f.listCalls)
+		}
+		if f.listError != nil {
+			return nil, f.listError
+		}
+		if outSize < 4+1128*len(state.items) {
+			return nil, windows.ERROR_INSUFFICIENT_BUFFER
+		}
+		out := make([]byte, 4+1128*len(state.items))
 		binary.LittleEndian.PutUint32(out, 1132)
-		for i, o := range f.items {
+		for i, o := range state.items {
 			b := out[4+i*1128:]
 			putNativeLocation(b[:1096], o)
 			binary.LittleEndian.PutUint32(b, uint32(o.Port))
@@ -109,9 +161,9 @@ func (f *fakeNativeTransport) call(ctx context.Context, code uint32, in []byte, 
 		if port <= 0 {
 			return nil, errors.New("global detach forbidden")
 		}
-		for i, o := range f.items {
+		for i, o := range state.items {
 			if o.Port == port {
-				f.items = append(f.items[:i], f.items[i+1:]...)
+				state.items = append(state.items[:i], state.items[i+1:]...)
 				return nil, nil
 			}
 		}
@@ -125,13 +177,24 @@ func fakeOwnedNative() nativeOwnership {
 	return nativeOwnership{Port: 7, Host: "127.0.0.1", Service: 3241, BusID: "1-1", Serial: "TK7501234567890"}
 }
 
+func fakeNativeHash(host string, service uint16, bus string) (uint32, error) {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(strings.ToLower(host + "," + strconv.Itoa(int(service)) + "," + bus)))
+	return hash.Sum32(), nil
+}
+
+func attachFakeNative(own nativeOwnership, tr nativeTransport) (*nativeAttachment, error) {
+	return attachNativeTransportWithHasher(context.Background(), own.Host, own.Service, own.BusID, own.Serial, tr, false, fakeNativeHash)
+}
+
 func TestNativeAttachAndCleanupUseOnlyOwnIdentity(t *testing.T) {
 	own := fakeOwnedNative()
 	other := own
 	other.Port = 8
+	other.BusID = "2-1"
 	other.Serial = "OTHER0123456789"
-	f := &fakeNativeTransport{items: []nativeOwnership{own, other}}
-	a, err := attachNativeTransport(context.Background(), own.Host, own.Service, own.BusID, own.Serial, f)
+	f := &fakeNativeTransport{items: []nativeOwnership{other}}
+	a, err := attachFakeNative(own, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,11 +215,12 @@ func TestNativeCleanupRefusesReusedPort(t *testing.T) {
 	own := fakeOwnedNative()
 	other := own
 	other.Serial = "OTHER0123456789"
-	f := &fakeNativeTransport{items: []nativeOwnership{other}}
-	a, err := attachNativeTransport(context.Background(), own.Host, own.Service, own.BusID, own.Serial, f)
+	f := &fakeNativeTransport{}
+	a, err := attachFakeNative(own, f)
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.items = []nativeOwnership{other}
 	if err = a.Close(context.Background()); !errors.Is(err, errNativeOwnership) {
 		t.Fatalf("expected ownership failure, got %v", err)
 	}
@@ -172,8 +236,8 @@ func TestNativeCleanupRefusesReusedPort(t *testing.T) {
 
 func TestNativeAttachFailureRetainsRollbackIdentity(t *testing.T) {
 	own := fakeOwnedNative()
-	f := &fakeNativeTransport{items: []nativeOwnership{own}, attachErr: context.DeadlineExceeded}
-	a, err := attachNativeTransport(context.Background(), own.Host, own.Service, own.BusID, own.Serial, f)
+	f := &fakeNativeTransport{attachErr: context.DeadlineExceeded}
+	a, err := attachFakeNative(own, f)
 	if a == nil || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("partial ownership lost: %v", err)
 	}
@@ -187,8 +251,8 @@ func TestNativeAttachFailureRetainsRollbackIdentity(t *testing.T) {
 
 func TestNativeCleanupFailureIsNotSuccess(t *testing.T) {
 	own := fakeOwnedNative()
-	f := &fakeNativeTransport{items: []nativeOwnership{own}, badStop: true}
-	a, err := attachNativeTransport(context.Background(), own.Host, own.Service, own.BusID, own.Serial, f)
+	f := &fakeNativeTransport{badStop: true}
+	a, err := attachFakeNative(own, f)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,10 +16,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The driver supplies the attachment's requested serial as its USB serial
-// descriptor: usbip-win2 83bd1f7 device_ioctl.cpp:fill_usb_device_serial and
-// wsk_receive.cpp:post_control_transfer. This bridges native ownership to PnP.
-// SetupAPI gives the HID devnode; CM_Get_Parent gives its exact ancestry.
+// Bind the native attachment to its exact USB host-controller ancestry and
+// positive hub port. usbip-win2/UDE can publish port-derived PnP instance IDs;
+// a USB serial is not reliably available through HID string queries there.
+// Serial/location checks remain mandatory in nativeAttachment.HIDIdentity.
 type hidDevInfo struct {
 	Size      uint32
 	ClassGUID windows.GUID
@@ -41,8 +41,8 @@ var ownHIDGUID = windows.GUID{Data1: 0x4D1E55B2, Data2: 0xF16F, Data3: 0x11CF, D
 var ownCM = windows.NewLazySystemDLL("cfgmgr32.dll")
 var ownCMID = ownCM.NewProc("CM_Get_Device_IDW")
 var ownCMParent = ownCM.NewProc("CM_Get_Parent")
+var ownCMRegistryProperty = ownCM.NewProc("CM_Get_DevNode_Registry_PropertyW")
 var ownHID = windows.NewLazySystemDLL("hid.dll")
-var ownHIDSerial = ownHID.NewProc("HidD_GetSerialNumberString")
 var ownHIDAttributes = ownHID.NewProc("HidD_GetAttributes")
 var ownHIDPreparsed = ownHID.NewProc("HidD_GetPreparsedData")
 var ownHIDFreePreparsed = ownHID.NewProc("HidD_FreePreparsedData")
@@ -107,7 +107,7 @@ func enumerateOwnedHID(ctx context.Context, expected ownedHIDIdentity) ([]ownedH
 }
 
 func collectOwnedHID(ctx context.Context, expected ownedHIDIdentity) ([]ownedHIDCandidate, error) {
-	if expected.ControllerID == "" || !validNativeSerial(expected.Serial) {
+	if expected.ControllerID == "" || !validNativeSerial(expected.Serial) || expected.Port <= 0 {
 		return nil, errors.New("incomplete expected HID ownership")
 	}
 	set, _, e := nativeGetClass.Call(uintptr(unsafe.Pointer(&ownHIDGUID)), 0, 0, 0x12)
@@ -150,6 +150,13 @@ func collectOwnedHID(ctx context.Context, expected ownedHIDIdentity) ([]ownedHID
 		if !expected.matchesAncestors(chain) {
 			continue
 		}
+		port, err := hidUSBAncestorPort(ctx, dev.DevInst)
+		if err != nil {
+			return nil, err
+		}
+		if port != expected.Port {
+			continue
+		}
 		chars := make([]uint16, (int(needed)-4)/2)
 		for i := range chars {
 			chars[i] = binary.LittleEndian.Uint16(buffer[4+2*i:])
@@ -164,6 +171,36 @@ func collectOwnedHID(ctx context.Context, expected ownedHIDIdentity) ([]ownedHID
 		found = append(found, ownedHIDCandidate{Path: path, InstanceID: chain[0], Identity: expected})
 	}
 	return nil, errors.New("HID interface count exceeds bounded enumeration")
+}
+
+func hidUSBAncestorPort(ctx context.Context, node uint32) (int32, error) {
+	for depth := 0; depth < 32; depth++ {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		id, err := hidDevNodeID(node)
+		if err != nil {
+			return 0, err
+		}
+		if strings.HasPrefix(strings.ToUpper(id), `USB\VID_054C&PID_0CE6\`) {
+			var kind, address uint32
+			size := uint32(4)
+			// CM_DRP codes are one-based; SPDRP codes are zero-based.
+			code, _, _ := ownCMRegistryProperty.Call(uintptr(node), uintptr(windows.SPDRP_ADDRESS)+1,
+				uintptr(unsafe.Pointer(&kind)), uintptr(unsafe.Pointer(&address)), uintptr(unsafe.Pointer(&size)), 0)
+			if code != 0 || kind != windows.REG_DWORD || size != 4 || address == 0 || address > 255 {
+				return 0, fmt.Errorf("own USB ancestor has no valid hub port: status 0x%X", code)
+			}
+			return int32(address), nil
+		}
+		var parent uint32
+		code, _, _ := ownCMParent.Call(uintptr(unsafe.Pointer(&parent)), uintptr(node), 0)
+		if code != 0 {
+			return 0, fmt.Errorf("own USB ancestry changed: 0x%X", code)
+		}
+		node = parent
+	}
+	return 0, errors.New("own USB ancestor exceeds bounded depth")
 }
 
 func requireOwnedHID(ctx context.Context, candidate ownedHIDCandidate) error {
@@ -238,22 +275,15 @@ func openOwnedHIDSync(ctx context.Context, candidate ownedHIDCandidate) (*ownedH
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	// Verify the opened handle as well as PnP ancestry, closing an open/path-reuse
-	// race. These are descriptor reads only; never an output/feature write.
-	var serial [128]uint16
-	ok, _, e := ownHIDSerial.Call(uintptr(h), uintptr(unsafe.Pointer(&serial[0])), uintptr(unsafe.Sizeof(serial)))
-	if ok == 0 {
-		return nil, fmt.Errorf("read owned HID serial: %w", e)
-	}
-	if !strings.EqualFold(windows.UTF16ToString(serial[:]), candidate.Identity.Serial) {
-		return nil, errors.New("opened HID serial differs from own attachment")
-	}
+	// Verify the opened handle's descriptor and recheck its controller/port
+	// ancestry after opening. Connect also rechecks full native ownership after
+	// neutral readback, while holding the shared lifecycle lock throughout.
 	attributes := struct {
 		Size                     uint32
 		Vendor, Product, Version uint16
 		Padding                  uint16
 	}{Size: 12}
-	ok, _, e = ownHIDAttributes.Call(uintptr(h), uintptr(unsafe.Pointer(&attributes)))
+	ok, _, e := ownHIDAttributes.Call(uintptr(h), uintptr(unsafe.Pointer(&attributes)))
 	if ok == 0 || attributes.Vendor != 0x054C || attributes.Product != 0x0CE6 {
 		return nil, fmt.Errorf("owned HID is not the intended DualSense: %v", e)
 	}

@@ -95,6 +95,7 @@ public static class IsolatedOutputHarness
     public static string RunProcesses(string helper)
     {
         checks = 0;
+        ParallelProcesses(helper);
         using (var output = new IsolatedOutput(helper, "success", 2000, 200))
         {
             Check(output.HostProcessId == null && !output.IsConnected, "Constructor does not start child");
@@ -163,5 +164,38 @@ public static class IsolatedOutputHarness
             Gone(childId, "KILL_ON_JOB_CLOSE removes fake child on abrupt owner exit without Dispose");
         }
         return "PASS: " + checks + " isolated-process assertions; only synthetic helper processes, no ViGEm load or driver/controller access.";
+    }
+    static void ParallelProcesses(string helper)
+    {
+        using (var first = new IsolatedOutput(helper, "route-a", 2000, 500))
+        using (var second = new IsolatedOutput(helper, "route-b", 2000, 500))
+        {
+            first.Connect(); second.Connect();
+            int? firstPid = first.HostProcessId, secondPid = second.HostProcessId;
+            Check(firstPid.HasValue && secondPid.HasValue && firstPid != secondPid, "Concurrent outputs own distinct child processes");
+            first.Submit(new ControllerFrame { Buttons = 0x1000, LeftTrigger = .2, LeftX = 1 });
+            second.Submit(new ControllerFrame { Buttons = 0x2000, RightTrigger = .8, RightY = -1 });
+            Check(first.IsConnected && second.IsConnected, "Both children accept only their own independent golden button/axis packets");
+            long secondCommands = second.AcknowledgedCommands;
+            first.Dispose(); Gone(firstPid, "Disposing one output removes its own child");
+            Check(second.IsConnected && second.HostProcessId == secondPid && !Exited(secondPid), "Disposing the first private job preserves its live peer");
+            second.Submit(new ControllerFrame { Buttons = 0x2000, RightTrigger = .8, RightY = 1 });
+            Check(second.AcknowledgedCommands == secondCommands + 1, "Surviving peer acknowledges fresh output after the other job is disposed");
+            second.Dispose(); Gone(secondPid, "Second child is removed only by its own disposal");
+        }
+        using (var failing = new IsolatedOutput(helper, "crash", 2000, 500))
+        using (var healthy = new IsolatedOutput(helper, "route-b", 2000, 500))
+        {
+            failing.Connect(); healthy.Connect();
+            int? failedPid = failing.HostProcessId, healthyPid = healthy.HostProcessId;
+            healthy.Submit(new ControllerFrame { Buttons = 0x2000, RightTrigger = .8, RightY = -1 });
+            long healthyCommands = healthy.AcknowledgedCommands;
+            Reject(delegate { failing.Submit(new ControllerFrame { LeftX = 1 }); }, "One concurrent child's crash remains visible to its owner");
+            Gone(failedPid, "Crashed child cleanup finishes independently");
+            Check(healthy.IsConnected && healthy.HostProcessId == healthyPid && !Exited(healthyPid), "A peer crash cannot close another output's job or pipe");
+            healthy.Submit(new ControllerFrame { Buttons = 0x2000, RightTrigger = .8, RightY = 1 });
+            Check(healthy.AcknowledgedCommands == healthyCommands + 1, "Healthy peer keeps acknowledging its own packet after the other child crashes");
+            healthy.Dispose(); Gone(healthyPid, "Healthy peer still cleans up its own child normally");
+        }
     }
 }

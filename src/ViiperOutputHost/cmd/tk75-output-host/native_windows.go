@@ -150,20 +150,41 @@ type nativeAttachment struct {
 	closed          bool
 	probeExclusive  bool
 	attachAttempted bool
+	locationHash    uint32
+	hashLocation    func(string, uint16, string) (uint32, error)
+	listCapacity    int // guarded by gate after private attachment initialization
 }
 
 func attachNative(ctx context.Context, host string, service uint16, busID string, probeExclusive bool) (*nativeAttachment, error) {
+	serial, err := newNativeSerial()
+	if err != nil {
+		return nil, err
+	}
+	return attachNativeWithSerial(ctx, host, service, busID, serial, probeExclusive)
+}
+
+func newNativeSerial() (string, error) {
+	var random [7]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	return "T" + hex.EncodeToString(random[:]), nil
+}
+
+// The descriptor and driver attachment can share an identity generated before
+// either resource exists. Reject malformed serials before opening a transport.
+func attachNativeWithSerial(ctx context.Context, host string, service uint16, busID, serial string, probeExclusive bool) (*nativeAttachment, error) {
 	// Keep the transport boundary closed even if another future caller omits
 	// the earlier resource-free backend check.
-	if !probeExclusive || !nativeABIProbeCandidateReviewed {
-		return nil, errors.New("USB/IP attachment requires reviewed exclusive ownership")
+	if !nativeABIProbeCandidateReviewed {
+		return nil, errors.New("USB/IP attachment requires a reviewed native ABI candidate")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if host != "127.0.0.1" || service == 0 || !validNativeBusID(busID) {
+	if host != "127.0.0.1" || service == 0 || !validNativeBusID(busID) || !validNativeSerial(serial) {
 		return nil, fmt.Errorf("invalid private USB/IP location")
 	}
 	// Hash zero is the kernel's stop-all sentinel, including when all strings
@@ -172,11 +193,6 @@ func attachNative(ctx context.Context, host string, service uint16, busID string
 	if err != nil || hash == 0 {
 		return nil, fmt.Errorf("unsafe USB/IP location hash %d: %v", hash, err)
 	}
-	var random [7]byte
-	if _, err := rand.Read(random[:]); err != nil {
-		return nil, err
-	}
-	serial := "T" + hex.EncodeToString(random[:])
 	tr, err := openNativeTransport(ctx)
 	if err != nil {
 		return nil, err
@@ -189,16 +205,29 @@ func attachNativeTransport(ctx context.Context, host string, service uint16, bus
 }
 
 func attachNativeTransportWithPolicy(ctx context.Context, host string, service uint16, busID, serial string, tr nativeTransport, probeExclusive bool) (*nativeAttachment, error) {
-	a := &nativeAttachment{ownership: nativeOwnership{Host: host, Service: service, BusID: busID, Serial: serial}, transport: tr, gate: make(chan struct{}, 1), probeExclusive: probeExclusive}
+	return attachNativeTransportWithHasher(ctx, host, service, busID, serial, tr, probeExclusive, nativeLocationHash)
+}
+
+func attachNativeTransportWithHasher(ctx context.Context, host string, service uint16, busID, serial string, tr nativeTransport, probeExclusive bool, hashLocation func(string, uint16, string) (uint32, error)) (*nativeAttachment, error) {
+	a := &nativeAttachment{ownership: nativeOwnership{Host: host, Service: service, BusID: busID, Serial: serial}, transport: tr, gate: make(chan struct{}, 1), probeExclusive: probeExclusive, hashLocation: hashLocation}
 	a.gate <- struct{}{}
-	if probeExclusive {
-		items, err := a.list(ctx)
-		if err != nil {
-			return a, err
-		}
-		if len(items) != 0 {
-			return a, errors.New("exclusive Xbox mode requires an empty USB/IP controller; no attachment was requested")
-		}
+	if host != "127.0.0.1" || service == 0 || !validNativeBusID(busID) || !validNativeSerial(serial) || hashLocation == nil {
+		return a, errors.New("invalid private USB/IP ownership")
+	}
+	hash, err := hashLocation(host, service, busID)
+	if err != nil {
+		return a, fmt.Errorf("cannot calculate USB/IP location hash: %w", err)
+	}
+	if hash == 0 {
+		return a, errors.New("unsafe zero USB/IP location hash")
+	}
+	a.locationHash = hash
+	items, err := a.list(ctx)
+	if err != nil {
+		return a, err
+	}
+	if err = a.checkSnapshot(items, false, true); err != nil {
+		return a, err
 	}
 	in := make([]byte, 1120)
 	binary.LittleEndian.PutUint32(in, 1120)
@@ -260,13 +289,8 @@ func (a *nativeAttachment) Close(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, o := range items {
-		if a.probeExclusive && !a.sameIdentity(o) {
-			return errNativeOwnership
-		}
-		if o.Port == a.ownership.Port && !a.sameIdentity(o) {
-			return errNativeOwnership
-		}
+	if err = a.checkSnapshot(items, false, false); err != nil {
+		return err
 	}
 	for _, o := range items {
 		if !a.sameIdentity(o) {
@@ -275,24 +299,22 @@ func (a *nativeAttachment) Close(ctx context.Context) error {
 		if o.Port <= 0 {
 			return errNativeOwnership
 		}
-		if a.probeExclusive {
-			// Recheck immediately before the mutation; do not use a stale port
-			// list across more than one detach. The kernel's final list-to-port
-			// race still requires the documented no-concurrent-users probe.
-			current, err := a.list(ctx)
-			if err != nil {
-				return err
-			}
-			matched := false
-			for _, now := range current {
-				if !a.sameIdentity(now) {
-					return errNativeOwnership
-				}
-				matched = matched || now == o
-			}
-			if !matched {
-				return errNativeOwnership
-			}
+		// Always recheck the complete exact identity immediately before detach,
+		// including in multi-controller mode. Cooperating helpers hold the
+		// lifecycle mutex; an unrelated native client's final race still exists.
+		current, err := a.list(ctx)
+		if err != nil {
+			return err
+		}
+		if err = a.checkSnapshot(current, true, false); err != nil {
+			return err
+		}
+		matched := false
+		for _, now := range current {
+			matched = matched || now == o
+		}
+		if !matched {
+			return errNativeOwnership
 		}
 		in := make([]byte, 8)
 		binary.LittleEndian.PutUint32(in, 8)
@@ -339,17 +361,7 @@ func (a *nativeAttachment) Alive(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, o := range items {
-		if a.probeExclusive && !a.sameIdentity(o) {
-			return errNativeOwnership
-		}
-	}
-	for _, o := range items {
-		if a.sameIdentity(o) && o.Port > 0 {
-			return nil
-		}
-	}
-	return errors.New("owned USB/IP attachment is absent")
+	return a.checkSnapshot(items, true, false)
 }
 
 func (a *nativeAttachment) lock(ctx context.Context) error {
@@ -364,6 +376,45 @@ func (a *nativeAttachment) unlock() { a.gate <- struct{}{} }
 func (a *nativeAttachment) sameIdentity(o nativeOwnership) bool {
 	return o.Host == a.ownership.Host && o.Service == a.ownership.Service && o.BusID == a.ownership.BusID && o.Serial == a.ownership.Serial && validNativeSerial(o.Serial)
 }
+
+// An unrelated import is allowed, but never an occupied/reused owned port,
+// duplicate own identity, or another location sharing the kernel's STOP hash.
+// beforeAttach prevents a duplicate request even when its serial also matches.
+func (a *nativeAttachment) checkSnapshot(items []nativeOwnership, requireOwn, beforeAttach bool) error {
+	if a.locationHash == 0 || a.hashLocation == nil {
+		return errors.New("USB/IP location hash was not validated")
+	}
+	owned := 0
+	for _, other := range items {
+		if other.Port <= 0 {
+			return errors.New("USB/IP list contains an invalid port")
+		}
+		if a.sameIdentity(other) {
+			owned++
+			if beforeAttach || (a.ownership.Port > 0 && other.Port != a.ownership.Port) {
+				return errNativeOwnership
+			}
+			continue
+		}
+		if a.probeExclusive || (a.ownership.Port > 0 && other.Port == a.ownership.Port) {
+			return errNativeOwnership
+		}
+		hash, err := a.hashLocation(other.Host, other.Service, other.BusID)
+		if err != nil {
+			return fmt.Errorf("cannot verify other USB/IP location hash: %w", err)
+		}
+		if hash == a.locationHash {
+			return errors.New("USB/IP location hash collides with another import; no native mutation is permitted")
+		}
+	}
+	if owned > 1 {
+		return errors.New("own USB/IP identity is not uniquely present")
+	}
+	if requireOwn && owned != 1 {
+		return errors.New("owned USB/IP attachment is absent")
+	}
+	return nil
+}
 func putNativeLocation(dst []byte, o nativeOwnership) {
 	copy(dst[4:36], o.BusID)
 	copy(dst[36:68], strconv.FormatUint(uint64(o.Service), 10))
@@ -374,16 +425,12 @@ func (a *nativeAttachment) stopOwn(ctx context.Context) error {
 	if a.ownership.Host != "127.0.0.1" || a.ownership.Service == 0 || !validNativeBusID(a.ownership.BusID) {
 		return errors.New("refusing incomplete STOP location")
 	}
-	if a.probeExclusive {
-		items, err := a.list(ctx)
-		if err != nil {
-			return err
-		}
-		for _, o := range items {
-			if !a.sameIdentity(o) {
-				return errNativeOwnership
-			}
-		}
+	items, err := a.list(ctx)
+	if err != nil {
+		return err
+	}
+	if err = a.checkSnapshot(items, false, false); err != nil {
+		return err
 	}
 	in := make([]byte, 1104)
 	binary.LittleEndian.PutUint32(in, 1104)
@@ -399,17 +446,41 @@ func (a *nativeAttachment) stopOwn(ctx context.Context) error {
 }
 
 func (a *nativeAttachment) list(ctx context.Context) ([]nativeOwnership, error) {
-	// The current driver has at most 255 ports. A fixed bounded buffer avoids
-	// retries or untrusted length-driven allocations during ownership checks.
+	// Keep every ownership observation fresh. Retain only a buffer capacity,
+	// never device data, and grow only for the driver's exact too-small error.
+	// Four slots use 4,516 bytes rather than allocating 287,644 every FRAME.
+	capacity := a.listCapacity
+	if capacity < 4 {
+		capacity = 4
+	}
+	if capacity > 255 {
+		return nil, errors.New("invalid USB/IP list capacity")
+	}
 	in := make([]byte, 4)
 	binary.LittleEndian.PutUint32(in, 1132)
-	out, err := a.transport.call(ctx, nativeIOCTLList, in, 4+255*1128)
-	if err != nil {
-		return nil, fmt.Errorf("list USB/IP ownership: %w", err)
+	var out []byte
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		var err error
+		out, err = a.transport.call(ctx, nativeIOCTLList, in, 4+capacity*1128)
+		if errors.Is(err, windows.ERROR_INSUFFICIENT_BUFFER) && capacity < 255 {
+			capacity *= 2
+			if capacity > 255 {
+				capacity = 255
+			}
+			continue // same caller context/deadline, at most seven attempts
+		}
+		if err != nil {
+			return nil, fmt.Errorf("list USB/IP ownership: %w", err)
+		}
+		break
 	}
-	if len(out) < 4 || (len(out)-4)%1128 != 0 {
+	if len(out) < 4 || len(out) > 4+capacity*1128 || (len(out)-4)%1128 != 0 {
 		return nil, errors.New("invalid imported-device response length")
 	}
+	a.listCapacity = capacity
 	var items []nativeOwnership
 	for off := 4; off < len(out); off += 1128 {
 		b := out[off : off+1128]
@@ -586,6 +657,9 @@ func (a *nativeAttachment) HIDIdentity(ctx context.Context) (ownedHIDIdentity, e
 	if err != nil {
 		return ownedHIDIdentity{}, err
 	}
+	if err = a.checkSnapshot(items, true, false); err != nil {
+		return ownedHIDIdentity{}, err
+	}
 	count := 0
 	for _, item := range items {
 		if item.Port == a.ownership.Port && !a.sameIdentity(item) {
@@ -601,7 +675,7 @@ func (a *nativeAttachment) HIDIdentity(ctx context.Context) (ownedHIDIdentity, e
 	if count != 1 {
 		return ownedHIDIdentity{}, errors.New("own attachment identity is not uniquely present")
 	}
-	return ownedHIDIdentity{ControllerID: source.ControllerIdentity(), Serial: a.ownership.Serial}, nil
+	return ownedHIDIdentity{ControllerID: source.ControllerIdentity(), Serial: a.ownership.Serial, Port: a.ownership.Port}, nil
 }
 
 func (t *nativeWindowsTransport) idle(ctx context.Context) error {

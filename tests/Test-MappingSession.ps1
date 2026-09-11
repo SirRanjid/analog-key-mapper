@@ -18,6 +18,7 @@ $typeArguments = @{ Path = @(
     (Join-Path $workspace 'src\Output\OutputHost.cs'),
     (Join-Path $workspace 'src\Output\IsolatedOutput.cs'),
     (Join-Path $workspace 'src\App\MappingSession.cs'),
+    (Join-Path $workspace 'src\App\ControllerRelease.cs'),
     (Join-Path $PSScriptRoot 'MappingSessionHarness.cs')
 ) }
 if ($PSVersionTable.PSEdition -eq 'Desktop') { $typeArguments.ReferencedAssemblies = @('System.Runtime.Serialization.dll', 'System.Xml.dll', 'System.Core.dll') }

@@ -8,8 +8,8 @@ Choose a package from [Releases](https://github.com/SirRanjid/analog-key-mapper/
 
 | Package | Contents |
 | --- | --- |
-| `AnalogKeyMapper-0.1.0-preview.1-windows-x64.zip` | The unsigned Windows app, keyboard monitor, diagnostic tool and Xbox output helper, plus licenses and checksum verification scripts. No compiler is required to open the editor. |
-| `AnalogKeyMapper-0.1.0-preview.1-source.zip` | Complete application and controller-helper sources, vendored Go dependencies, build scripts, tests, documentation, licenses and checksum verification scripts. |
+| `AnalogKeyMapper-0.1.0-preview.2-windows-x64.zip` | The unsigned Windows app, keyboard monitor, diagnostic tool and Xbox/DualSense output helper, plus licenses and checksum verification scripts. No compiler is required to open the editor. |
+| `AnalogKeyMapper-0.1.0-preview.2-source.zip` | Complete application and controller-helper sources, vendored Go dependencies, build scripts, tests, documentation, licenses and checksum verification scripts. |
 
 Both ZIPs contain an `AnalogKeyMapper` folder and `SHA256SUMS.txt`. Neither includes a driver installer, personal profiles or private device captures. Source test fixtures include sanitized sample pressure reports, with their provenance documented separately.
 
@@ -39,8 +39,8 @@ This checks the files listed in the selected package folder's `SHA256SUMS.txt`. 
 The release also provides a separate `SHA256SUMS.txt` for the two ZIP downloads. Compare those entries with the ZIP hashes from PowerShell before extraction if you want to check the archives themselves:
 
 ```powershell
-Get-FileHash .\AnalogKeyMapper-0.1.0-preview.1-windows-x64.zip -Algorithm SHA256
-Get-FileHash .\AnalogKeyMapper-0.1.0-preview.1-source.zip -Algorithm SHA256
+Get-FileHash .\AnalogKeyMapper-0.1.0-preview.2-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\AnalogKeyMapper-0.1.0-preview.2-source.zip -Algorithm SHA256
 ```
 
 Checksums detect file changes. They are not a code signature or independent proof of the publisher's identity when the files and manifest come from the same download.
@@ -58,7 +58,7 @@ This compiles `bin/AnalogKeyMapper.exe`, `bin/Tk75Monitor.exe` and `bin/Tk75Diag
 | BAT option | Effect |
 | --- | --- |
 | No options | Local app build with `-AllowUnsignedMonitor`. |
-| `--with-controller` | Also build the optional Xbox output helper with Go. |
+| `--with-controller` | Also build the Xbox/DualSense output helper with Go. |
 | `--strict` | Omit the local unsigned-monitor option. Live keyboard access then requires a valid signed helper. |
 | `--no-pause` | Exit without waiting for a key, for terminal or scripted use. |
 
@@ -80,13 +80,15 @@ After a successful build, run `bin\AnalogKeyMapper.exe`. Close the app and its k
 .\Build.ps1 -OutputDirectory build\review -AllowUnsignedMonitor
 ```
 
-## Optional Xbox controller output
+<a id="optional-xbox-controller-output"></a>
 
-The keyboard interface and mapping editor can be built without the virtual-controller dependencies. To enable the current experimental Xbox backend:
+## Virtual controller output
+
+The keyboard interface and mapping editor can be built without the virtual-controller dependencies. Xbox 360 and DualSense output share the following setup:
 
 1. The **Windows package already includes `ViiperOutputHost.exe`**. For a source build, install a suitable [Go toolchain](https://go.dev/dl/), then run `Build.bat --with-controller`. This builds the bundled output-helper source into `bin/ViiperOutputHost.exe`. The source package includes its pinned module dependencies for an offline build; Go itself must be installed separately.
 2. Obtain **usbip-win2 0.9.8.0 x64** from its [official release](https://github.com/vadimgrn/usbip-win2/releases/tag/v.0.9.8.0). Follow the project's official installation instructions and complete any requested restart. The driver is separate from both packages and requires administrator installation. Its installer may briefly restart connected USB devices.
-3. Keep `ViiperOutputHost.exe` and its license/source notices with the app. Start the mapper normally, choose an Xbox slot, then use its USB connector to connect it.
+3. Keep `ViiperOutputHost.exe` and its license/source notices with the app. Start the mapper normally, create Xbox and/or DualSense slots, then use each slot's USB connector to connect it.
 
 To select a Go executable directly:
 
@@ -96,7 +98,9 @@ To select a Go executable directly:
 
 The helper source is derived from VIIPER v0.7.0, commit `6b71b148a2243fab77ee1a46f4e22e00bd7d5a04`. See [its source notice](../src/ViiperOutputHost/NOTICE.md) for the origin and licenses. The helper build does not install USB/IP or create a controller.
 
-Only **one Xbox controller may be connected at a time**. The current backend also expects exclusive use of its USB/IP session. DualSense output is not enabled, and installing ViGEm does not enable the active Xbox path. The tested dependency versions do not establish compatibility with arbitrary other driver versions or configurations. See [status and limits](status.md).
+The application offers **32 output slots in total**, which can mix Xbox and DualSense. Windows provides at most **four XInput slots**, including physical controllers; DualSense devices use HID separately and do not occupy XInput slots. A preceding helper build passed real-device acceptance with **two Xbox plus two DualSense outputs**. The latest optimized helper compiled and passed package tests, but Windows application control blocked its live test on the development machine. Larger configurations remain to be load-tested. See [the acceptance record](multi-controller-acceptance.md) and [known issue](status.md#current-known-issue).
+
+Each connected slot owns its own isolated helper and USB/IP attachment. Connecting or disconnecting one does not intentionally alter other slots or unrelated devices. Installing ViGEm does not enable this backend. The tested dependency versions do not establish compatibility with arbitrary other driver versions, games or PS5 consoles; see [status and limits](status.md).
 
 ## Verify your local build
 
@@ -119,7 +123,11 @@ The source package's root manifest describes the distributed sources; the Window
 .\tests\Test-AppUi.ps1 -KeepArtifacts
 .\tests\Test-VisualKeyboard.ps1
 .\tests\Test-RgbLifecycle.ps1 -KeepArtifacts
+.\tests\Test-MultiControllerSession.ps1
+.\tests\Test-MappingSession.ps1
+.\tests\Test-MultiMappingIntegration.ps1
+.\tests\Test-IsolatedOutput.ps1
 .\Test-All.ps1
 ```
 
-Tests cover pure calculations, synthetic input sources, Windows calls and offscreen UI controls. They do not install a driver or create a real virtual controller. Windows desktop support is required for the UI suites. Record failed or blocked suites accurately; see [the recorded validation and its limits](status.md).
+These ordinary suites cover pure calculations, synthetic input sources, synthetic helper processes, Windows calls and offscreen UI controls. They do not install a driver or create a real virtual controller. Separate opt-in live acceptance tests create actual devices and are excluded from the offline GitHub workflow. Windows desktop support is required for the UI suites. Record failed or blocked suites accurately; see [the recorded validation and its limits](status.md).

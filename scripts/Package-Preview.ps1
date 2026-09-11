@@ -1,9 +1,9 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([string] $Version = '0.1.0-preview.1')
+param([string] $Version = '0.1.0-preview.2')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-if ($Version -notmatch '^\d+\.\d+\.\d+-preview\.\d+$') { throw 'Use a preview version such as 0.1.0-preview.1.' }
+if ($Version -notmatch '^\d+\.\d+\.\d+-preview\.\d+$') { throw 'Use a preview version such as 0.1.0-preview.2.' }
 $packageRoot = Split-Path -Parent $PSScriptRoot
 $packageBin = Join-Path $packageRoot 'bin'
 & (Join-Path $PSScriptRoot 'Verify-Checksums.ps1') -Directory $packageRoot
@@ -38,14 +38,23 @@ Analog Key Mapper $Version - Windows x64 development preview
 2. Run Verify-Checksums.bat to check the included files.
 3. Open AnalogKeyMapper.exe and connect a supported TK75 TMR by USB.
 
-Experimental Xbox output additionally requires the separate usbip-win2 driver.
+Xbox and DualSense output additionally require the separate usbip-win2 driver.
 Setup: https://github.com/SirRanjid/analog-key-mapper/blob/main/docs/building.md
 Guide: https://github.com/SirRanjid/analog-key-mapper/blob/main/docs/user-guide.md
+Status: https://github.com/SirRanjid/analog-key-mapper/blob/main/docs/status.md
 
 This preview is unsigned. Windows may block it; no protection-policy changes
 are required or recommended. The local build accepts an unsigned keyboard helper.
-Only one experimental Xbox controller is currently supported. DualSense output
-is disabled. Keep data/ when updating, and close the mapper before replacing it.
+Profiles offer 32 output slots, freely assigned to Xbox or DualSense. Windows
+allows at most four XInput controllers, including physical ones. DualSense uses
+HID separately and does not consume those XInput slots. An earlier helper build
+passed real-device acceptance with two Xbox plus two DualSense outputs.
+Windows application control blocked the latest optimized helper on the
+development machine; this exact executable has not completed live validation.
+Larger configurations have not yet been load-tested. See the status link above.
+Common buttons, triggers and sticks are supported. No PS5-console, touchpad,
+motion-sensor or other DualSense-extra compatibility is guaranteed.
+Keep data/ when updating, and close the mapper before replacing it.
 
 Original code: MIT. The included VIIPER-based helper: GPL v3 or later.
 Complete corresponding source and build scripts are provided alongside this

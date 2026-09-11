@@ -35,6 +35,19 @@ public static class FakeOutputHost
                 using (var forever = new ManualResetEvent(false)) forever.WaitOne();
             if (command == "FRAME")
             {
+                if (mode == "route-a" || mode == "route-b")
+                {
+                    // Deliberately different golden routes identify crossed pipes
+                    // or packets; neither child merely acknowledges arbitrary data.
+                    bool valid = fields.Length == 10 && (mode == "route-a"
+                        ? fields[3] == "4096" && fields[4] == "51" && fields[5] == "0" && fields[6] == "32767" && fields[7] == "0" && fields[8] == "0" && fields[9] == "0"
+                        : fields[3] == "8192" && fields[4] == "0" && fields[5] == "204" && fields[6] == "0" && fields[7] == "0" && fields[8] == "0" && (fields[9] == "-32768" || fields[9] == "32767"));
+                    if (!valid)
+                    {
+                        Console.WriteLine("TK75OUT/1 " + id + " ERROR " + Convert.ToBase64String(Encoding.UTF8.GetBytes("Frame reached the wrong synthetic route")));
+                        Console.Out.Flush(); continue;
+                    }
+                }
                 if (mode == "crash") return 33;
                 if (mode == "malformed") { Console.WriteLine("not an acknowledgement"); Console.Out.Flush(); continue; }
                 if (mode == "oversized") { Console.WriteLine(new string('a', 5000)); Console.Out.Flush(); continue; }

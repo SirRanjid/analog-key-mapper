@@ -14,6 +14,7 @@ Add-Type -Path @(
     (Join-Path $taskCore 'BezierCurve.cs'), (Join-Path $taskCore 'MappingEngine.cs'), (Join-Path $taskCore 'ProfileJson.cs'),
     (Join-Path $taskCore 'MappingAssignments.cs'), (Join-Path $taskCore 'ControllerRouting.cs'),
     (Join-Path $taskWorkspace 'src\App\MultiControllerSession.cs'),
+    (Join-Path $taskWorkspace 'src\App\ControllerRelease.cs'),
     (Join-Path $PSScriptRoot 'MultiControllerSessionHarness.cs')
 )
 [MultiControllerSessionHarness]::Run()

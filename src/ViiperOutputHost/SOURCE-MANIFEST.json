@@ -7,52 +7,97 @@
     {
       "Path": "cmd/tk75-output-host/backend_windows.go",
       "Origin": "Analog Key Mapper adapter",
-      "SHA256": "fdc1adfa261ec0ef7693ba46c7bf62c69658d35c7d8ffef2caeee06563e88317"
+      "SHA256": "c78aabef22d365fa286e33ecf9f9b078018f8083204b903e5fcfb0687bd0f125"
     },
     {
       "Path": "cmd/tk75-output-host/dualsense_backend_windows.go",
       "Origin": "Analog Key Mapper adapter",
-      "SHA256": "ea19d0375f39190cf98d52fc0c47fd0f616ad08acc9054b30cabf8ed3c6bff84"
+      "SHA256": "91264beb1365626f1f3fbde80d41040a35458b1e2ae60229d093d61c7683a1d2"
     },
     {
       "Path": "cmd/tk75-output-host/dualsense_hid_windows.go",
       "Origin": "Analog Key Mapper adapter",
-      "SHA256": "fbfe4b7c4122b55ead6e8e3b838044c1ca2f51401cc462503d2b7fda54465391"
+      "SHA256": "3d2553da8cfd94315f70b02a4052ea55f8edbb9bff050f43563d6170c0fe07c8"
+    },
+    {
+      "Path": "cmd/tk75-output-host/dualsense_pad_windows_test.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "b98c0c1dd002a30e26a95e41d6b7c2f1172c016bd1bcca629b5c4d199e8d2265"
     },
     {
       "Path": "cmd/tk75-output-host/dualsense_windows.go",
       "Origin": "Analog Key Mapper adapter",
-      "SHA256": "6abaa0c0402246ccdb6964baa45e16b3ddef5f25371f308ce53a1a16162c465b"
+      "SHA256": "4df73200690c6372a1622f47f986e9f099ff3a56e3ce17fa8c67eefc8d574c3e"
     },
     {
       "Path": "cmd/tk75-output-host/host_test.go",
       "Origin": "Analog Key Mapper adapter",
-      "SHA256": "ec8bea7af508c3d9ea8ba2157574083e47e11352f691704ead0b48db2cc3a81c"
+      "SHA256": "cc0b2b89bde894ed557f559bf12db079a65e6daba1c1b29cb62580dd28fe3215"
     },
     {
       "Path": "cmd/tk75-output-host/host.go",
       "Origin": "Analog Key Mapper adapter",
-      "SHA256": "ede5274ecbc9a3778976c0074b4ece226e140acaafdbe2dc0af5eb28883611b0"
+      "SHA256": "663b4eeb3ba645182051a4b5560f2438bd6be384834122b80ed536c5f79d6ed7"
+    },
+    {
+      "Path": "cmd/tk75-output-host/lifecycle_windows_test.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "d2e6da3d5e7fa9febfa19584db37d7e15e5b93da75cc19236ee2d3c0907bdf4c"
+    },
+    {
+      "Path": "cmd/tk75-output-host/lifecycle_windows.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "b3456f20a308e7519696aedf79a5fe85b1260c25aaf63561390d7f3785a5472a"
+    },
+    {
+      "Path": "cmd/tk75-output-host/live_acceptance_windows_test.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "466807df14e8c5257462efd71e3e5d21cc543d570471ba288ba525363f1320f7"
     },
     {
       "Path": "cmd/tk75-output-host/main.go",
       "Origin": "Analog Key Mapper adapter",
-      "SHA256": "a54cbb12458f222cf7a619d7d009eb60ff5bebd9fbfde67bb37ad1230816981b"
+      "SHA256": "f6ca1925d3a800dbb662ccd90d39bad2bcc88947d1c983265d2938668ede61b3"
+    },
+    {
+      "Path": "cmd/tk75-output-host/multicontroller_windows_test.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "b7e788e8f0c722b18264266bd334cddecdf8872d0bacd3a2db7663a74b3bb0d3"
+    },
+    {
+      "Path": "cmd/tk75-output-host/native_list_windows_test.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "5e44770fbeaf159994dbdd50fa97188199ecd1cb37b11d19d05772b2e3d06ca3"
     },
     {
       "Path": "cmd/tk75-output-host/native_windows_test.go",
       "Origin": "Analog Key Mapper adapter",
-      "SHA256": "db2269e11353d11ae8b6402fa436e13186d1de0a055e841a61d7735bd5b08614"
+      "SHA256": "39f2e11febbe6256f92291e9a894f644fcaefa26e7e3329479ef6d590dffe091"
     },
     {
       "Path": "cmd/tk75-output-host/native_windows.go",
       "Origin": "Analog Key Mapper adapter",
-      "SHA256": "062232d71588b72237ebe7cbd944fed71920ebbd2533fafedc5debe56d0cdd6e"
+      "SHA256": "f0fc5de49830351231f5fc9f3f94e1cd2ed4aeb8a3da88927cfec4f514d35b0e"
+    },
+    {
+      "Path": "cmd/tk75-output-host/pad_pacer_windows_test.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "af0e033f70bdcc89cf2cc62b12aaa57657340541254ec1c27a1da10078c06eb0"
     },
     {
       "Path": "cmd/tk75-output-host/pad_test.go",
       "Origin": "Analog Key Mapper adapter",
       "SHA256": "b87196deb06c21ad7228d9d8d971c3f64f5f00849de5534877f3db3048fa4511"
+    },
+    {
+      "Path": "cmd/tk75-output-host/report_pacer_test.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "e6cda90afe08be7ca5adc4470ddd6fecf7107d4bd0e4b93b688215468bcda492"
+    },
+    {
+      "Path": "cmd/tk75-output-host/report_pacer.go",
+      "Origin": "Analog Key Mapper adapter",
+      "SHA256": "a5a7834cf994d8e4d3269740bc07bb5dd8c7edacdd8ca750fce989a473b49db7"
     },
     {
       "Path": "device/context.go",

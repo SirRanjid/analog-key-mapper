@@ -484,6 +484,7 @@ namespace Tk75.App
             Pair("Gegentasten müssen gegenseitig mit derselben Vorrangregel verbunden sein.", "Opposite keys must point to each other and share one priority rule."),
             Pair("Eine Gegentaste muss eine andere gültige physische Taste sein.", "The opposite key must be a different valid physical key."),
             Pair("Für dieses Reportformat fehlt ein bestätigter Adapter. Das Diagnoseprogramm kann Rohreports aufzeichnen.", "No validated adapter is available for this input format. The diagnostic tool can record raw reports."),
+            Pair("Das Controller-Ausgabeprogramm fehlt. Bitte die App vollständig aktualisieren.", "The controller output helper is missing. Please update the complete application."),
             Pair("PS5-Ausgabe noch nicht bereit: Der DualSense-Ausgabeweg benötigt den freigegebenen USB/IP-Treiber und einen bestandenen Windows-HID-Start-/Abschalttest.", "PS5 output is not ready: the DualSense output path needs the approved USB/IP driver and a passed Windows HID startup/shutdown test."),
             Pair("¹ mm: lineare Schätzung aus selbst gemessenem Gesamthub. Alte/fehlende Werte erzeugen keine Controller-Ausgabe.", "¹ mm: a linear estimate based on the travel you measured. Stale or missing values produce no controller output.")
         };

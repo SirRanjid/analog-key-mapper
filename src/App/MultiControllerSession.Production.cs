@@ -30,6 +30,7 @@ namespace Tk75.App
             public void Enable() { inner.Enable(); }
             public void SetKeyboardMode(bool value) { inner.SetKeyboardMode(value); }
             public void Disable(string reason) { inner.Disable(reason); }
+            public ControllerRelease PrepareDisable(string reason) { return inner.PrepareDisable(reason); }
             public void Dispose() { inner.Dispose(); }
         }
     }

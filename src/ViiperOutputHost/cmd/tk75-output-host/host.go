@@ -23,10 +23,10 @@ type packet struct {
 	LX, LY, RX, RY int16
 }
 
-// Input freedom never disables native ownership checks. In particular, an
-// accepted neutral probe does not allow a non-exclusive/multi-controller run.
-func xboxAttachmentAllowed(neutralOnly, exclusiveOwnership, reviewedABI, runtimeAccepted bool) bool {
-	return exclusiveOwnership && reviewedABI && (neutralOnly || runtimeAccepted)
+// Input freedom never disables native ownership checks. Every attachment must
+// hold the cooperating helpers' lifecycle mutex and use the reviewed ABI path.
+func xboxAttachmentAllowed(neutralOnly, lifecycleOwnership, reviewedABI, runtimeAccepted bool) bool {
+	return lifecycleOwnership && reviewedABI && (neutralOnly || runtimeAccepted)
 }
 
 // Independent byte conversion only: no VIIPER import, device, DLL or transport.
@@ -122,13 +122,18 @@ func dualSenseReportAfter(report []byte, before uint32) bool {
 	return len(report) == 64 && report[0] == 1 && int32(binary.LittleEndian.Uint32(report[28:32])-before) > 0
 }
 
-// Pure ownership predicate. The chain is collected from Windows devnodes, never
-// parsed out of a symbolic interface path. USB serial equality alone is not
-// enough: the exact controller opened for this attachment must be its ancestor.
-type ownedHIDIdentity struct{ ControllerID, Serial string }
+// Pure topology predicate over actual Windows devnodes, never a symbolic path.
+// The native LIST separately proves the serial/location/port; the HID collector
+// compares this port with CM_DRP_ADDRESS on the USB device immediately below the
+// opened controller's root hub. A port-derived Windows instance ID is valid.
+type ownedHIDIdentity struct {
+	ControllerID, Serial string
+	Port                 int32
+}
 
 func (o ownedHIDIdentity) matchesAncestors(chain []string) bool {
-	if o.ControllerID == "" || len(o.Serial) != 15 || len(chain) < 3 {
+	if o.ControllerID == "" || len(o.Serial) != 15 || o.Port < 1 || o.Port > 255 || len(chain) < 4 ||
+		!strings.HasPrefix(strings.ToUpper(chain[0]), `HID\`) || len(chain[0]) <= 4 {
 		return false
 	}
 	for _, c := range o.Serial {
@@ -136,16 +141,28 @@ func (o ownedHIDIdentity) matchesAncestors(chain []string) bool {
 			return false
 		}
 	}
-	wantedUSB := "USB\\VID_054C&PID_0CE6\\" + o.Serial
-	usbFound := false
-	for _, id := range chain {
-		if strings.EqualFold(id, wantedUSB) {
-			usbFound = true
+	const usbPrefix = `USB\VID_054C&PID_0CE6\`
+	for i := 1; i+2 < len(chain); i++ {
+		id := strings.ToUpper(chain[i])
+		if !strings.HasPrefix(id, usbPrefix) {
 			continue
 		}
-		if strings.EqualFold(id, o.ControllerID) {
-			return usbFound
+		if len(id) == len(usbPrefix) || strings.Contains(id[len(usbPrefix):], `\`) ||
+			!strings.EqualFold(chain[i+2], o.ControllerID) {
+			return false
 		}
+		hub := strings.Split(strings.ToUpper(chain[i+1]), `\`)
+		if len(hub) != 3 || hub[0] != "USB" || !strings.HasPrefix(hub[1], "ROOT_HUB") || hub[2] == "" {
+			return false
+		}
+		// Windows uses ROOT_HUB and versioned ROOT_HUB20/ROOT_HUB30 IDs.
+		// A lookalike external hub or arbitrary suffix is not a root hub.
+		for _, c := range strings.TrimPrefix(hub[1], "ROOT_HUB") {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Tk75.Mapping;
 
 namespace Tk75.App
@@ -17,6 +18,7 @@ namespace Tk75.App
         void SetKeyboardMode(bool value);
         void Enable();
         void Disable(string reason);
+        ControllerRelease PrepareDisable(string reason);
     }
 
     public sealed partial class MultiControllerSession : IDisposable
@@ -37,6 +39,12 @@ namespace Tk75.App
             public IControllerSession Session;
             public string Failure;
             public int[] ActiveKeys;
+        }
+        sealed class PendingRelease
+        {
+            public Slot Slot;
+            public ControllerRelease Release;
+            public Exception Error;
         }
         public MultiControllerSession(Func<IControllerSession> factory) : this(factory, MaximumConnectedXboxControllers) { }
         public MultiControllerSession(Func<IControllerSession> factory, int maximumXboxControllers)
@@ -306,11 +314,42 @@ namespace Tk75.App
         { lock (gate) { if (!disposed) DisableLocked(reason); } }
         void DisableLocked(string reason)
         {
-            Exception first = null;
+            var pending = new List<PendingRelease>();
             foreach (Slot slot in slots.Values)
                 if (slot.Failure == null)
-                    try { slot.Session.Disable(reason); } catch (Exception ex) { if (first == null) first = ex; FailSlot(slot, ex); }
+                {
+                    var item = new PendingRelease { Slot = slot }; pending.Add(item);
+                    try { item.Release = slot.Session.PrepareDisable(reason); } catch (Exception ex) { item.Error = ex; }
+                }
+            // Every worker has relinquished its output before any removal starts.
+            // Neutral itself can enter a backend's slow failure cleanup, so each
+            // owned output gets an independent stop attempt without a thread-pool
+            // queue. At most the profile's 32 slots participate in this rare path.
+            ReleasePhase(pending, true);
+            ReleasePhase(pending, false);
+            Exception first = null;
+            foreach (PendingRelease item in pending)
+                if (item.Error != null) { if (first == null) first = item.Error; FailSlot(item.Slot, item.Error); }
             if (first != null) throw new InvalidOperationException("Controller konnten nicht vollständig getrennt werden.", first);
+        }
+        static void ReleasePhase(List<PendingRelease> pending, bool neutral)
+        {
+            var workers = new List<Thread>();
+            var fallback = new List<ThreadStart>();
+            foreach (PendingRelease item in pending)
+            {
+                if (item.Release == null) continue;
+                PendingRelease current = item;
+                ThreadStart action = delegate {
+                    try { if (neutral) current.Release.Neutral(); else current.Release.Dispose(); }
+                    catch (Exception error) { if (current.Error == null) current.Error = error; }
+                };
+                var worker = new Thread(action) { IsBackground = true, Name = neutral ? "Controller neutral" : "Controller removal" };
+                try { worker.Start(); workers.Add(worker); }
+                catch (Exception) { fallback.Add(action); }
+            }
+            foreach (ThreadStart action in fallback) action();
+            foreach (Thread worker in workers) worker.Join();
         }
         Slot Selected()
         {
@@ -332,6 +371,7 @@ namespace Tk75.App
             {
                 if (disposed) return;
                 disposed = true; inputSource = null;
+                try { DisableLocked("Anwendung beendet"); } catch (Exception) { }
                 foreach (Slot slot in slots.Values) QuietClose(slot.Session);
                 slots.Clear();
             }

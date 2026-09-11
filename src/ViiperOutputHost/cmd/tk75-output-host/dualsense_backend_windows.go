@@ -19,9 +19,12 @@ import (
 	"github.com/Alia5/VIIPER/virtualbus"
 )
 
-// Full source implementation, NOT an accepted live backend. The normal factory
-// stays gated. The explicit probe factory additionally rejects nonneutral input
-// and cannot start until the separate native ABI gate has been verified.
+// Each backend owns one attachment and HID interface. Only device creation and
+// removal share the native lifecycle lock; live input remains independent.
+// Recorded 2026-09-11: real owned HID neutral startup/reset/removal and mixed
+// 2 Xbox + 2 DualSense button/axis isolation; see docs/multi-controller-acceptance.md.
+const dualSenseRuntimeAcceptanceRecorded = true
+
 type dualSenseUSBBackend struct {
 	mu                sync.Mutex
 	pad               *dualSensePad
@@ -45,9 +48,9 @@ func newDualSenseProbeBackend() outputBackend {
 	return &dualSenseUSBBackend{neutralOnly: true, cleanupDone: make(chan struct{})}
 }
 
-func (b *dualSenseUSBBackend) Connect(ctx context.Context) error {
-	if !nativeABILayoutVerified {
-		return errors.New("DualSense probe cannot start: usbip-win2 native ABI layout has not been independently verified. No listener or attachment was created.")
+func (b *dualSenseUSBBackend) Connect(ctx context.Context) (result error) {
+	if !nativeABIProbeCandidateReviewed || (!b.neutralOnly && !dualSenseRuntimeAcceptanceRecorded) {
+		return errors.New(dualSenseAcceptanceRequired)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -64,7 +67,21 @@ func (b *dualSenseUSBBackend) Connect(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	p, err := newDualSensePad()
+	release, err := acquireNativeLifecycle(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		b.mu.Lock()
+		a := b.attachment
+		b.mu.Unlock()
+		result = errors.Join(result, finishNativeLifecycle(release, a))
+	}()
+	serial, err := newNativeSerial()
+	if err != nil {
+		return err
+	}
+	p, err := newDualSensePadWithSerial(serial)
 	if err != nil {
 		return err
 	}
@@ -128,14 +145,14 @@ func (b *dualSenseUSBBackend) Connect(ctx context.Context) error {
 	if meta == nil {
 		return errors.New("own DualSense device metadata missing")
 	}
-	a, err := attachNative(ctx, "127.0.0.1", server.GetListenPort(), fmt.Sprintf("%d-%d", meta.BusID, meta.DevID), b.neutralOnly)
+	a, err := attachNativeWithSerial(ctx, "127.0.0.1", server.GetListenPort(), fmt.Sprintf("%d-%d", meta.BusID, meta.DevID), serial, false)
 	b.mu.Lock()
 	b.attachment = a
 	if a != nil {
 		if source, ok := a.transport.(interface{ ControllerIdentity() string }); ok {
 			// Retain the expected identity even if attach was canceled midway, so
 			// cleanup can detect a later own HID appearance without guessing.
-			b.identity = ownedHIDIdentity{ControllerID: source.ControllerIdentity(), Serial: a.ownership.Serial}
+			b.identity = ownedHIDIdentity{ControllerID: source.ControllerIdentity(), Serial: a.ownership.Serial, Port: a.ownership.Port}
 		}
 	}
 	closed := b.closed
@@ -242,9 +259,9 @@ func (b *dualSenseUSBBackend) Submit(ctx context.Context, value packet) error {
 	if identity != observer.candidate.Identity {
 		return errors.New("DualSense attachment ownership changed")
 	}
-	if err = requireOwnedHID(ctx, observer.candidate); err != nil {
-		return err
-	}
+	// The open observer remains bound to the exact interface proven at startup.
+	// Full native ownership is checked above on every frame; enumerating every
+	// Windows HID device here would add work proportional to unrelated hardware.
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if err = ctx.Err(); err != nil {
@@ -319,7 +336,7 @@ func (b *dualSenseUSBBackend) Close(ctx context.Context) error {
 	}
 }
 
-func (b *dualSenseUSBBackend) closeResources(ctx context.Context) error {
+func (b *dualSenseUSBBackend) closeResources(ctx context.Context) (result error) {
 	b.mu.Lock()
 	pending := b.connectDone
 	b.mu.Unlock()
@@ -333,7 +350,6 @@ func (b *dualSenseUSBBackend) closeResources(ctx context.Context) error {
 	b.mu.Lock()
 	observer, a, server, bus, stopped, identity := b.observer, b.attachment, b.server, b.bus, b.serverStopped, b.identity
 	b.mu.Unlock()
-	var result error
 	// QUIT already requests Neutral first, but Close also checks a fresh neutral
 	// report when called directly. A failed proof never prevents detach cleanup.
 	if a != nil {
@@ -341,6 +357,11 @@ func (b *dualSenseUSBBackend) closeResources(ctx context.Context) error {
 		result = errors.Join(result, b.Neutral(neutralCtx))
 		cancel()
 	}
+	release, err := acquireNativeLifecycle(ctx)
+	if err != nil {
+		return errors.Join(result, err)
+	}
+	defer func() { result = errors.Join(result, finishNativeLifecycle(release, a)) }()
 	if observer != nil {
 		// Begin cancellation, but do not spend the detach deadline waiting for
 		// HID completion. Device removal itself may release the pending read.

@@ -23,12 +23,15 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// This wrapper only observes the report requested by the USB transport. It is
-// additional evidence; CONNECT also requires a neutral XInput readback.
+// This wrapper paces unchanged interrupt reports and observes startup reports.
+// The latter is additional evidence; CONNECT also needs neutral XInput readback.
 type trackedPad struct {
 	*xbox360.Xbox360
 	firstNeutral chan struct{}
 	seen         sync.Once
+	inputMu      sync.Mutex
+	lastInput    xbox360.InputState
+	pacer        reportPacer
 }
 
 func newTrackedPad() (*trackedPad, error) {
@@ -41,6 +44,9 @@ func newTrackedPad() (*trackedPad, error) {
 }
 
 func (p *trackedPad) HandleTransfer(ep, dir uint32, out []byte) []byte {
+	if ep == 1 && dir == usbip.DirIn {
+		p.pacer.wait()
+	}
 	report := p.Xbox360.HandleTransfer(ep, dir, out)
 	if ep == 1 && dir == usbip.DirIn && len(report) == 20 && report[0] == 0 && report[1] == 20 {
 		zero := true
@@ -57,23 +63,36 @@ func (p *trackedPad) HandleTransfer(ep, dir uint32, out []byte) []byte {
 	return report
 }
 
+func (p *trackedPad) UpdateInputState(state xbox360.InputState) {
+	p.inputMu.Lock()
+	changed := state != p.lastInput
+	if changed {
+		p.Xbox360.UpdateInputState(state)
+		p.lastInput = state
+	}
+	p.inputMu.Unlock()
+	if changed {
+		p.pacer.changed()
+	}
+}
+
 type usbBackend struct {
-	mu                 sync.Mutex
-	pad                *trackedPad
-	server             *usbserver.Server
-	bus                *virtualbus.VirtualBus
-	attachment         *nativeAttachment
-	slot               int
-	closed, connected  bool
-	neutralOnly        bool
-	exclusiveOwnership bool
-	connectCancel      context.CancelFunc
-	connectDone        chan struct{}
-	serverStopped      chan struct{}
-	serverError        error
-	cleanupOnce        sync.Once
-	cleanupDone        chan struct{}
-	cleanupError       error
+	mu                     sync.Mutex
+	pad                    *trackedPad
+	server                 *usbserver.Server
+	bus                    *virtualbus.VirtualBus
+	attachment             *nativeAttachment
+	slot                   int
+	closed, connected      bool
+	neutralOnly            bool
+	requireEmptyController bool
+	connectCancel          context.CancelFunc
+	connectDone            chan struct{}
+	serverStopped          chan struct{}
+	serverError            error
+	cleanupOnce            sync.Once
+	cleanupDone            chan struct{}
+	cleanupError           error
 }
 
 func newUSBBackend() outputBackend {
@@ -81,25 +100,21 @@ func newUSBBackend() outputBackend {
 }
 
 func newXboxProbeBackend() outputBackend {
-	return &usbBackend{slot: -1, neutralOnly: true, exclusiveOwnership: true, cleanupDone: make(chan struct{})}
+	return &usbBackend{slot: -1, neutralOnly: true, requireEmptyController: true, cleanupDone: make(chan struct{})}
 }
 
 // The installed driver's neutral start and own removal passed the explicit
 // 2026-09-11 local probe (captures/viiper-neutral-after-reboot-20260911-001153.json,
 // SHA256 1175109F6BCD793E6C67D9726B99568E65ED174AADCC9A4EE3310501874854C2).
-// This opens only an explicit experimental single-controller mode. It is not
-// full ABI verification, multi-controller approval, or crash-cleanup proof.
+// This is the recorded initial acceptance, not full ABI verification or proof
+// of concurrent-controller/crash cleanup. Multi-device acceptance is separate.
 const xboxRuntimeAcceptanceRecorded = true
 
 func newXboxRuntimeBackend() outputBackend {
-	return &usbBackend{slot: -1, exclusiveOwnership: true, cleanupDone: make(chan struct{})}
+	return &usbBackend{slot: -1, cleanupDone: make(chan struct{})}
 }
 
 func (b *usbBackend) Connect(ctx context.Context) (result error) {
-	// Runtime permits real input but retains every exclusive ownership check.
-	if !xboxAttachmentAllowed(b.neutralOnly, b.exclusiveOwnership, nativeABIProbeCandidateReviewed, xboxRuntimeAcceptanceRecorded) {
-		return errors.New("USB/IP Xbox output requires reviewed exclusive ownership and recorded runtime acceptance")
-	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	b.mu.Lock()
@@ -114,6 +129,19 @@ func (b *usbBackend) Connect(ctx context.Context) (result error) {
 	// Close waits until every partial attachment has been published. Rollback is
 	// owned by the session; calling Close inside this method would self-deadlock.
 	defer close(done)
+	release, err := acquireNativeLifecycle(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		b.mu.Lock()
+		a := b.attachment
+		b.mu.Unlock()
+		result = errors.Join(result, finishNativeLifecycle(release, a))
+	}()
+	if !xboxAttachmentAllowed(b.neutralOnly, true, nativeABIProbeCandidateReviewed, xboxRuntimeAcceptanceRecorded) {
+		return errors.New("USB/IP Xbox output requires reviewed ownership and recorded runtime acceptance")
+	}
 	baseline, err := readXInputSlots()
 	if err != nil {
 		return err
@@ -190,7 +218,7 @@ func (b *usbBackend) Connect(ctx context.Context) (result error) {
 	if meta == nil {
 		return errors.New("own device metadata missing")
 	}
-	a, err := attachNative(ctx, "127.0.0.1", server.GetListenPort(), fmt.Sprintf("%d-%d", meta.BusID, meta.DevID), b.exclusiveOwnership)
+	a, err := attachNative(ctx, "127.0.0.1", server.GetListenPort(), fmt.Sprintf("%d-%d", meta.BusID, meta.DevID), b.requireEmptyController)
 	b.mu.Lock()
 	b.attachment = a
 	closed := b.closed
@@ -340,7 +368,7 @@ func (b *usbBackend) Close(ctx context.Context) error {
 	}
 }
 
-func (b *usbBackend) closeResources(ctx context.Context) error {
+func (b *usbBackend) closeResources(ctx context.Context) (result error) {
 	b.mu.Lock()
 	connectDone := b.connectDone
 	b.mu.Unlock()
@@ -351,10 +379,19 @@ func (b *usbBackend) closeResources(ctx context.Context) error {
 			return errors.Join(errors.New("pending CONNECT ownership was not settled"), ctx.Err())
 		}
 	}
+	release, err := acquireNativeLifecycle(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		b.mu.Lock()
+		a := b.attachment
+		b.mu.Unlock()
+		result = errors.Join(result, finishNativeLifecycle(release, a))
+	}()
 	b.mu.Lock()
 	a, server, bus, slot, serverStopped := b.attachment, b.server, b.bus, b.slot, b.serverStopped
 	b.mu.Unlock()
-	var result error
 	// Native Close owns exactly one location/positive hub port. It must not
 	// report success for an unconfirmed timeout or detach any unrelated port.
 	if a != nil {

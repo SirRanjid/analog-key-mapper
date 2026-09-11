@@ -14,6 +14,7 @@ namespace Tk75.App
         public const double MaximumInputAgeMilliseconds = 500;
         readonly object gate = new object();
         readonly ManualResetEvent stopping = new ManualResetEvent(false);
+        readonly AutoResetEvent changed = new AutoResetEvent(false);
         readonly Thread worker;
         readonly WorkspaceStore store;
         readonly Func<ControllerKind, IControllerOutput> outputFactory;
@@ -66,7 +67,7 @@ namespace Tk75.App
             isReading = inputIsReading ?? delegate { return false; };
             getRawSnapshot = snapshot ?? delegate { return new Dictionary<int, double>(); };
             worker = new Thread(Run) { IsBackground = true, Name = "Analog mapping" };
-            try { worker.Start(); } catch { stopping.Dispose(); throw; }
+            try { worker.Start(); } catch { stopping.Dispose(); changed.Dispose(); throw; }
         }
         static Func<ControllerKind, IControllerOutput> AdaptFactory(Func<IControllerOutput> createOutput)
         {
@@ -137,6 +138,7 @@ namespace Tk75.App
                 isReading = value == null ? (Func<bool>)(delegate { return false; }) : delegate { return value.IsReading; };
                 getRawSnapshot = null;
                 copyRawSnapshot = value == null ? null : (Action<double, Dictionary<int, double>>)value.CopyRawSnapshot;
+                changed.Set();
             }
         }
         public void Configure(Profile value, IDictionary<int, Calibration> calibration)
@@ -165,6 +167,7 @@ namespace Tk75.App
                     availableProfile = newAvailableProfile;
                     neededKeys = newNeededKeys;
                     calibrations = newCalibration;
+                    changed.Set();
                 }
                 catch (Exception ex)
                 { status = "Einstellungen ungueltig - Controller aus: " + ex.Message; throw; }
@@ -339,6 +342,7 @@ namespace Tk75.App
                     CheckConnectionInputLocked(true);
                     if (!candidate.IsConnected) throw new InvalidOperationException("Controllerverbindung wurde beim Aktivieren verloren.");
                     output = candidate; candidate = null;
+                    changed.Set();
                     ResetProcessing(); frame = new ControllerFrame();
                     RefreshConnectedStatusLocked();
                     Log("Controller enabled");
@@ -354,11 +358,32 @@ namespace Tk75.App
         }
         public void Disable(string reason)
         { lock (gate) { if (!disposed) DisableLocked(reason ?? "Controller aus"); } }
-        void DisableLocked(string reason)
+        public ControllerRelease PrepareDisable(string reason)
         {
-            var previous = output; output = null;
+            // Do not wait behind this slot's in-flight Submit before the group
+            // can stop its other outputs. The neutral phase drains that Submit
+            // under the worker gate, independently for every detached output.
+            IControllerOutput previous = Interlocked.Exchange(ref output, null);
+            if (previous == null) return null;
+            return new ControllerRelease(delegate {
+                lock (gate) { ResetDetachedOutputLocked(reason ?? "Controller aus"); }
+                previous.Neutral();
+            }, delegate { try { previous.Dispose(); } finally { Log("Controller disabled: " + reason); } });
+        }
+        IControllerOutput DetachOutputLocked(string reason)
+        {
+            IControllerOutput previous = Interlocked.Exchange(ref output, null);
+            ResetDetachedOutputLocked(reason);
+            return previous;
+        }
+        void ResetDetachedOutputLocked(string reason)
+        {
             startupHeldKeys.Clear(); startupReleasedKeys.Clear();
             ResetProcessing(); frame = new ControllerFrame(); status = reason;
+        }
+        void DisableLocked(string reason)
+        {
+            IControllerOutput previous = DetachOutputLocked(reason);
             if (previous != null) { ReleaseOutput(previous); Log("Controller disabled: " + reason); }
         }
         void ReleaseOutput(IControllerOutput previous)
@@ -379,7 +404,8 @@ namespace Tk75.App
         void Run()
         {
             var watch = Stopwatch.StartNew(); double previous = watch.Elapsed.TotalSeconds;
-            while (!stopping.WaitOne(4))
+            WaitHandle[] signals = { stopping, changed };
+            while (WaitHandle.WaitAny(signals, Interlocked.CompareExchange(ref output, null, null) == null ? 16 : 4) != 0)
             {
                 double now = watch.Elapsed.TotalSeconds, dt = now - previous; previous = now;
                 lock (gate)
@@ -472,7 +498,7 @@ namespace Tk75.App
                 if (disposed) return;
                 disposed = true; DisableLocked("Anwendung beendet"); ResetPreview(null); stopping.Set();
             }
-            worker.Join(); stopping.Dispose();
+            worker.Join(); stopping.Dispose(); changed.Dispose();
         }
     }
 }

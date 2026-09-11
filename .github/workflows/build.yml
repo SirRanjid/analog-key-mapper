@@ -30,6 +30,8 @@ jobs:
           $suites = @(
             'Test-MappingCore.ps1', 'Test-MappingAssignments.ps1',
             'Test-BezierCurve.ps1', 'Test-ControllerRouting.ps1',
+            'Test-MultiControllerSession.ps1', 'Test-MappingSession.ps1',
+            'Test-MultiMappingIntegration.ps1', 'Test-IsolatedOutput.ps1',
             'Test-RgbOverridePlan.ps1', 'Test-Tk75RgbProtocol.ps1',
             'Test-Tk75RgbExchange.ps1', 'Test-VisualKeyboard.ps1',
             'Test-AppUi.ps1', 'Test-RgbLifecycle.ps1'

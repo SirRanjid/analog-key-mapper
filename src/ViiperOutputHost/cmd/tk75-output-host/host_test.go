@@ -14,12 +14,12 @@ import (
 	"time"
 )
 
-func TestExclusiveXboxAttachmentPolicy(t *testing.T) {
-	// Exercise the complete gate truth table: accepted real input still cannot
-	// enter a shared driver, and an unreviewed ABI is never allowed.
+func TestOwnedXboxAttachmentPolicy(t *testing.T) {
+	// Exercise the complete gate truth table: accepted real input still needs
+	// lifecycle ownership, and an unreviewed ABI is never allowed.
 	for bits := 0; bits < 16; bits++ {
-		neutral, exclusive, abi, accepted := bits&1 != 0, bits&2 != 0, bits&4 != 0, bits&8 != 0
-		allowed := xboxAttachmentAllowed(neutral, exclusive, abi, accepted)
+		neutral, owned, abi, accepted := bits&1 != 0, bits&2 != 0, bits&4 != 0, bits&8 != 0
+		allowed := xboxAttachmentAllowed(neutral, owned, abi, accepted)
 		expected := bits == 7 || bits == 14 || bits == 15
 		if allowed != expected {
 			t.Fatalf("policy %04b allowed=%v, expected=%v", bits, allowed, expected)
@@ -500,29 +500,64 @@ func TestUnavailableDualSenseNeverAcknowledgesConnect(t *testing.T) {
 
 // Only the pure predicate runs here. No SetupAPI, HID handle or native helper
 // is imported into this already permitted protocol test boundary.
-func TestOwnedDualSenseRequiresExactUSBSerialAndControllerAncestry(t *testing.T) {
-	identity := ownedHIDIdentity{ControllerID: `ROOT\USBIP_WIN2\0000`, Serial: "T0123456789abcd"}
-	usb := `USB\VID_054C&PID_0CE6\` + identity.Serial
+func TestOwnedDualSenseRequiresExactControllerAndDirectRootHubTopology(t *testing.T) {
+	identity := ownedHIDIdentity{ControllerID: `ROOT\USBIP_WIN2\0000`, Serial: "T0123456789abcd", Port: 1}
+	usb := `USB\VID_054C&PID_0CE6\2&3B7C36A2&0&1`
+	hub := `USB\ROOT_HUB30\1&2b53a856&0&0`
 	controller := identity.ControllerID
+	chain := []string{`HID\OWN`, usb, hub, controller, `HTREE\ROOT\0`}
+	withSerial := func(serial string) ownedHIDIdentity {
+		value := identity
+		value.Serial = serial
+		return value
+	}
+	withPort := func(port int32) ownedHIDIdentity {
+		value := identity
+		value.Port = port
+		return value
+	}
 	for _, item := range []struct {
 		name     string
 		identity ownedHIDIdentity
 		chain    []string
 		want     bool
 	}{
-		{"own composite chain", identity, []string{`HID\OWN`, `USB\VID_054C&PID_0CE6&MI_03\CHILD`, usb, `USB\ROOT_HUB30\OWN`, controller, `HTREE\ROOT\0`}, true},
-		{"case insensitive IDs", identity, []string{`hid\own`, strings.ToLower(usb), strings.ToLower(controller)}, true},
-		{"physical device same model", identity, []string{`HID\PHYSICAL`, `USB\VID_054C&PID_0CE6\P0123456789ABCD`, controller}, false},
-		{"different controller", identity, []string{`HID\OWN`, usb, `ROOT\USBIP_WIN2\0001`}, false},
-		{"controller precedes serial", identity, []string{`HID\OWN`, controller, usb}, false},
-		{"serial is not complete instance ID", identity, []string{`HID\OWN`, usb + "1", controller}, false},
-		{"wrong product", identity, []string{`HID\OWN`, strings.Replace(usb, "0CE6", "0DF2", 1), controller}, false},
-		{"wrong vendor", identity, []string{`HID\OWN`, strings.Replace(usb, "054C", "045E", 1), controller}, false},
-		{"serial merely embedded in interface ID", identity, []string{`HID\OWN`, `HID\VID_054C&PID_0CE6\` + identity.Serial, controller}, false},
-		{"controller prefix is not enough", identity, []string{`HID\OWN`, usb, controller + "X"}, false},
-		{"missing controller", ownedHIDIdentity{Serial: identity.Serial}, []string{`HID\OWN`, usb, controller}, false},
-		{"invalid serial character", ownedHIDIdentity{ControllerID: controller, Serial: "T0123456789abc!"}, []string{`HID\OWN`, `USB\VID_054C&PID_0CE6\T0123456789abc!`, controller}, false},
-		{"missing HID leaf", identity, []string{usb, controller}, false},
+		{"port-derived instance ID", identity, chain, true},
+		{"own composite chain", identity, []string{`HID\OWN`, `USB\VID_054C&PID_0CE6&MI_03\CHILD`, usb, hub, controller}, true},
+		{"case insensitive IDs", identity, []string{`hid\own`, strings.ToLower(usb), strings.ToLower(hub), strings.ToLower(controller)}, true},
+		{"serial-derived instance ID also allowed", identity, []string{`HID\OWN`, `USB\VID_054C&PID_0CE6\` + identity.Serial, hub, controller}, true},
+		{"USB2 root hub", identity, []string{`HID\OWN`, usb, `USB\ROOT_HUB20\OWN`, controller}, true},
+		{"unversioned root hub", identity, []string{`HID\OWN`, usb, `USB\ROOT_HUB\OWN`, controller}, true},
+		{"maximum port", withPort(255), chain, true}, // Address equality is the collector's responsibility.
+		{"zero port", withPort(0), chain, false},
+		{"negative port", withPort(-1), chain, false},
+		{"port above maximum", withPort(256), chain, false},
+		{"missing serial", withSerial(""), chain, false},
+		{"short serial", withSerial(identity.Serial[:14]), chain, false},
+		{"long serial", withSerial(identity.Serial + "0"), chain, false},
+		{"invalid serial character", withSerial(identity.Serial[:14] + "!"), chain, false},
+		{"non-ASCII serial", withSerial(identity.Serial[:13] + "ä"), chain, false},
+		{"physical device same model", identity, []string{`HID\PHYSICAL`, usb, hub, `PCI\VEN_8086&DEV_1234\0`}, false},
+		{"different virtual controller", identity, []string{`HID\OWN`, usb, hub, `ROOT\USBIP_WIN2\0001`}, false},
+		{"controller precedes USB", identity, []string{`HID\OWN`, controller, usb, hub}, false},
+		{"wrong product", identity, []string{`HID\OWN`, strings.Replace(usb, "0CE6", "0DF2", 1), hub, controller}, false},
+		{"wrong vendor", identity, []string{`HID\OWN`, strings.Replace(usb, "054C", "045E", 1), hub, controller}, false},
+		{"HID ID is not USB node", identity, []string{`HID\OWN`, `HID\VID_054C&PID_0CE6\` + identity.Serial, hub, controller}, false},
+		{"composite interface alone", identity, []string{`HID\OWN`, `USB\VID_054C&PID_0CE6&MI_03\CHILD`, hub, controller}, false},
+		{"empty USB instance", identity, []string{`HID\OWN`, `USB\VID_054C&PID_0CE6\`, hub, controller}, false},
+		{"malformed USB instance", identity, []string{`HID\OWN`, usb + `\CHILD`, hub, controller}, false},
+		{"nested external hub", identity, []string{`HID\OWN`, usb, `USB\VID_2109&PID_2817\HUB`, hub, controller}, false},
+		{"root hub not directly below controller", identity, []string{`HID\OWN`, usb, hub, `USB\OTHER\HUB`, controller}, false},
+		{"nested root hubs", identity, []string{`HID\OWN`, usb, `USB\ROOT_HUB20\INNER`, hub, controller}, false},
+		{"root hub prefix lookalike", identity, []string{`HID\OWN`, usb, `USB\ROOT_HUB30_EXTERNAL\OWN`, controller}, false},
+		{"wrong root hub enumerator", identity, []string{`HID\OWN`, usb, `HID\ROOT_HUB30\OWN`, controller}, false},
+		{"empty root hub instance", identity, []string{`HID\OWN`, usb, `USB\ROOT_HUB30\`, controller}, false},
+		{"missing root hub", identity, []string{`HID\OWN`, usb, controller, `HTREE\ROOT\0`}, false},
+		{"controller prefix is not enough", identity, []string{`HID\OWN`, usb, hub, controller + "X"}, false},
+		{"missing controller", ownedHIDIdentity{Serial: identity.Serial, Port: 1}, chain, false},
+		{"missing HID leaf", identity, []string{usb, hub, controller, `HTREE\ROOT\0`}, false},
+		{"empty HID leaf", identity, []string{`HID\`, usb, hub, controller}, false},
+		{"wrong leaf enumerator", identity, []string{`USB\OWN`, usb, hub, controller}, false},
 		{"empty chain", identity, nil, false},
 	} {
 		t.Run(item.name, func(t *testing.T) {

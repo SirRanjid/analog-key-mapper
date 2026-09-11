@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Tk75.App;
 using Tk75.Mapping;
 
@@ -12,6 +13,8 @@ public static class MultiControllerSessionHarness
         public bool Active, Disposed, FailEnable, FailConfigure, FailInput, FailDisable, FailMode, KeyboardMode;
         public int ConfigureCalls, EnableCalls, DisableCalls, DisposeCalls, ModeCalls;
         public Action EnableHook, DisableHook;
+        public Action NeutralHook, RemoveHook;
+        public int NeutralCalls, RemoveCalls;
         public Profile Profile;
         public object Source;
         public string LastReason;
@@ -53,6 +56,14 @@ public static class MultiControllerSessionHarness
             LastReason = reason;
             if (FailDisable) throw new InvalidOperationException("disable failure");
             Active = false;
+        }
+        public ControllerRelease PrepareDisable(string reason)
+        {
+            bool active = Active;
+            Disable(reason);
+            if (!active) return null;
+            return new ControllerRelease(delegate { Interlocked.Increment(ref NeutralCalls); if (NeutralHook != null) NeutralHook(); },
+                delegate { Interlocked.Increment(ref RemoveCalls); if (RemoveHook != null) RemoveHook(); });
         }
         public void Dispose() { DisposeCalls++; Disposed = true; Active = false; }
     }
@@ -154,10 +165,52 @@ public static class MultiControllerSessionHarness
             Check(second.Disposed && !runtime.IsControllerEnabled("player2") && first.Enabled && runtime.SelectedControllerId == "main", "Failed partial-connection cleanup disposes only its named slot and leaves existing output connected.");
         }
     }
+    static void GroupReleasePhases()
+    {
+        foreach (bool dispose in new[] { false, true })
+        foreach (bool slowNeutral in new[] { false, true })
+        using (var fixture = new Fixture())
+        using (var entered = new ManualResetEvent(false))
+        using (var otherNeutral = new ManualResetEvent(false))
+        using (var release = new ManualResetEvent(false))
+        {
+            var runtime = fixture.Runtime; runtime.Configure(TwoPlayers(), Calibration());
+            Fake first = fixture.Slot("main"), second = fixture.Slot("player2");
+            runtime.EnableController("main"); runtime.EnableController("player2");
+            Action block = delegate { entered.Set(); if (!release.WaitOne(3000)) throw new TimeoutException("Synthetic release timeout"); };
+            if (slowNeutral) first.NeutralHook = block; else first.RemoveHook = block;
+            second.NeutralHook = delegate { otherNeutral.Set(); };
+            Exception failure = null;
+            var stop = new Thread(delegate() { try { if (dispose) runtime.Dispose(); else runtime.Disable("all off"); } catch (Exception error) { failure = error; } });
+            stop.Start();
+            try
+            {
+                Check(entered.WaitOne(1000), "Controlled neutral/removal phase starts.");
+                Check(otherNeutral.WaitOne(1000), "A slow first output cannot delay another output's neutralization.");
+                Check(!first.Active && !second.Active, "All mapping workers release their outputs before slow neutral/removal work.");
+                if (slowNeutral) Check(first.RemoveCalls == 0 && second.RemoveCalls == 0, "No output is removed before every neutral attempt has completed.");
+            }
+            finally { release.Set(); Check(stop.Join(1500), "Group stop finishes after controlled cleanup is released."); }
+            Check(failure == null && first.NeutralCalls == 1 && second.NeutralCalls == 1 && first.RemoveCalls == 1 && second.RemoveCalls == 1,
+                "Disable and Dispose each neutralize and remove every owned output once.");
+        }
+        using (var fixture = new Fixture())
+        {
+            var runtime = fixture.Runtime; runtime.Configure(TwoPlayers(), Calibration());
+            Fake first = fixture.Slot("main"), second = fixture.Slot("player2");
+            runtime.EnableController("main"); runtime.EnableController("player2");
+            first.NeutralHook = delegate { throw new InvalidOperationException("neutral failed"); };
+            Reject(delegate { runtime.Disable("all off"); }, "A per-slot neutral failure stays visible after the group stops.");
+            Check(first.Disposed && first.RemoveCalls == 1 && second.NeutralCalls == 1 && second.RemoveCalls == 1 && !second.Enabled,
+                "A failed neutral attempt still removes its output and cannot skip another player's cleanup.");
+            Check(runtime.Frame.Errors.Count == 1, "Failed group release retires and explains only its failing route.");
+        }
+    }
     public static string Run()
     {
         checks = 0;
         ControllerOperationsById();
+        GroupReleasePhases();
         using (var fixture = new Fixture(1))
         {
             var runtime = fixture.Runtime; runtime.Configure(TwoPlayers(), Calibration()); runtime.Enable();

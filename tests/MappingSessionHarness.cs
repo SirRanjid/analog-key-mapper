@@ -50,6 +50,8 @@ public static class MappingSessionHarness
         bool reading = true;
         public Action SnapshotHook;
         double requestedAge;
+        int snapshotCalls;
+        public int SnapshotCalls { get { return Interlocked.CompareExchange(ref snapshotCalls, 0, 0); } }
         public bool Reading { get { lock (gate) return reading; } set { lock (gate) reading = value; } }
         public double RequestedAge { get { lock (gate) return requestedAge; } }
         public void Set(int key, double value, double age)
@@ -57,6 +59,7 @@ public static class MappingSessionHarness
         public void Remove(int key) { lock (gate) { values.Remove(key); ages.Remove(key); } }
         public IDictionary<int, double> Snapshot(double maximumAge)
         {
+            Interlocked.Increment(ref snapshotCalls);
             var copy = new Dictionary<int, double>();
             lock (gate)
             {
@@ -375,6 +378,48 @@ public static class MappingSessionHarness
     public static string Run()
     {
         checks = 0;
+        using (var f = new Fixture(false))
+        {
+            FakeOutput output = f.Arm(); f.Input.Set(14, 85, 0);
+            Wait(delegate { return output.Nonzero > 0; }, "Two-phase release starts with real worker output.");
+            ControllerRelease pending = f.Session.PrepareDisable("group stop");
+            int neutrals = output.NeutralCalls;
+            Check(pending != null && !f.Session.Enabled && output.DisposeCalls == 0, "PrepareDisable detaches without slow backend cleanup.");
+            pending.Neutral();
+            Check(output.NeutralCalls == neutrals + 1 && Neutral(output.Last) && output.DisposeCalls == 0, "Neutralization is a separate observable phase.");
+            int submitted = output.Submits;
+            Thread.Sleep(25); Check(output.Submits == submitted, "Neutralized detached output receives no later worker frames.");
+            pending.Dispose(); pending.Dispose();
+            Check(output.DisposeCalls == 1 && output.AfterDispose == 0, "Release token removes its owned backend exactly once.");
+            Check(f.Session.PrepareDisable("already stopped") == null, "Repeated group preparation has no output left to release.");
+        }
+        using (var f = new Fixture(false))
+        {
+            Thread.Sleep(70);
+            int before = f.Input.SnapshotCalls; Thread.Sleep(250); int idle = f.Input.SnapshotCalls - before;
+            Check(idle > 0 && idle < 30, "Disconnected output previews run below the active 4-ms polling rate.");
+            FakeOutput output = f.Arm(); Wait(delegate { return output.Submits > 0; }, "Activation wakes the session and starts output.");
+            before = f.Input.SnapshotCalls; Thread.Sleep(250); int active = f.Input.SnapshotCalls - before;
+            Check(active > idle + 3, "Connected output retains the faster active input cadence (idle=" + idle + ", active=" + active + ").");
+        }
+        using (var f = new Fixture(false))
+        using (var entered = new ManualResetEvent(false))
+        using (var release = new ManualResetEvent(false))
+        {
+            FakeOutput output = f.Arm();
+            output.SubmitHook = delegate { entered.Set(); if (!release.WaitOne(1500)) throw new TimeoutException("Synthetic in-flight frame"); };
+            Check(entered.WaitOne(1000), "An actual mapping worker has a controlled in-flight Submit.");
+            var watch = Stopwatch.StartNew(); ControllerRelease pending = f.Session.PrepareDisable("group stop");
+            Check(pending != null && watch.ElapsedMilliseconds < 250, "Group preparation does not wait behind one blocked output.");
+            Exception failure = null;
+            var neutralizer = new Thread(delegate() { try { pending.Neutral(); } catch (Exception error) { failure = error; } });
+            int neutralBefore = output.NeutralCalls; neutralizer.Start();
+            try { Thread.Sleep(20); Check(output.NeutralCalls == neutralBefore, "Neutralization drains the already-running Submit before neutral output."); }
+            finally { release.Set(); Check(neutralizer.Join(1000), "Neutralization completes after the in-flight frame exits."); }
+            Check(failure == null && Neutral(output.Last), "The drained output is left neutral.");
+            int submitted = output.Submits; pending.Dispose(); Thread.Sleep(20);
+            Check(output.Submits == submitted && output.AfterDispose == 0, "Group release cannot send another frame after neutral/removal.");
+        }
         InitiallyUnknownInputs();
         StartupReleaseGate();
         using (var f = new Fixture(true))

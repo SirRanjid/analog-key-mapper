@@ -34,16 +34,18 @@ A key can have several outputs, and a drop adds only missing pairs. Repeating an
 
 ## Connect a virtual controller
 
-The two controller selectors stay synchronized. Add or rename logical slots in **Controller** and choose their Xbox or PS5 presentation. Selecting a slot changes the editing context; it does not activate output.
+The two controller selectors stay synchronized. Add or rename slots in **Controller** and choose **Xbox 360** or **DualSense** for each. This selects the actual virtual-device type as well as its presentation. Selecting a slot changes the editing context; it does not activate output.
 
-Once the [optional output dependencies](building.md#optional-xbox-controller-output) are installed, use the slot's illustrated USB connector:
+Once the [output dependencies](building.md#virtual-controller-output) are installed, use the slot's illustrated USB connector:
 
 - Click its plug or socket to connect or disconnect.
 - Slide the plug in to connect, or pull it out to disconnect.
 - Use the small footer connector to operate a slot without changing your selection.
-- Use **All off** to disconnect output.
+- Use **All off** to neutralize all outputs before their devices are removed.
 
-Profiles support up to 32 logical slots; the current backend permits **one connected Xbox controller**. Real DualSense output is not enabled, even though its layout and labels are available for editing.
+Profiles support **32 output-capable slots in total**, freely assigned to Xbox or DualSense. Connect each slot you want to use; disconnecting one leaves the others connected. Xbox output is limited by Windows to **four XInput controllers in total, including physical controllers**. DualSense uses a separate HID path and does not consume that four-slot allowance.
+
+The recorded mixed-device test is **two Xbox plus two DualSense controllers** on a preceding helper build. Windows blocked the final optimized helper on the development machine before it could be live-tested; see [the current known issue](status.md#current-known-issue). The 32-slot software limit is not a completed load test of every possible configuration. See [the acceptance record](multi-controller-acceptance.md). DualSense supports the common mapped buttons, triggers and sticks; this does not promise PS5-console compatibility, touchpad or motion-sensor support.
 
 **Keyboard mode** keeps connected controller output neutral. Controller mode uses your mappings. The USB connection and input mode are separate controls. Open **Controller input & shortcuts** to set the profile's default mode and optional mode/stop shortcuts. F9 and F8 are editable defaults. Release keys held during connection before using them for output.
 
@@ -69,6 +71,8 @@ The app stores local data under `data/` beside its executable. Keep that folder 
 
 Choose a controller color and enable **Key colors** in **Controller**. Mapped keys of connected controllers are colored in controller mode. Choosing a color alone does not enable lighting. A separate option in the shortcut settings marks the mode-switch key; that marker can remain visible in keyboard mode or with controllers disconnected.
 
+When a key belongs to several connected controllers, the first controller in profile order supplies its color. Disconnecting that controller lets the next connected owner supply the color.
+
 The app saves the keyboard's current lighting before changing it and keeps restoration records under `data/lighting/`. Supported static backgrounds are preserved on other keys. Animated effects that cannot be preserved reliably are rejected before writing.
 
 **Restore lighting** returns to the saved normal state and turns off both controller colors and the shortcut marker for the profile. Normal shutdown also requests restoration. Allow an in-progress lighting operation to finish; closing may take several seconds.
@@ -81,7 +85,7 @@ If recovery pauses, keep the backups and follow the displayed reason. An onboard
 | --- | --- |
 | No changing pressure values | USB connection, selected device and keyboard-helper status. Avoid another configurator changing the monitor or onboard profile during the session. |
 | App/helper cannot start | Read the actual Windows or signature error. The local unsigned-helper build does not override Windows policy. See [building](building.md). |
-| Xbox connection fails | Confirm `ViiperOutputHost.exe`, the compatible USB/IP setup and that no other slot is connected. Read the footer error. |
+| Controller connection fails | Confirm `ViiperOutputHost.exe` and the compatible USB/IP setup. For Xbox, count physical controllers toward the four XInput slots. Read the error for the affected slot. |
 | Controller stays neutral | Check connection, mode, enabled mappings and fresh key input. Release keys held during startup. The preview alone does not prove game output. |
 | Colors do not change | Check **Key colors**, controller connection/mode, the separate marker option and the lighting status. |
 | Calibration changes after a USB-port move | Without a serial number, calibration may be associated with the Windows device path. The default range is used until suitable calibration is available. |

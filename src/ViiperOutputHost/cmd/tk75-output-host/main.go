@@ -20,6 +20,7 @@ func main() {
 		limits = probeLimits
 	case "--dualsense-host":
 		factory = func() outputBackend { return newDualSenseBackend() }
+		limits = probeLimits
 	case "--dualsense-probe-host":
 		factory = func() outputBackend { return newDualSenseProbeBackend() }
 		limits = probeLimits
