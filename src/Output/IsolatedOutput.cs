@@ -16,7 +16,7 @@ namespace Tk75.Output
 {
     // The UI process never loads ViGEm. Only its explicitly started child may do
     // so; every request has a deadline and the parent owns a kill-on-close job.
-    public sealed class IsolatedOutput : IControllerOutput
+    public sealed class IsolatedOutput : IControllerOutput, ICancellableControllerConnection
     {
         readonly object gate = new object();
         readonly string executable, arguments;
@@ -67,9 +67,12 @@ namespace Tk75.Output
         public long AcknowledgedCommands { get { lock (gate) return acknowledgements; } }
 
         public void Connect()
+        { Connect(CancellationToken.None); }
+        public void Connect(CancellationToken cancellationToken)
         {
             lock (gate)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 CheckDisposed();
                 if (connected && replies != null && replies.Fault == null) return;
                 if (process != null) StopChild();
@@ -86,9 +89,15 @@ namespace Tk75.Output
                     lastHostProcessId = process.Id;
                     process.StandardInput.AutoFlush = true;
                     job.Assign(process);
+                    cancellationToken.ThrowIfCancellationRequested();
                     replies = new ReplyChannel(process.StandardOutput, process.StandardError);
                     nextId = acknowledgements = 0;
-                    Request("CONNECT", connectTimeout);
+                    // Wake the command wait on cancellation, then let Fail use
+                    // the ordinary bounded EOF cleanup. The host reads EOF even
+                    // during CONNECT, cancels its attach and removes its device.
+                    // Job termination remains the existing deadline fallback.
+                    Request("CONNECT", connectTimeout, cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
                     connected = true;
                     lastPacket = new XInputPacket(); hasLastPacket = true; lastSentAt = clock.ElapsedMilliseconds;
                     status = "Virtueller Controller verbunden; Ausgabeprozess mit Zeitgrenzen aktiv.";
@@ -159,7 +168,10 @@ namespace Tk75.Output
             return new InvalidOperationException(status, exception);
         }
         void Request(string command, int timeoutMs)
+        { Request(command, timeoutMs, CancellationToken.None); }
+        void Request(string command, int timeoutMs, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (process == null || replies == null) throw new InvalidOperationException("Ausgabeprozess fehlt.");
             long id = checked(++nextId);
             string line = OutputWire.Version + " " + id.ToString(CultureInfo.InvariantCulture) + " " + command;
@@ -168,7 +180,7 @@ namespace Tk75.Output
             Task write = process.StandardInput.WriteLineAsync(line);
             // Observe eventual pipe errors even when the deadline kills its child.
             write.ContinueWith(delegate(Task failed) { GC.KeepAlive(failed.Exception); }, TaskContinuationOptions.OnlyOnFaulted);
-            if (!write.Wait(Remaining(deadline, timeoutMs))) throw new TimeoutException("Ausgabeprozess antwortet nicht innerhalb der Zeitgrenze.");
+            if (!write.Wait(Remaining(deadline, timeoutMs), cancellationToken)) throw new TimeoutException("Ausgabeprozess antwortet nicht innerhalb der Zeitgrenze.");
             for (;;)
             {
                 Reply reply;
@@ -179,7 +191,7 @@ namespace Tk75.Output
                     acknowledgements++; return;
                 }
                 if (replies.Fault != null) throw new IOException(replies.Fault);
-                if (!replies.Wait(Remaining(deadline, timeoutMs))) throw new TimeoutException("Ausgabeprozess antwortet nicht innerhalb der Zeitgrenze.");
+                if (!replies.Wait(Remaining(deadline, timeoutMs), cancellationToken)) throw new TimeoutException("Ausgabeprozess antwortet nicht innerhalb der Zeitgrenze.");
             }
         }
         static int Remaining(Stopwatch deadline, int timeoutMs)
@@ -316,6 +328,13 @@ namespace Tk75.Output
             internal bool TryTake(out Reply reply)
             { lock (gate) { reply = queue.Count == 0 ? null : queue.Dequeue(); return reply != null; } }
             internal bool Wait(int milliseconds) { return changed.WaitOne(milliseconds); }
+            internal bool Wait(int milliseconds, CancellationToken cancellationToken)
+            {
+                if (!cancellationToken.CanBeCanceled) return Wait(milliseconds);
+                int signaled = WaitHandle.WaitAny(new WaitHandle[] { changed, cancellationToken.WaitHandle }, milliseconds);
+                cancellationToken.ThrowIfCancellationRequested();
+                return signaled == 0;
+            }
             internal void BeginShutdownDrain()
             { lock (gate) { draining = true; queue.Clear(); } }
             internal void Close()

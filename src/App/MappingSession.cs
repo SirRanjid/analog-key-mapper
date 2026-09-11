@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 using Tk75.Mapping;
 using Tk75.Output;
 
@@ -14,6 +15,9 @@ namespace Tk75.App
         public const double MaximumInputAgeMilliseconds = 500;
         const double PreviewIntervalSeconds = 0.033;
         readonly object gate = new object();
+        // Only cancellation bookkeeping and the ownership transfer use this
+        // gate. Never call backend/user code here, or wait behind Submit.
+        readonly object connectionPublication = new object();
         readonly ManualResetEvent stopping = new ManualResetEvent(false);
         readonly AutoResetEvent changed = new AutoResetEvent(false);
         readonly Thread worker;
@@ -46,6 +50,18 @@ namespace Tk75.App
         bool previewClockValid;
         double previewPrevious;
         long previewComputations;
+        int requestedWaitMilliseconds;
+        long connectionGeneration;
+        PendingConnection pendingConnection;
+        sealed class PendingConnection
+        {
+            internal long Generation;
+            internal ControllerKind Kind;
+            internal CancellationTokenSource Cancellation;
+            internal volatile bool Cancelled;
+            internal readonly TaskCompletionSource<object> Completion = new TaskCompletionSource<object>();
+            internal readonly TaskCompletionSource<object> Drained = new TaskCompletionSource<object>();
+        }
 
         public MappingSession(WorkspaceStore workspace)
             : this(RequireWorkspace(workspace), ControllerOutputs.Create, null, null, true) { }
@@ -91,7 +107,33 @@ namespace Tk75.App
         public ControllerFrame Frame { get { lock (gate) return CopyFrame(frame); } }
         public PreviewSnapshot Preview { get { lock (gate) return preview.Copy(); } }
         internal long PreviewComputations { get { lock (gate) return previewComputations; } }
+        internal int RequestedWaitMilliseconds { get { return Interlocked.CompareExchange(ref requestedWaitMilliseconds, 0, 0); } }
         public bool KeyboardMode { get { lock (gate) return keyboardMode; } }
+        public bool Connecting { get { lock (gate) return pendingConnection != null; } }
+        public Task CancelPendingConnection()
+        {
+            PendingConnection attempt;
+            lock (connectionPublication)
+            {
+                Interlocked.Increment(ref connectionGeneration);
+                attempt = pendingConnection;
+                if (attempt != null) attempt.Cancelled = true;
+            }
+            if (attempt == null) return Task.FromResult(0);
+            // Cancellation callbacks may be third-party code. Never run them
+            // under the worker gate, and never wait for a pending Connect here.
+            ThreadPool.QueueUserWorkItem(delegate {
+                try { attempt.Cancellation.Cancel(); } catch (ObjectDisposedException) { }
+                catch (Exception ex) { Log("Connection cancellation failed: " + ex.Message); }
+            });
+            return attempt.Drained.Task;
+        }
+        Task CancelPendingLocked()
+        {
+            Task drain = CancelPendingConnection();
+            if (pendingConnection != null && !disposed && output == null) status = "Controller-Verbindung wird abgebrochen …";
+            return drain;
+        }
 
         // Display demand never arms, pauses or resets actual output processing.
         // A newly visible route starts a fresh preview history and clock; time
@@ -112,6 +154,7 @@ namespace Tk75.App
             lock (gate)
             {
                 CheckDisposed(); if (keyboardMode == value) return;
+                CancelPendingLocked();
                 keyboardMode = value; ResetProcessing(); frame = new ControllerFrame();
                 if (!value) ResetPreview(null);
                 if (output == null) return;
@@ -335,49 +378,110 @@ namespace Tk75.App
             status = keyboardMode ? "Tastaturmodus – Controller verbunden und neutral" : startupHeldKeys.Count == 0 ?
                 "Virtueller Controller aktiv" : "Controller verbunden – gehaltene Tasten nach Loslassen bereit";
         }
-        public void Enable()
+        public void Enable() { EnableAsync(CancellationToken.None).GetAwaiter().GetResult(); }
+        public Task EnableAsync(CancellationToken cancellationToken)
         {
+            PendingConnection attempt;
             lock (gate)
             {
-                CheckDisposed();
+                CheckDisposed(); cancellationToken.ThrowIfCancellationRequested();
+                if (pendingConnection != null) return pendingConnection.Completion.Task;
                 if (output != null)
                 {
-                    try { if (output.IsConnected) return; }
+                    try { if (output.IsConnected) return Task.FromResult(0); }
                     catch (Exception ex) { DisableLocked("Controllerstatus fehlerhaft - Controller aus: " + ex.Message); throw; }
                     DisableLocked("Controllerverbindung verloren - Controller aus");
                 }
-                IControllerOutput candidate = null;
-                try
+                CheckConnectionInputLocked(false);
+                lock (connectionPublication)
                 {
-                    CheckConnectionInputLocked(false);
-                    candidate = outputFactory(profile.Controller);
-                    if (candidate == null) throw new InvalidOperationException("Controller-Backend fehlt.");
-                    candidate.Connect();
-                    if (!candidate.IsConnected) throw new InvalidOperationException("Controller-Backend hat keine Verbindung bestaetigt.");
-                    candidate.Neutral();
-                    // A slow Connect must not use an old snapshot after input
-                    // loss. Newly held keys also wait for release independently.
+                    attempt = new PendingConnection { Generation = connectionGeneration, Kind = profile.Controller,
+                        Cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken) };
+                    pendingConnection = attempt;
+                }
+                status = "Controller wird verbunden …";
+            }
+            try { Task.Factory.StartNew(delegate { ConnectCandidate(attempt); }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default); }
+            catch (Exception ex)
+            {
+                lock (gate) lock (connectionPublication)
+                { if (pendingConnection == attempt) { pendingConnection = null; status = "Controller aus: " + ex.Message; } }
+                attempt.Cancellation.Dispose(); attempt.Completion.TrySetException(ex); attempt.Drained.TrySetResult(null);
+            }
+            return attempt.Completion.Task;
+        }
+        void RequireCurrentConnectionLocked(PendingConnection attempt)
+        {
+            if (disposed || pendingConnection != attempt || attempt.Cancelled || attempt.Generation != connectionGeneration)
+                throw new OperationCanceledException("Controller-Verbindung abgebrochen.");
+            attempt.Cancellation.Token.ThrowIfCancellationRequested();
+        }
+        void ConnectCandidate(PendingConnection attempt)
+        {
+            IControllerOutput candidate = null; Exception failure = null; bool cancelled = false;
+            try
+            {
+                lock (gate) RequireCurrentConnectionLocked(attempt);
+                candidate = outputFactory(attempt.Kind);
+                if (candidate == null) throw new InvalidOperationException("Controller-Backend fehlt.");
+                lock (gate) RequireCurrentConnectionLocked(attempt);
+                var cancellable = candidate as ICancellableControllerConnection;
+                if (cancellable != null) cancellable.Connect(attempt.Cancellation.Token); else candidate.Connect();
+                lock (gate) RequireCurrentConnectionLocked(attempt);
+                if (!candidate.IsConnected) throw new InvalidOperationException("Controller-Backend hat keine Verbindung bestaetigt.");
+                candidate.Neutral();
+                if (!candidate.IsConnected) throw new InvalidOperationException("Controllerverbindung wurde beim Aktivieren verloren.");
+                lock (gate)
+                {
+                    RequireCurrentConnectionLocked(attempt);
+                    // No shared profile, reader or mode may change between this
+                    // fresh input check and publishing the privately owned output.
                     CheckConnectionInputLocked(true);
-                    if (!candidate.IsConnected) throw new InvalidOperationException("Controllerverbindung wurde beim Aktivieren verloren.");
-                    output = candidate; candidate = null;
-                    changed.Set();
-                    ResetProcessing(); frame = new ControllerFrame();
-                    RefreshConnectedStatusLocked();
-                    Log("Controller enabled");
+                    lock (connectionPublication)
+                    {
+                        RequireCurrentConnectionLocked(attempt);
+                        output = candidate; candidate = null;
+                        // Publication is the success boundary. A later cancel
+                        // sees an active output, which PrepareDisable detaches.
+                        pendingConnection = null;
+                    }
+                    ResetProcessing(); frame = new ControllerFrame(); RefreshConnectedStatusLocked(); changed.Set();
                 }
-                catch (Exception ex)
+                Log("Controller enabled");
+            }
+            catch (Exception ex) { failure = ex; cancelled = attempt.Cancelled || attempt.Cancellation.IsCancellationRequested || ex is OperationCanceledException; }
+            finally
+            {
+                // Only this worker owns an unpublished candidate, including one
+                // which returns from Connect after cancellation or a profile edit.
+                ReleaseOutput(candidate);
+                lock (gate)
                 {
-                    ReleaseOutput(candidate);
-                    startupHeldKeys.Clear(); ResetProcessing(); frame = ErrorFrame(ex.Message);
-                    status = "Controller aus: " + ex.Message;
-                    throw;
+                    if (pendingConnection == attempt)
+                    {
+                        lock (connectionPublication) pendingConnection = null;
+                        if (failure != null && output == null)
+                        {
+                            startupHeldKeys.Clear(); ResetProcessing();
+                            frame = cancelled ? new ControllerFrame() : ErrorFrame(failure.Message);
+                            if (!disposed && (attempt.Generation == connectionGeneration ||
+                                status == "Controller wird verbunden …" || status == "Controller-Verbindung wird abgebrochen …"))
+                                status = cancelled ? "Controller-Verbindung abgebrochen." : "Controller aus: " + failure.Message;
+                        }
+                    }
                 }
+                attempt.Cancellation.Dispose();
+                attempt.Drained.TrySetResult(null);
+                if (failure == null) attempt.Completion.TrySetResult(null);
+                else if (cancelled) attempt.Completion.TrySetCanceled();
+                else attempt.Completion.TrySetException(failure);
             }
         }
         public void Disable(string reason)
         { lock (gate) { if (!disposed) DisableLocked(reason ?? "Controller aus"); } }
         public ControllerRelease PrepareDisable(string reason)
         {
+            CancelPendingConnection();
             // Do not wait behind this slot's in-flight Submit before the group
             // can stop its other outputs. The neutral phase drains that Submit
             // under the worker gate, independently for every detached output.
@@ -401,6 +505,7 @@ namespace Tk75.App
         }
         void DisableLocked(string reason)
         {
+            CancelPendingLocked();
             IControllerOutput previous = DetachOutputLocked(reason);
             if (previous != null) { ReleaseOutput(previous); Log("Controller disabled: " + reason); }
         }
@@ -427,6 +532,7 @@ namespace Tk75.App
             for (;;)
             {
                 int interval = Interlocked.CompareExchange(ref output, null, null) != null ? 4 : previewActive ? 16 : Timeout.Infinite;
+                Interlocked.Exchange(ref requestedWaitMilliseconds, interval);
                 if (WaitHandle.WaitAny(signals, interval) == 0) return;
                 // Hidden/disconnected time is not an input-processing interval.
                 double now = watch.Elapsed.TotalSeconds, dt = interval == Timeout.Infinite ? 0 : now - previous; previous = now;

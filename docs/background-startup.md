@@ -1,6 +1,6 @@
 # Background startup and tray controls
 
-**Unreleased source implementation · 11 September 2026.** This describes changes after the published `0.1.0-preview.2`, not features already available in that download. Publication of this update is pending.
+**1.0.0-rc.1 · 11 September 2026.** [Current validation status](status.md).
 
 ## Open or hide the window
 
@@ -20,13 +20,19 @@ The setting uses the current user's `HKCU\Software\Microsoft\Windows\CurrentVers
 
 **Reconnect controllers at startup** is a separate option and starts **off**. Enabling Windows startup alone does not connect virtual controllers. Importing a mapping profile does not enable reconnection.
 
-With reconnection enabled, normal exit remembers the current profile and connected controller slots in `data/controller-startup.json`. At the next start, the app loads that saved local profile and waits for the keyboard to be reading pressure samples. It attempts the remembered slots that still have the same ID and controller type, using the normal connection checks. Missing profiles or removed or changed slots are not silently replaced.
+With reconnection enabled, a successful normal exit remembers the current profile and connected controller slots in `data/controller-startup.json`. A separate `data/controller-startup-session.json` journal confirms that exact session after the profile was saved and normal shutdown was accepted. Startup consumes this confirmation before any automatic connection, so a failed later save cannot reactivate an older list. The option stays saved independently of the one-use controller list.
 
-Slots reconnect one at a time. A failure stops the sequence without repeated retries. **Turn all controllers off** in the tray cancels pending reconnection and neutralizes connected outputs. Profile changes or input loss during the sequence also cancel its remaining work. Keys held while a controller connects still require release before they can produce mapped output.
+An interrupted session, unconfirmed Windows shutdown, legacy record or failed persistence check requires manual connection. A tray notification and a persistent menu notice explain the failure. No automatic retry loop is started. If the startup journal cannot be updated and verified, automatic connection stays paused for that session.
+
+For a confirmed record, the app loads its saved local profile and waits for the keyboard to be reading pressure samples. It attempts only remembered slots with the same ID and controller type, using the normal connection checks. Missing profiles or removed or changed slots are not silently replaced.
+
+Slots reconnect asynchronously, one at a time, while the window remains responsive. A failure stops the sequence without repeated retries. Manual connection actions and **Turn all controllers off** cancel pending startup reconnection; the latter also neutralizes connected outputs. Profile edits while waiting for the keyboard, profile changes, or input loss during the sequence cancel its remaining work. Keys held while a controller connects still require release before they can produce mapped output.
 
 ## Exit and background work
 
 Both the window's **X** and tray **Exit** use normal shutdown: save the profile, neutralize and disconnect controllers, and request restoration of the saved keyboard lighting. Allow pending lighting operations to finish; closing can take several seconds, and recovery rules still apply if restoration cannot complete.
+
+Windows shutdown or sign-out uses a separate three-second total cleanup budget and does not ask a save question. Controller cleanup, lighting restoration and profile saving run independently. If Windows ends the process first, lighting recovery records remain available and automatic reconnection requires manual intervention at the next start. If another application cancels Windows shutdown after cleanup has begun, the mapper finishes closing.
 
 Hidden or minimized windows skip live UI refresh and preview calculations. Input safety checks, shortcuts, device handling and lighting maintenance remain active. The maintenance timer remains configured for **33 ms**, and active controller output retains its **4 ms** worker wait. These are scheduling settings, not measured end-to-end latency or a guarantee of zero latency, constant CPU usage or identical performance on every machine.
 
@@ -34,4 +40,4 @@ Disconnected slots without a visible preview sleep until a setting, preview requ
 
 The existing Windows application-control block on the latest optimized controller output helper is separate from tray startup. That helper has not completed live validation on the development machine. Starting in the background does not bypass the block or make controller reconnection succeed; no protection-policy changes are required by these settings.
 
-The new main executable (`0.1.0.3`) was also blocked on normal launch on 11 September 2026 (Code Integrity event 3077). Tray behavior passed the synthetic UI harness, including the real application message-loop entry, but this installed unsigned executable has not started successfully. Autostart registration was therefore not enabled on the development machine. Of 44 local offline suites, 43 passed; Windows blocked the remaining lighting-lifecycle harness before it ran. This is a validation limitation, not a passed lighting test.
+The preceding unsigned main executable (`0.1.0.3`) was blocked on normal launch on 11 September 2026 (Code Integrity event 3077). Autostart registration was therefore left disabled on the development machine. See [current validation](status.md) for the candidate's automated checks and live-test boundary. A background launch does not change the Windows trust decision.

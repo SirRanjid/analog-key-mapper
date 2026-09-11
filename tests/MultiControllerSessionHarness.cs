@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using Tk75.App;
 using Tk75.Mapping;
 
@@ -8,6 +9,62 @@ using Tk75.Mapping;
 // output, process launcher, GUI control or previously blocked test is loaded.
 public static class MultiControllerSessionHarness
 {
+    // Deliberately controlled lifecycle: tests choose when cleanup completes.
+    // No Task.Run, timer, output process or hidden device implementation here.
+    sealed class AsyncFake : IControllerSession, IPreviewDemandSession, IAsyncControllerSession
+    {
+        internal readonly Fake Inner = new Fake();
+        internal TaskCompletionSource<object> Request, Drain;
+        internal bool Cancelled;
+        internal int Starts;
+        CancellationToken token;
+        public bool Connecting { get { return Request != null; } }
+        public bool Enabled { get { return Inner.Enabled; } }
+        public ControllerFrame Frame { get { return Inner.Frame; } }
+        public PreviewSnapshot Preview { get { return Inner.Preview; } }
+        public string Status { get { return Connecting ? "connecting" : Inner.Status; } }
+        public void SetPreviewActive(bool value) { Inner.SetPreviewActive(value); }
+        public void Configure(Profile profile, IDictionary<int, Calibration> calibration) { CancelPendingConnection(); Inner.Configure(profile, calibration); }
+        public void SetInputSource(object source) { CancelPendingConnection(); Inner.SetInputSource(source); }
+        public void SetKeyboardMode(bool value) { if (Inner.KeyboardMode != value) CancelPendingConnection(); Inner.SetKeyboardMode(value); }
+        public void Enable() { throw new Exception("Async endpoint must use its async API."); }
+        public Task EnableAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Request != null) return Request.Task;
+            if (Enabled) return Task.FromResult(0);
+            Starts++; Cancelled = false; token = cancellationToken;
+            Request = new TaskCompletionSource<object>(); Drain = new TaskCompletionSource<object>();
+            return Request.Task;
+        }
+        public Task CancelPendingConnection()
+        { if (Request == null) return Task.FromResult(0); Cancelled = true; return Drain.Task; }
+        public void Finish()
+        {
+            var request = Request; var drain = Drain; Request = null; Drain = null;
+            bool canceled = Cancelled || token.IsCancellationRequested;
+            Inner.Active = !canceled && !Inner.Disposed;
+            drain.SetResult(null);
+            if (canceled) request.SetCanceled(); else request.SetResult(null);
+        }
+        public void Disable(string reason) { CancelPendingConnection(); Inner.Disable(reason); }
+        public ControllerRelease PrepareDisable(string reason) { CancelPendingConnection(); return Inner.PrepareDisable(reason); }
+        public void Dispose() { CancelPendingConnection(); Inner.Dispose(); }
+    }
+    sealed class AsyncFixture : IDisposable
+    {
+        internal readonly List<AsyncFake> Created = new List<AsyncFake>();
+        internal readonly MultiControllerSession Runtime;
+        internal AsyncFixture(int limit)
+        { Runtime = new MultiControllerSession(delegate { var value = new AsyncFake(); Created.Add(value); return value; }, limit); }
+        internal AsyncFake Slot(string id)
+        { foreach (var value in Created) if (!value.Inner.Disposed && value.Inner.Profile.Controllers[0].Id == id) return value; throw new Exception("Missing async slot " + id); }
+        public void Dispose()
+        {
+            Runtime.Dispose();
+            foreach (var value in Created) if (value.Connecting) value.Finish();
+        }
+    }
     sealed class Fake : IControllerSession, IPreviewDemandSession
     {
         public bool Active, Disposed, FailEnable, FailConfigure, FailInput, FailDisable, FailMode, KeyboardMode;
@@ -92,6 +149,58 @@ public static class MultiControllerSessionHarness
         Profile profile = ControllerRouting.Add(new Profile(), "player2", "Player 2", ControllerKind.Xbox360);
         profile = MappingAssignments.Add(profile, new[] { 1 }, OutputTarget.LeftXPositive, "main");
         return MappingAssignments.Add(profile, new[] { 2 }, OutputTarget.RightTrigger, "player2");
+    }
+    static void AsyncReservationsAndRetiredCleanup()
+    {
+        using (var f = new AsyncFixture(1))
+        {
+            var runtime = f.Runtime;
+            runtime.Configure(ControllerRouting.Add(TwoPlayers(), "ps", "PS", ControllerKind.DualSense), Calibration());
+            var first = f.Slot("main"); var second = f.Slot("player2"); var ps = f.Slot("ps");
+            Task pending = runtime.EnableControllerAsync("main", CancellationToken.None);
+            Check(!pending.IsCompleted && runtime.IsControllerConnecting("main") && !runtime.IsControllerEnabled("main"), "Async connect reserves a pending slot without claiming a confirmed connection.");
+            Check(Object.ReferenceEquals(pending, runtime.EnableControllerAsync("main", CancellationToken.None)) && first.Starts == 1, "Repeated async connect requests reuse the same slot attempt.");
+            Check(runtime.Frame != null && runtime.Preview != null && runtime.Status == "connecting" && runtime.ActiveControllerIds.Length == 0,
+                "Pending-state getters remain available and do not count unconfirmed controllers as active.");
+            Reject(delegate { runtime.EnableControllerAsync("player2", CancellationToken.None); }, "Pending Xbox attempts consume capacity before confirmation.");
+            Check(second.Starts == 0, "Rejected capacity creates no second pending Xbox output.");
+            Task psPending = runtime.EnableControllerAsync("ps", CancellationToken.None);
+            Check(ps.Starts == 1 && !psPending.IsCompleted, "PlayStation reservations do not consume Xbox slots.");
+            Task drain = runtime.CancelPendingConnections();
+            Check(!drain.IsCompleted && first.Cancelled && ps.Cancelled, "Global cancel signals all pending attempts immediately but retains their cleanup drain.");
+            first.Finish(); Check(!drain.IsCompleted, "Global drain waits for every owned pending candidate.");
+            ps.Finish(); Check(drain.IsCompleted && pending.IsCanceled && psPending.IsCanceled, "Global drain completes only after both candidate cleanups.");
+            Task retry = runtime.EnableControllerAsync("player2", CancellationToken.None); second.Finish();
+            Check(retry.IsCompleted && !retry.IsFaulted && second.Enabled, "Cleaned canceled reservations release capacity for an explicit new request.");
+        }
+        using (var f = new AsyncFixture(4))
+        {
+            var runtime = f.Runtime; runtime.Configure(TwoPlayers(), Calibration());
+            var first = f.Slot("main"); var second = f.Slot("player2");
+            runtime.EnableControllerAsync("main", CancellationToken.None);
+            Task other = runtime.EnableControllerAsync("player2", CancellationToken.None);
+            Task disconnect = runtime.DisableControllerAsync("main", "cancel this slot");
+            Check(first.Cancelled && !second.Cancelled && !disconnect.IsCompleted, "ID-based pending cancellation leaves the peer attempt untouched.");
+            first.Finish();
+            Check(disconnect.IsCompleted && !other.IsCompleted && !second.Cancelled, "One slot's disconnect never waits for an unrelated pending controller.");
+            second.Finish(); Check(second.Enabled && runtime.IsControllerEnabled("player2"), "Untouched pending peer can complete normally.");
+        }
+        foreach (string change in new[] { "configure", "source", "mode", "dispose" })
+        using (var f = new AsyncFixture(4))
+        {
+            var runtime = f.Runtime; runtime.Configure(TwoPlayers(), Calibration());
+            var old = f.Slot("player2");
+            Task pending = runtime.EnableControllerAsync("player2", CancellationToken.None);
+            if (change == "configure") runtime.Configure(new Profile(), new Dictionary<int, Calibration>());
+            else if (change == "source") runtime.SetInputSource(new object());
+            else if (change == "mode") runtime.KeyboardMode = true;
+            else runtime.Dispose();
+            Check(old.Cancelled && !pending.IsCompleted, change + " invalidates pending work without waiting for candidate completion.");
+            Task drain = runtime.CancelPendingConnections();
+            Check(!drain.IsCompleted, "Cleanup remains owned even after a connecting slot was removed or disposed.");
+            old.Finish();
+            Check(drain.IsCompleted && pending.IsCanceled && !runtime.IsControllerEnabled("player2"), change + " cannot publish a stale late candidate.");
+        }
     }
     static void PreviewDemandFollowsVisibilityAndSelection()
     {
@@ -256,6 +365,7 @@ public static class MultiControllerSessionHarness
         checks = 0;
         ControllerOperationsById();
         PreviewDemandFollowsVisibilityAndSelection();
+        AsyncReservationsAndRetiredCleanup();
         GroupReleasePhases();
         using (var fixture = new Fixture(1))
         {

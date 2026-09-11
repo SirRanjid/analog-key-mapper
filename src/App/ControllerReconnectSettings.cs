@@ -12,6 +12,9 @@ namespace Tk75.App
     public sealed class ControllerReconnectSettings
     {
         public bool Enabled;
+        // A controller list is eligible only when the separate session journal
+        // confirms this exact session's completed, successful normal exit.
+        public string SessionId;
         public string ProfileFile;
         public List<ControllerDefinition> Controllers = new List<ControllerDefinition>();
 
@@ -19,6 +22,7 @@ namespace Tk75.App
         {
             var value = new JavaScriptSerializer { MaxJsonLength = 65536 }.Deserialize<ControllerReconnectSettings>(json);
             if (value == null || value.Controllers == null || value.Controllers.Count > ControllerRouting.MaximumControllers ||
+                value.SessionId != null && !ValidSessionId(value.SessionId) ||
                 value.ProfileFile != null && (value.ProfileFile.Length == 0 || value.ProfileFile != Path.GetFileName(value.ProfileFile) || value.ProfileFile.IndexOfAny(new[] { '/', '\\', ':' }) >= 0) ||
                 value.Controllers.Any(c => c == null || string.IsNullOrWhiteSpace(c.Id) || c.Id.Length > 128 || !Enum.IsDefined(typeof(ControllerKind), c.Kind)) ||
                 value.Controllers.Select(c => c.Id).Distinct(StringComparer.Ordinal).Count() != value.Controllers.Count)
@@ -27,6 +31,9 @@ namespace Tk75.App
         }
 
         public string Serialize() { return new JavaScriptSerializer().Serialize(this); }
+
+        internal static bool ValidSessionId(string value)
+        { Guid parsed; return value != null && value.Length == 32 && Guid.TryParseExact(value, "N", out parsed); }
 
         public string[] Targets(string profileFile, Profile profile)
         {

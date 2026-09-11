@@ -227,23 +227,17 @@ namespace Tk75.App
         }
         void SetControllerConnection(bool connect)
         { SetControllerConnectionForId(runtime.SelectedControllerId, connect); }
-        void SetControllerConnectionForId(string controllerId, bool connect)
+        async void SetControllerConnectionForId(string controllerId, bool connect)
         {
             if (closing || deviceDetachInProgress || rgbClosePending) return;
             CancelStartupReconnect();
             try
             {
-                Attempt(delegate
-                {
-                    if (!connect) { runtime.DisableController(controllerId, Tr("Controller getrennt", "Controller disconnected")); return; }
-                    ControllerDefinition definition = ControllerRouting.EffectiveControllers(UiReadProfile).FirstOrDefault(d => d.Id == controllerId);
-                    if (definition == null) throw new InvalidOperationException(Tr("Dieser Controller ist nicht mehr im Profil vorhanden.", "This controller is no longer in the profile."));
-                    string error = ControllerOutputs.AvailabilityError(definition.Kind);
-                    if (error != null) throw new InvalidOperationException(UiText.Get(error));
-                    settings.EndEdit(); FlushInputDraft(); runtime.EnableController(controllerId);
-                });
+                if (connect && runtime.IsControllerConnecting(controllerId)) connect = false;
+                await RequestControllerConnectionAsync(controllerId, connect, System.Threading.CancellationToken.None);
             }
-            finally { RefreshKeyboardSuppression(false); RefreshInputModeUi(); UpdateControllerConnectionUi(); }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!closing && !IsDisposed) Attempt(delegate { throw ex; }); }
         }
         // Called by the owner's live refresh after a global stop, input loss or a profile edit.
         // Never query MappingSession while its reader-detach transition is pending.
@@ -252,7 +246,7 @@ namespace Tk75.App
             if (closing || deviceDetachInProgress || rgbClosePending) { controllerConnector.Enabled = false; UpdateControllerFooterConnections(false, null); return; }
             if (!controllerConnector.Enabled) controllerConnector.Enabled = true;
             string availability = UiText.Get(OutputAvailability);
-            controllerConnector.SetConnection(runtime.Enabled, availability);
+            controllerConnector.SetConnection(runtime.Enabled, availability, runtime.IsControllerConnecting(runtime.SelectedControllerId));
             UpdateControllerFooterConnections(true, availability);
         }
         void SetDefaultDragHint()

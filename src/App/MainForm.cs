@@ -87,28 +87,12 @@ namespace Tk75.App
                 outputStatus.Text = OutputAvailability == null ? "Controller aus" : "Vorschau · Controller noch in Prüfung";
             }
             uiTimer.Tick += delegate { UpdateLive(); };
-            FormClosing += delegate(object sender, FormClosingEventArgs args)
-            {
-                if (closing) return;
-                if (rgbClosePending) { args.Cancel = true; return; }
-                if (deviceDetachInProgress) { closeAfterDeviceDetach = true; args.Cancel = true; return; }
-                if (!rgbCloseFinished)
-                {
-                    CancelMappingDrag();
-                    SaveControllerReconnectState();
-                    runtime.Disable("Anwendung wird geschlossen");
-                    keyboardSuppression.SetEnabled(false);
-                    try { SaveProfile(); } catch (Exception ex) { if (MessageBox.Show(this, UiText.Get(ex.Message) + Tr("\nOhne Speichern beenden?", "\nExit without saving?"), Tr("Speichern fehlgeschlagen", "Saving failed"), MessageBoxButtons.YesNo) != DialogResult.Yes) { CancelControllerReconnectSave(); args.Cancel = true; return; } }
-                    PersistControllerReconnectState();
-                    if (BeginRgbCloseRestore()) { args.Cancel = true; return; }
-                }
-                closing = true; StopDeviceDiscovery(); uiTimer.Stop(); ReleaseShortcutRegistrations(); keyboardSuppression.Dispose(); runtime.Dispose(); if (reader != null) reader.Dispose();
-            };
+            FormClosing += OnApplicationClosing;
             Microsoft.Win32.SystemEvents.PowerModeChanged += OnPower;
-            Disposed += delegate { DisposeDeviceDiscovery(); keyboardSuppression.Dispose(); Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPower; uiTimer.Dispose(); runtime.Dispose(); if (reader != null) reader.Dispose(); };
+            Disposed += delegate { DisposeDeviceDiscovery(); Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPower; uiTimer.Dispose(); DisposeApplicationResources(); };
         }
         void OnPower(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
-        { if (e.Mode == Microsoft.Win32.PowerModes.Suspend) runtime.Disable("Ruhezustand – Controller aus"); }
+        { if (e.Mode == Microsoft.Win32.PowerModes.Suspend) { CancelStartupReconnect(); runtime.Disable("Ruhezustand – Controller aus"); } }
         static DataGridView Grid()
         {
             return new DataGridView { Dock = DockStyle.Fill, BackgroundColor = ModernTheme.Surface, BorderStyle = BorderStyle.None, RowHeadersVisible = false,
@@ -462,6 +446,7 @@ namespace Tk75.App
         }
         protected override void WndProc(ref Message message)
         {
+            OnSystemSessionEnd(message);
             if (message.Msg == 0x0312 && message.WParam.ToInt32() == DisableHotkey && !deviceDetachInProgress && IsCurrentShortcutMessage(message, true)) { CancelStartupReconnect(); runtime.Disable("Abschalter – Controller aus"); RefreshKeyboardSuppression(false); }
             if (message.Msg == 0x0312 && message.WParam.ToInt32() == ModeHotkey && !deviceDetachInProgress && IsCurrentShortcutMessage(message, false)) Attempt(ToggleInputMode);
             if (message.Msg == 0x0219) OnDeviceChange(message);

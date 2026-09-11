@@ -2,11 +2,11 @@
 
 [Download and build](building.md) · [Compatibility and tests](status.md) · [Back to the project](../README.md)
 
-## Open the Windows preview
+## Open the Windows application
 
 Download the **Windows x64 ZIP** from [Releases](https://github.com/SirRanjid/analog-key-mapper/releases), extract it, and open the `AnalogKeyMapper` folder. Run `Verify-Checksums.bat`, then open `AnalogKeyMapper.exe`. The editor requires Windows x64 and .NET Framework 4.x; it does not require a compiler or installer.
 
-This is an unsigned development preview, and Windows may block it under your security policy. Keep the actual error if that happens; do not disable protections. If you prefer to compile it yourself, use the separate source ZIP and [build instructions](building.md#compile-from-source).
+This is the unsigned 1.0.0-rc.1 release candidate, and Windows may block it under your security policy. Keep the actual error if that happens; do not disable protections. If you prefer to compile it yourself, use the separate source ZIP and [build instructions](building.md#compile-from-source).
 
 ## Connect the keyboard
 
@@ -79,9 +79,9 @@ The app saves the keyboard's current lighting before changing it and keeps resto
 
 If recovery pauses, keep the backups and follow the displayed reason. An onboard keyboard-profile change may require returning to the previous onboard profile before restoration. Onboard keyboard profiles and the mapper's JSON profiles are different settings.
 
-## Background startup — unreleased source
+## Background startup
 
-The latest source adds an optional **Start with Windows · in tray** setting, a separate **Reconnect controllers at startup** option, and **Minimize to tray**. These are not included in the published `0.1.0-preview.2` download. Manual launch opens the editor; closing with **X** or tray **Exit** still performs normal shutdown and lighting restoration. See [background startup and tray controls](background-startup.md) for the exact behavior and current helper limitation.
+Use the optional **Start with Windows · in tray** setting, the separate **Reconnect controllers at startup** option, or **Minimize to tray**. Manual launch opens the editor; closing with **X** or tray **Exit** performs normal shutdown and lighting restoration. Reconnection starts off and only uses a confirmed previous session. See [background startup and tray controls](background-startup.md) for the exact behavior and current helper limitation.
 
 ## Troubleshooting
 
@@ -92,6 +92,7 @@ The latest source adds an optional **Start with Windows · in tray** setting, a 
 | Controller connection fails | Confirm `ViiperOutputHost.exe` and the compatible USB/IP setup. For Xbox, count physical controllers toward the four XInput slots. Read the error for the affected slot. |
 | Controller stays neutral | Check connection, mode, enabled mappings and fresh key input. Release keys held during startup. The preview alone does not prove game output. |
 | Colors do not change | Check **Key colors**, controller connection/mode, the separate marker option and the lighting status. |
+| Lighting reports a path that is too long | Exit and move the complete app folder, including `data/`, to a shorter writable path. Backup names retain the full device identity; the app checks all later journal paths before reading the lighting backup. |
 | Calibration changes after a USB-port move | Without a serial number, calibration may be associated with the Windows device path. The default range is used until suitable calibration is available. |
 | Keyboard and controller input both reach a game | Optional **Controller input only** suppression has its own switch and starts off after an app restart. It affects the selected positions across all keyboards, and Raw Input games may still see them. |
 

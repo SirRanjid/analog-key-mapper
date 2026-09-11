@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using Tk75.Mapping;
 
 namespace Tk75.App
@@ -27,6 +28,12 @@ namespace Tk75.App
     {
         void SetPreviewActive(bool value);
     }
+    public interface IAsyncControllerSession
+    {
+        bool Connecting { get; }
+        Task EnableAsync(CancellationToken cancellationToken);
+        Task CancelPendingConnection();
+    }
 
     public sealed partial class MultiControllerSession : IDisposable
     {
@@ -40,6 +47,7 @@ namespace Tk75.App
         object inputSource;
         bool disposed, keyboardMode;
         bool previewActive = true;
+        readonly List<Task> connectionCleanup = new List<Task>();
 
         sealed class Slot
         {
@@ -104,6 +112,32 @@ namespace Tk75.App
                 Slot slot;
                 return !disposed && controllerId != null && slots.TryGetValue(controllerId, out slot) && slot.Failure == null && slot.Session.Enabled;
             }
+        }
+        public bool IsControllerConnecting(string controllerId)
+        {
+            lock (gate)
+            {
+                Slot slot;
+                if (disposed || controllerId == null || !slots.TryGetValue(controllerId, out slot)) return false;
+                var asynchronous = slot.Session as IAsyncControllerSession;
+                return asynchronous != null && asynchronous.Connecting;
+            }
+        }
+        public Task CancelPendingConnections()
+        { lock (gate) { CancelPendingConnectionsLocked(); return Task.WhenAll(connectionCleanup.ToArray()); } }
+        Task TrackConnectionCancellationLocked(IControllerSession session)
+        {
+            var asynchronous = session as IAsyncControllerSession;
+            if (asynchronous == null) return Task.FromResult(0);
+            Task cleanup = asynchronous.CancelPendingConnection();
+            connectionCleanup.RemoveAll(task => task.IsCompleted);
+            if (!cleanup.IsCompleted && !connectionCleanup.Contains(cleanup)) connectionCleanup.Add(cleanup);
+            return cleanup;
+        }
+        void CancelPendingConnectionsLocked()
+        {
+            connectionCleanup.RemoveAll(task => task.IsCompleted);
+            foreach (Slot slot in slots.Values) TrackConnectionCancellationLocked(slot.Session);
         }
         public bool AnyEnabled
         {
@@ -291,34 +325,41 @@ namespace Tk75.App
         }
         public void Enable()
         {
+            string id; lock (gate) { CheckDisposed(); id = selected; }
+            EnableController(id);
+        }
+        public Task EnableControllerAsync(string controllerId, CancellationToken cancellationToken)
+        {
             lock (gate)
             {
-                CheckDisposed(); EnableSlot(Selected());
+                CheckDisposed(); cancellationToken.ThrowIfCancellationRequested(); Slot slot;
+                if (controllerId == null || !slots.TryGetValue(controllerId, out slot)) throw new ArgumentException("Unknown controller.", "controllerId");
+                var asynchronous = slot.Session as IAsyncControllerSession;
+                if (asynchronous == null) throw new NotSupportedException("This controller session does not support asynchronous connection.");
+                if (slot.Failure != null) throw new InvalidOperationException(slot.Failure);
+                if (!asynchronous.Connecting && !slot.Session.Enabled) CheckCapacityLocked(slot);
+                return asynchronous.EnableAsync(cancellationToken);
             }
         }
         // Footer controls address their own stable ID. Never temporarily select
         // another route: output and editing selection are independent state.
         public void EnableController(string controllerId)
         {
+            Task asynchronous = null;
             lock (gate)
             {
                 CheckDisposed(); Slot slot;
                 if (controllerId == null || !slots.TryGetValue(controllerId, out slot)) throw new ArgumentException("Unknown controller.", "controllerId");
-                EnableSlot(slot);
+                if (slot.Session is IAsyncControllerSession) asynchronous = EnableControllerAsync(controllerId, CancellationToken.None);
+                else EnableSlot(slot);
             }
+            if (asynchronous != null) asynchronous.GetAwaiter().GetResult();
         }
         void EnableSlot(Slot slot)
         {
             if (slot.Failure != null) throw new InvalidOperationException(slot.Failure);
             if (slot.Session.Enabled) return;
-            if (slot.Definition.Kind == ControllerKind.Xbox360)
-            {
-                int count = 0;
-                foreach (Slot other in slots.Values)
-                    if (other.Definition.Kind == ControllerKind.Xbox360 && other.Failure == null && other.Session.Enabled) count++;
-                if (count >= maximumConnectedXboxControllers)
-                    throw new InvalidOperationException(maximumConnectedXboxControllers == 1 ? "Der aktuelle Xbox-Ausgabeweg unterstützt zunächst einen verbundenen Controller. Trenne den anderen Controller, um diesen zu verwenden." : "Es können höchstens vier Xbox-Controller gleichzeitig verbunden sein. Trenne zuerst einen anderen Controller.");
-            }
+            CheckCapacityLocked(slot);
             try { slot.Session.Enable(); }
             catch
             {
@@ -326,6 +367,37 @@ namespace Tk75.App
                 catch (Exception cleanupError) { FailSlot(slot, cleanupError); }
                 throw;
             }
+        }
+        void CheckCapacityLocked(Slot slot)
+        {
+            if (slot.Definition.Kind == ControllerKind.Xbox360)
+            {
+                int count = 0;
+                foreach (Slot other in slots.Values)
+                {
+                    var pending = other.Session as IAsyncControllerSession;
+                    if (other.Definition.Kind == ControllerKind.Xbox360 && other.Failure == null &&
+                        (other.Session.Enabled || (pending != null && pending.Connecting))) count++;
+                }
+                if (count >= maximumConnectedXboxControllers)
+                    throw new InvalidOperationException(maximumConnectedXboxControllers == 1 ? "Der aktuelle Xbox-Ausgabeweg unterstützt zunächst einen verbundenen Controller. Trenne den anderen Controller, um diesen zu verwenden." : "Es können höchstens vier Xbox-Controller gleichzeitig verbunden sein. Trenne zuerst einen anderen Controller.");
+            }
+        }
+        public Task DisableControllerAsync(string controllerId, string reason)
+        {
+            ControllerRelease release = null; Task cleanup;
+            lock (gate)
+            {
+                Slot slot;
+                if (disposed || controllerId == null || !slots.TryGetValue(controllerId, out slot)) return Task.FromResult(0);
+                cleanup = TrackConnectionCancellationLocked(slot.Session);
+                release = slot.Session.PrepareDisable(reason);
+            }
+            if (release == null) return cleanup;
+            Task removal = Task.Factory.StartNew(delegate {
+                try { release.Neutral(); } finally { release.Dispose(); }
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            return Task.WhenAll(cleanup, removal);
         }
         public void DisableSelected(string reason)
         { lock (gate) { DisableControllerLocked(selected, reason); } }
@@ -336,6 +408,7 @@ namespace Tk75.App
             if (disposed || controllerId == null) return;
             Slot slot;
             if (!slots.TryGetValue(controllerId, out slot)) return;
+            TrackConnectionCancellationLocked(slot.Session);
             if (slot.Failure != null) return;
             try { slot.Session.Disable(reason); }
             catch (Exception ex) { FailSlot(slot, ex); throw; }
@@ -344,6 +417,7 @@ namespace Tk75.App
         { lock (gate) { if (!disposed) DisableLocked(reason); } }
         void DisableLocked(string reason)
         {
+            CancelPendingConnectionsLocked();
             var pending = new List<PendingRelease>();
             foreach (Slot slot in slots.Values)
                 if (slot.Failure == null)

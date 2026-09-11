@@ -6,6 +6,11 @@ using Tk75.Mapping;
 
 namespace Tk75.Output
 {
+    public interface ICancellableControllerConnection
+    {
+        void Connect(System.Threading.CancellationToken cancellationToken);
+    }
+
     public interface IControllerOutput : IDisposable
     {
         string Status { get; }

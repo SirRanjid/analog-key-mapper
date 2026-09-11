@@ -5,9 +5,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'The RGB lifecycle harness requires Windows.' }
 $workspace = Split-Path -Parent $PSScriptRoot
-# A short name leaves room for the real immutable journal filenames/MAX_PATH.
+# Keep execution in the ordinary test folder. Journal data has an independent
+# temporary root so a nested checkout does not consume the product's MAX_PATH
+# budget before the lifecycle scenario can reach its fake transport.
 $testFolder = Join-Path $PSScriptRoot ('rlc-' + [Guid]::NewGuid().ToString('N').Substring(0,8))
+$dataFolder = Join-Path ([IO.Path]::GetTempPath()) ('akm-rgb-' + [Guid]::NewGuid().ToString('N').Substring(0,8))
 [void][System.IO.Directory]::CreateDirectory($testFolder)
+[void][System.IO.Directory]::CreateDirectory($dataFolder)
+[IO.File]::WriteAllText((Join-Path $testFolder 'data-location.txt'), $dataFolder)
 $testProcess = $null; $success = $false
 try {
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
@@ -24,7 +29,8 @@ try {
     $stdout = Join-Path $testFolder 'stdout.txt'; $stderr = Join-Path $testFolder 'stderr.txt'
     # Only this synthetic harness; never start the production app or monitor.
     # If Windows refuses the executable, stop without an alternate launch path.
-    $testProcess = Start-Process -FilePath $executable -ArgumentList ('"' + $testFolder + '"') -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    Write-Output ('RGB test data: ' + $dataFolder)
+    $testProcess = Start-Process -FilePath $executable -ArgumentList ('"' + $dataFolder + '"') -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     if (-not $testProcess.WaitForExit(35000)) {
         $testProcess.Kill(); $testProcess.WaitForExit()
         throw ('RGB lifecycle harness exceeded 35 seconds. Artifacts: ' + $testFolder)
@@ -42,6 +48,10 @@ finally {
         $testProcess.Dispose()
     }
     if ($success -and -not $KeepArtifacts) {
+        $resolvedData = [System.IO.Path]::GetFullPath($dataFolder)
+        $temporaryParent = [System.IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+        if (-not $resolvedData.StartsWith($temporaryParent,[StringComparison]::OrdinalIgnoreCase) -or -not [System.IO.Path]::GetFileName($resolvedData).StartsWith('akm-rgb-')) { throw 'Refusing cleanup outside the dedicated RGB data directory.' }
+        Remove-Item -LiteralPath $resolvedData -Recurse -Force
         $resolved = [System.IO.Path]::GetFullPath($testFolder)
         $parent = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\') + '\'
         if (-not $resolved.StartsWith($parent,[StringComparison]::OrdinalIgnoreCase) -or -not [System.IO.Path]::GetFileName($resolved).StartsWith('rlc-')) { throw 'Refusing cleanup outside the dedicated test directory.' }

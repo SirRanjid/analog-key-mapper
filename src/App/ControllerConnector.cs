@@ -16,7 +16,7 @@ namespace Tk75.App
         static float RetentionAxis(int index)
         { return (index == 0 ? -1 : 1) * (SocketWidth - 2 * SocketBorder) * .18f; }
         readonly ToolTip tooltip = new ToolTip();
-        bool connected, armed, dragging, gestureConnected, gestureMoved;
+        bool connected, connecting, armed, dragging, gestureConnected, gestureMoved;
         bool requestingConnection, requestedConnection;
         bool vertical, compact, pointerInside;
         bool spaceDown, enterDown;
@@ -61,13 +61,17 @@ namespace Tk75.App
             AccessibleRole = AccessibleRole.PushButton; RefreshLanguage();
         }
         public void SetConnection(bool isConnected, string unavailableReason)
+        { SetConnection(isConnected, unavailableReason, false); }
+        public void SetConnection(bool isConnected, string unavailableReason, bool isConnecting)
         {
-            if (connected == isConnected && unavailable == unavailableReason) return;
-            CancelGesture(); connected = isConnected; unavailable = unavailableReason;
+            isConnecting = isConnecting && !isConnected;
+            if (connected == isConnected && connecting == isConnecting && unavailable == unavailableReason) return;
+            CancelGesture(); connected = isConnected; connecting = isConnecting; unavailable = unavailableReason;
             RefreshLanguage(); RefreshPointer(); AccessibilityNotifyClients(AccessibleEvents.StateChange, -1);
         }
-        string ActionText { get { return connected ? UiText.Get("Controller trennen", "Disconnect controller") : UiText.Get("Controller verbinden", "Connect controller"); } }
-        string StateText { get { return connected ? UiText.Get("Verbunden", "Connected") : unavailable == null ? UiText.Get("Nicht verbunden", "Disconnected") : UiText.Get("Noch nicht bereit", "Not ready yet"); } }
+        bool ConnectionEngaged { get { return connected || connecting; } }
+        string ActionText { get { return connecting ? UiText.Get("Verbindung abbrechen", "Cancel connection") : connected ? UiText.Get("Controller trennen", "Disconnect controller") : UiText.Get("Controller verbinden", "Connect controller"); } }
+        string StateText { get { return connecting ? UiText.Get("Verbindung wird hergestellt…", "Connecting…") : connected ? UiText.Get("Verbunden", "Connected") : unavailable == null ? UiText.Get("Nicht verbunden", "Disconnected") : UiText.Get("Noch nicht bereit", "Not ready yet"); } }
         string HintText
         {
             get
@@ -101,7 +105,7 @@ namespace Tk75.App
         float DisconnectTolerance { get { return Vertical ? Math.Min(12, Math.Abs(DockAxis - RestAxis) * .65f) : 28; } }
         RectangleF PlugAt(float axis)
         { return Vertical ? new RectangleF((ClientSize.Width - PlugWidth) / 2f, -axis, PlugWidth, 24) : new RectangleF(axis, CenterLine - PlugWidth * HorizontalScale / 2, HorizontalPlugLength, PlugWidth * HorizontalScale); }
-        RectangleF PlugBounds { get { return PlugAt(dragging ? movingAxis : (requestingConnection ? requestedConnection : connected) ? DockAxis : RestAxis); } }
+        RectangleF PlugBounds { get { return PlugAt(dragging ? movingAxis : (requestingConnection ? requestedConnection : ConnectionEngaged) ? DockAxis : RestAxis); } }
         RectangleF TipBounds(RectangleF plug)
         {
             return Vertical ? new RectangleF(plug.Left + (PlugWidth - TipWidth) / 2, plug.Top - 15, TipWidth, 16) : new RectangleF(plug.Right - HorizontalScale, plug.Top + (PlugWidth - TipWidth) * HorizontalScale / 2, 16 * HorizontalScale, TipWidth * HorizontalScale);
@@ -147,17 +151,17 @@ namespace Tk75.App
         {
             if (requestingConnection) return;
             Action<bool> handler = ConnectionRequested;
-            if (!Enabled || value == connected || handler == null) { CancelGesture(); return; }
+            if (!Enabled || value == ConnectionEngaged || handler == null) { CancelGesture(); return; }
             // Keep the released plug at its requested destination before
-            // releasing capture. The synchronous backend may repaint the UI
-            // while connecting; only SetConnection changes the real state.
+            // releasing capture. SetConnection supplies the pending state across
+            // asynchronous callbacks and confirms the actual runtime connection.
             requestingConnection = true; requestedConnection = value;
             try
             {
                 CancelGesture();
-                if (IsDisposed || Disposing || !Enabled || value == connected) return;
+                if (IsDisposed || Disposing || !Enabled || value == ConnectionEngaged) return;
                 Invalidate(); Update();
-                if (!IsDisposed && !Disposing && Enabled && value != connected) handler(value);
+                if (!IsDisposed && !Disposing && Enabled && value != ConnectionEngaged) handler(value);
             }
             finally
             {
@@ -171,8 +175,8 @@ namespace Tk75.App
             TrackPointer(e.Location); RefreshPointer();
             if (e.Button != MouseButtons.Left || !Enabled || requestingConnection) return;
             int part = HitPart(e.Location); if (part == 0) return;
-            Focus(); origin = e.Location; gestureConnected = connected; pressedPart = part;
-            initialAxis = movingAxis = connected ? DockAxis : RestAxis;
+            Focus(); origin = e.Location; gestureConnected = ConnectionEngaged; pressedPart = part;
+            initialAxis = movingAxis = ConnectionEngaged ? DockAxis : RestAxis;
             armed = true; dragging = gestureMoved = false; Capture = true; RefreshPointer();
         }
         protected override void OnMouseMove(MouseEventArgs e)
@@ -200,8 +204,8 @@ namespace Tk75.App
             base.OnMouseUp(e);
             TrackPointer(e.Location); RefreshPointer();
             if (e.Button != MouseButtons.Left || !armed) return;
-            bool sameState = connected == gestureConnected;
-            bool send = false, next = connected;
+            bool sameState = ConnectionEngaged == gestureConnected;
+            bool send = false, next = ConnectionEngaged;
             if (dragging) { next = WouldDock(ClampedAxis(e.Location)); send = next != gestureConnected; }
             else if (!gestureMoved)
             {
@@ -251,7 +255,7 @@ namespace Tk75.App
                 // Remember modified presses too: releasing Ctrl/Alt/Shift while
                 // keeping the activation key held must not cause a later toggle.
                 if (e.Modifiers != Keys.None) return;
-                if (!repeated) { CancelGesture(); Request(!connected); }
+                if (!repeated) { CancelGesture(); Request(!ConnectionEngaged); }
                 e.Handled = true;
             }
         }
@@ -271,7 +275,7 @@ namespace Tk75.App
         {
             base.OnPaint(e);
             Graphics graphics = e.Graphics; graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Color ink = !Enabled ? ModernTheme.Muted : connected ? Color.FromArgb(121, 200, 175) : AccentColor;
+            Color ink = !Enabled ? ModernTheme.Muted : connecting ? Color.FromArgb(255, 198, 92) : connected ? Color.FromArgb(121, 200, 175) : AccentColor;
             RectangleF socket = SocketBounds, plug = PlugBounds;
             DrawSocket(graphics, socket, ink);
             PointF end = Vertical ? new PointF(plug.Left + plug.Width / 2, plug.Bottom) : new PointF(plug.Left, plug.Top + plug.Height / 2);
@@ -293,7 +297,7 @@ namespace Tk75.App
             else
             {
                 Rectangle caption = new Rectangle(252, Compact ? 7 : 15, Math.Max(0, ClientSize.Width - 260), 25);
-                string captionText = Compact && ClientSize.Width < 430 ? connected ? UiText.Get("Trennen", "Disconnect") : UiText.Get("Verbinden", "Connect") : ActionText;
+                string captionText = Compact && ClientSize.Width < 430 ? connecting ? UiText.Get("Abbrechen", "Cancel") : connected ? UiText.Get("Trennen", "Disconnect") : UiText.Get("Verbinden", "Connect") : ActionText;
                 TextRenderer.DrawText(graphics, captionText, Font, caption, Enabled ? ForeColor : ModernTheme.Muted,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
                 Rectangle hint = new Rectangle(caption.Left, Compact ? 33 : 43, caption.Width, Compact ? 22 : 42);
@@ -345,7 +349,7 @@ namespace Tk75.App
             using (Brush darkness = new SolidBrush(Color.FromArgb(8, 10, 14))) graphics.FillPath(darkness, recess);
             using (GraphicsPath rim = Rounded(socket, 1.5f))
             using (LinearGradientBrush metal = Material(socket, Color.FromArgb(176, 183, 193), Color.FromArgb(89, 97, 109), Color.FromArgb(38, 43, 52)))
-            using (Pen outline = new Pen(ready || hoveredPart == 2 ? AccentColor : connected ? ink : Color.FromArgb(113, 121, 134), ready ? 1.5f : .8f))
+            using (Pen outline = new Pen(ready || hoveredPart == 2 ? AccentColor : ConnectionEngaged ? ink : Color.FromArgb(113, 121, 134), ready ? 1.5f : .8f))
             { graphics.FillPath(metal, rim); graphics.DrawPath(outline, rim); }
             RectangleF opening = RectangleF.Inflate(socket, -SocketBorder, -SocketBorder);
             using (Brush cavity = new SolidBrush(Color.FromArgb(5, 7, 10))) graphics.FillRectangle(cavity, opening);
@@ -481,7 +485,8 @@ namespace Tk75.App
             public ConnectorAccessibleObject(ControllerConnector owner) : base(owner) { this.owner = owner; }
             public override string DefaultAction { get { return owner.ActionText; } }
             public override string Value { get { return owner.StateText; } set { } }
-            public override void DoDefaultAction() { if (!owner.IsDisposed) owner.Request(!owner.connected); }
+            public override AccessibleStates State { get { return base.State | (owner.connecting ? AccessibleStates.Busy : AccessibleStates.None); } }
+            public override void DoDefaultAction() { if (!owner.IsDisposed) owner.Request(!owner.ConnectionEngaged); }
         }
         protected override void Dispose(bool disposing) { if (disposing) { CancelGesture(); tooltip.Dispose(); } base.Dispose(disposing); }
     }

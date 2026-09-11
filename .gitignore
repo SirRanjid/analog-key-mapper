@@ -2,11 +2,15 @@
 bin/
 build/
 release/
+backups/
 data/
 captures/
 tests/tmp/
 tests/synthetic-app-ui-*/
 tests/synthetic-background-ui-*/
+tests/synthetic-shutdown-*/
+tests/synthetic-controller-reconnect-*/
+tests/synthetic-controller-pending-*/
 tests/rlc-*/
 .cache/
 .vs/

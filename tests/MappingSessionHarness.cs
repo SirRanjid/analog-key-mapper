@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 using Tk75.App;
 using Tk75.Mapping;
 using Tk75.Output;
@@ -73,17 +74,19 @@ public static class MappingSessionHarness
         }
     }
 
-    sealed class FakeOutput : IControllerOutput
+    sealed class FakeOutput : IControllerOutput, ICancellableControllerConnection
     {
         readonly object gate = new object();
         bool connected;
         int submits, nonzero, invalid, neutralCalls, disposeCalls, afterDispose;
         ControllerFrame last = new ControllerFrame();
         public Action ConnectHook, SubmitHook;
+        public Action ReadConnectionHook;
+        public Action<CancellationToken> CancellableConnectHook;
         public Action<ControllerFrame> ObserveSubmit;
         public volatile bool ThrowNeutral, ThrowDispose, ThrowSubmit, DropOnSubmit;
         public string Status { get { return "Synthetic output"; } }
-        public bool IsConnected { get { lock (gate) return connected; } }
+        public bool IsConnected { get { if (ReadConnectionHook != null) ReadConnectionHook(); lock (gate) return connected; } }
         public int Submits { get { lock (gate) return submits; } }
         public int Nonzero { get { lock (gate) return nonzero; } }
         public int Invalid { get { lock (gate) return invalid; } }
@@ -92,6 +95,12 @@ public static class MappingSessionHarness
         public int AfterDispose { get { lock (gate) return afterDispose; } }
         public ControllerFrame Last { get { lock (gate) return last; } }
         public void Connect() { lock (gate) connected = true; if (ConnectHook != null) ConnectHook(); }
+        public void Connect(CancellationToken cancellationToken)
+        {
+            if (CancellableConnectHook == null) { Connect(); return; }
+            lock (gate) connected = true;
+            CancellableConnectHook(cancellationToken);
+        }
         public void Drop() { lock (gate) connected = false; }
         public void Submit(ControllerFrame value)
         {
@@ -499,11 +508,189 @@ public static class MappingSessionHarness
         }
     }
 
+    static void AsyncConnections()
+    {
+        PendingReplyCancellation();
+        using (var f = new Fixture(false))
+        using (var cancelled = new CancellationTokenSource())
+        {
+            cancelled.Cancel();
+            Reject(delegate { f.Session.EnableAsync(cancelled.Token); }, "An already-canceled request is rejected before creating an output.");
+            Check(f.Outputs.Count == 0 && !f.Session.Connecting, "Rejected pre-cancellation reserves no candidate.");
+            // The concrete process backend checks cancellation before any path,
+            // job, process or native operation, even for a nonexistent helper.
+            using (var isolated = new IsolatedOutput(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "synthetic-never-launch-controller.exe"), "", 100, 100))
+            {
+                bool canceled = false;
+                try { isolated.Connect(cancelled.Token); } catch (OperationCanceledException) { canceled = true; }
+                Check(canceled && isolated.HostProcessId == null, "Canceled isolated connection never starts or opens an output host.");
+            }
+        }
+        foreach (string mutation in new[] { "cancel", "disable", "configure", "source", "mode", "dispose" })
+        using (var f = new Fixture(false))
+        using (var entered = new ManualResetEvent(false))
+        using (var release = new ManualResetEvent(false))
+        {
+            f.PreparingOutput = delegate(FakeOutput candidate) {
+                candidate.CancellableConnectHook = delegate(CancellationToken token) { entered.Set(); release.WaitOne(); };
+            };
+            Task connection = f.Session.EnableAsync(CancellationToken.None);
+            try
+            {
+                Check(entered.WaitOne(1500), "Asynchronous connection enters its private candidate.");
+                Task same = f.Session.EnableAsync(CancellationToken.None);
+                Check(Object.ReferenceEquals(connection, same) && f.Outputs.Count == 1, "Repeated connect requests reuse exactly one pending candidate.");
+                Task action = Task.Factory.StartNew(delegate {
+                    Check(f.Session.Connecting && !f.Session.Enabled, "Pending connection getters do not wait for native Connect.");
+                    string status = f.Session.Status; var frame = f.Session.Frame; var preview = f.Session.Preview;
+                    if (mutation == "cancel") f.Session.CancelPendingConnection();
+                    else if (mutation == "disable") f.Session.Disable("cancel pending");
+                    else if (mutation == "configure") f.Session.Configure(f.Profile, f.Calibrations);
+                    else if (mutation == "source") f.Session.SetReader(new ReaderSession { IsReading = true, Snapshot = delegate { return new Dictionary<int, double> { { 14, 0 } }; } });
+                    else if (mutation == "mode") f.Session.SetKeyboardMode(true);
+                    else f.Session.Dispose();
+                });
+                Check(action.Wait(1500), mutation + " returns while the candidate is still blocked inside Connect.");
+                Task drain = f.Session.CancelPendingConnection();
+                Check(!drain.IsCompleted && !connection.IsCompleted, "Uncooperative late candidate remains owned until real cleanup finishes.");
+                release.Set();
+                Wait(delegate { return connection.IsCompleted && drain.IsCompleted; }, "Late canceled connection drains after returning from Connect.");
+                Check(connection.IsCanceled && !f.Session.Enabled && !f.Session.Connecting,
+                    mutation + " prevents publication of a late successful native connection.");
+                Check(f.Outputs[0].DisposeCalls == 1 && f.Outputs[0].NeutralCalls == 1 && f.Outputs[0].Submits == 0,
+                    "Canceled unpublished candidate is neutralized and disposed exactly once, without mapped frames.");
+                if (mutation == "cancel") Check(f.Session.Status == "Controller-Verbindung abgebrochen.",
+                    "Finished direct cancellation does not leave a stale connecting status.");
+            }
+            finally { release.Set(); }
+        }
+        using (var f = new Fixture(false))
+        using (var entered = new ManualResetEvent(false))
+        using (var cancellation = new CancellationTokenSource())
+        {
+            f.PreparingOutput = delegate(FakeOutput candidate) {
+                candidate.CancellableConnectHook = delegate(CancellationToken token) {
+                    entered.Set(); token.WaitHandle.WaitOne(); token.ThrowIfCancellationRequested();
+                };
+            };
+            Task pending = f.Session.EnableAsync(cancellation.Token);
+            Check(entered.WaitOne(1500), "Cancellable backend received its connection token.");
+            cancellation.Cancel();
+            Wait(delegate { return pending.IsCompleted; }, "External cancellation interrupts a cooperative native connection.");
+            Check(pending.IsCanceled && f.Outputs[0].DisposeCalls == 1 && !f.Session.Enabled,
+                "Caller cancellation is reported only after owned candidate cleanup.");
+            f.PreparingOutput = null;
+            Task retry = f.Session.EnableAsync(CancellationToken.None);
+            Check(retry.Wait(1500) && f.Session.Enabled && f.Outputs.Count == 2,
+                "A cleaned canceled attempt permits one explicit fresh retry.");
+        }
+        using (var first = new Fixture(false))
+        using (var second = new Fixture(false))
+        using (var entered = new ManualResetEvent(false))
+        using (var release = new ManualResetEvent(false))
+        {
+            FakeOutput peer = first.Arm(); first.Input.Set(14, 80, 0);
+            second.PreparingOutput = delegate(FakeOutput candidate) { candidate.CancellableConnectHook = delegate { entered.Set(); release.WaitOne(); }; };
+            Task pending = second.Session.EnableAsync(CancellationToken.None);
+            try
+            {
+                Check(entered.WaitOne(1500), "A second controller is pending while the first remains connected.");
+                int before = peer.Submits; first.Input.Set(14, 30, 0);
+                Wait(delegate { return peer.Last.LeftY == .3 && peer.Submits >= before + 5; }, "Existing peer continues current frames and heartbeat during another Connect.");
+                second.Session.CancelPendingConnection(); release.Set();
+                Wait(delegate { return pending.IsCompleted; }, "Second controller cancellation completes independently.");
+                Check(pending.IsCanceled && first.Session.Enabled && peer.DisposeCalls == 0,
+                    "Canceling a pending controller never neutralizes or removes its connected peer.");
+            }
+            finally { release.Set(); }
+        }
+        using (var f = new Fixture(false))
+        using (var entered = new ManualResetEvent(false))
+        using (var release = new ManualResetEvent(false))
+        {
+            int connectionReads = 0;
+            f.PreparingOutput = delegate(FakeOutput candidate) {
+                candidate.ReadConnectionHook = delegate {
+                    if (Interlocked.Increment(ref connectionReads) == 2) { entered.Set(); release.WaitOne(); }
+                };
+            };
+            Task pending = f.Session.EnableAsync(CancellationToken.None);
+            try
+            {
+                Check(entered.WaitOne(1500), "The private candidate pauses at its last connection check before publication.");
+                ControllerRelease detached = null;
+                Task stop = Task.Factory.StartNew(delegate { detached = f.Session.PrepareDisable("stop before publication"); });
+                Check(stop.Wait(1500), "PrepareDisable does not wait for a private candidate's connection getter.");
+                Check(detached == null && !f.Session.Enabled, "Unpublished output has no transferred release ownership.");
+                release.Set();
+                Wait(delegate { return pending.IsCompleted; }, "Canceled final-check candidate finishes owned cleanup.");
+                Check(pending.IsCanceled && !f.Session.Enabled && f.Outputs[0].Submits == 0 && f.Outputs[0].DisposeCalls == 1,
+                    "Cancellation before publication cannot be followed by a late active output.");
+            }
+            finally { release.Set(); }
+        }
+        using (var f = new Fixture(false))
+        {
+            f.Session.SetPreviewActive(false);
+            f.PreparingOutput = delegate(FakeOutput candidate) {
+                candidate.ConnectHook = delegate { f.Input.SnapshotHook = delegate { f.Session.SetKeyboardMode(true); }; };
+            };
+            Task pending = f.Session.EnableAsync(CancellationToken.None);
+            Wait(delegate { return pending.IsCompleted; }, "A mode change during final input validation completes its canceled candidate.");
+            Check(pending.IsCanceled && !f.Session.Enabled && f.Session.KeyboardMode && f.Outputs[0].Submits == 0 && f.Outputs[0].DisposeCalls == 1,
+                "Generation is rechecked after the final snapshot, so a validation-time mode change cannot publish stale output.");
+        }
+    }
+
+    sealed class SyntheticReplyPipe : System.IO.TextReader
+    {
+        readonly System.Collections.Concurrent.BlockingCollection<char> data = new System.Collections.Concurrent.BlockingCollection<char>();
+        public void Feed(string text) { foreach (char character in text) data.Add(character); }
+        public void Complete() { data.CompleteAdding(); }
+        public override int Read() { char character; return data.TryTake(out character, Timeout.Infinite) ? character : -1; }
+        protected override void Dispose(bool disposing) { if (disposing) data.Dispose(); base.Dispose(disposing); }
+    }
+    static void PendingReplyCancellation()
+    {
+        // Exercise the real reply reader with an in-memory blocking pipe. No
+        // process, job or device is created, and cancellation must not close the
+        // pipe: the normal shutdown path still needs to drain the host's reply.
+        var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        Type type = typeof(IsolatedOutput).GetNestedType("ReplyChannel", System.Reflection.BindingFlags.NonPublic);
+        var wait = type.GetMethod("Wait", flags, null, new[] { typeof(int), typeof(CancellationToken) }, null);
+        var take = type.GetMethod("TryTake", flags);
+        var close = type.GetMethod("Close", flags);
+        using (var input = new SyntheticReplyPipe())
+        using (var cancellation = new CancellationTokenSource())
+        {
+            object channel = Activator.CreateInstance(type, flags, null, new object[] { input, System.IO.TextReader.Null }, null);
+            try
+            {
+                Exception failure = null;
+                Task awaiting = Task.Factory.StartNew(delegate {
+                    try { wait.Invoke(channel, new object[] { 15000, cancellation.Token }); }
+                    catch (System.Reflection.TargetInvocationException ex) { failure = ex.InnerException; }
+                });
+                cancellation.Cancel();
+                Check(awaiting.Wait(1500) && failure is OperationCanceledException,
+                    "Canceling a pending CONNECT reply wakes its long command wait without killing or disposing its pipe.");
+                input.Feed(OutputWire.Version + " 1 ACK\n");
+                Check((bool)wait.Invoke(channel, new object[] { 1500, CancellationToken.None }),
+                    "The existing reply reader remains available for the host's ordered cleanup after cancellation.");
+                object[] reply = { null };
+                Check((bool)take.Invoke(channel, reply) && reply[0] != null,
+                    "A real protocol ACK is still parsed and drained after the canceled wait.");
+            }
+            finally { input.Complete(); close.Invoke(channel, null); }
+        }
+    }
+
     public static string Run()
     {
         checks = 0;
         PreviewDemand();
         DormantHiddenSession();
+        AsyncConnections();
         using (var f = new Fixture(false))
         {
             FakeOutput output = f.Arm(); f.Input.Set(14, 85, 0);
@@ -523,10 +710,13 @@ public static class MappingSessionHarness
         {
             Thread.Sleep(70);
             int before = f.Input.SnapshotCalls; Thread.Sleep(250); int idle = f.Input.SnapshotCalls - before;
-            Check(idle > 0 && idle < 30, "Disconnected output previews run below the active 4-ms polling rate.");
+            Check(idle > 0 && idle < 30 && f.Session.RequestedWaitMilliseconds == 16, "Visible disconnected sessions request 16-ms waits and continue capturing input.");
             FakeOutput output = f.Arm(); Wait(delegate { return output.Submits > 0; }, "Activation wakes the session and starts output.");
             before = f.Input.SnapshotCalls; Thread.Sleep(250); int active = f.Input.SnapshotCalls - before;
-            Check(active > idle + 3, "Connected output retains the faster active input cadence (idle=" + idle + ", active=" + active + ").");
+            // Windows may round both timeouts to the same timer quantum. Assert
+            // the real requested wait and continuing work, not a fictitious OS
+            // guarantee that a four-millisecond timeout always wakes in four ms.
+            Check(active > 0 && f.Session.RequestedWaitMilliseconds == 4, "Connected output requests 4-ms waits and continues processing (idle=" + idle + ", active=" + active + ").");
         }
         using (var f = new Fixture(false))
         using (var entered = new ManualResetEvent(false))
@@ -572,7 +762,7 @@ public static class MappingSessionHarness
             f.Profile.Inputs.Add(new KeyInputSettings { KeyIndex = 14, RapidTriggerEnabled = true, ActuationPoint = .5, PressMovement = .02, ReleaseMovement = .8 });
             f.Session.Configure(f.Profile, f.Calibrations);
             var output = f.Arm(); f.Input.Set(14, 60, 0);
-            Wait(delegate { return output.Last.LeftY == .6; }, "Rapid trigger actuates before pause");
+            Wait(delegate { return output.Last.LeftY == .6 && f.Session.Preview.LeftY == .6; }, "Rapid trigger actuates in output and independent preview before pause");
             f.Session.SetKeyboardMode(true); f.Input.Set(14, 30, 0);
             Wait(delegate { return f.Session.Preview.LeftY == .3; }, "Independent preview may retain its real rapid-trigger history while paused");
             f.Session.SetKeyboardMode(false); int submits = output.Submits;
@@ -734,7 +924,7 @@ public static class MappingSessionHarness
             f.Profile.Inputs.Add(new KeyInputSettings { KeyIndex = 9, OppositeKeyIndex = 14 });
             f.Session.Configure(f.Profile, f.Calibrations);
             f.Input.Set(14, 100, 0); f.Input.Set(9, 100, 0);
-            Wait(delegate { return f.Session.Frame.InputResults.Count == 2 && f.Session.Frame.InputResults[14].Active; }, "Physical input state reaches preview before SOCD");
+            Wait(delegate { var frame = f.Session.Frame; return frame.InputResults.Count == 2 && frame.InputResults[14].Active && frame.InputResults[9].Active; }, "Both physical input states reach preview before SOCD");
             Check(Neutral(f.Session.Frame), "SOCD suppresses opposing bindings in calculated preview");
             var output = f.Arm();
             Wait(delegate { return output.Submits >= 3; }, "SOCD-held keys connect neutrally without a modal rejection");

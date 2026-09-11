@@ -12,7 +12,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-2022
-    timeout-minutes: 15
+    timeout-minutes: 25
     defaults:
       run:
         shell: pwsh
@@ -21,24 +21,36 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Verify download and compile
+      - name: Set up Go for the controller helper
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Compile application and controller helper
         run: |
-          ./Build.bat --no-pause
+          ./Build.bat --with-controller --no-pause
           if ($LASTEXITCODE -ne 0) { throw 'Build.bat failed.' }
-      - name: Run focused offline checks
+      - name: Run all offline checks
         run: |
-          $suites = @(
-            'Test-MappingCore.ps1', 'Test-MappingAssignments.ps1',
-            'Test-BezierCurve.ps1', 'Test-ControllerRouting.ps1',
-            'Test-MultiControllerSession.ps1', 'Test-MappingSession.ps1',
-            'Test-MultiMappingIntegration.ps1', 'Test-IsolatedOutput.ps1',
-            'Test-RgbOverridePlan.ps1', 'Test-Tk75RgbProtocol.ps1',
-            'Test-Tk75RgbExchange.ps1', 'Test-VisualKeyboard.ps1',
-            'Test-AppUi.ps1', 'Test-BackgroundUi.ps1',
-            'Test-MonitorWire.ps1', 'Test-RgbLifecycle.ps1'
-          )
-          foreach ($suite in $suites) {
-            & pwsh -NoLogo -NoProfile -File (Join-Path 'tests' $suite)
-            if ($LASTEXITCODE -ne 0) { throw ('Failed: ' + $suite) }
-          }
+          ./Test-All.ps1
           'Compilation and synthetic checks only. No driver or real controller was started.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Check helper protocol and report pacing
+        working-directory: src/ViiperOutputHost
+        env:
+          CGO_ENABLED: '0'
+          GOTOOLCHAIN: local
+          GOPROXY: 'off'
+        run: |
+          go test -mod=vendor -count=1 ./cmd/tk75-output-host
+          if ($LASTEXITCODE -ne 0) { throw 'Helper checks failed.' }
+      - name: Package and verify exact build versions
+        run: ./scripts/Package-Release.ps1
+      - name: Save checked source and Windows packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: AnalogKeyMapper-checked-packages
+          path: |
+            release/*/*.zip
+            release/*/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14

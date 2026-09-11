@@ -19,6 +19,9 @@ namespace Tk75.App
         // One in-flight update, a fresh restore read and the restore exchange,
         // plus bounded journal/scheduling overhead. The UI waits asynchronously.
         const int RgbCloseTimeoutMilliseconds = 3 * RgbOperationTimeoutMilliseconds + 2000;
+        // A cancelled native connection may first finish its 15s Connect wait,
+        // then neutralize/remove its own helper. It runs alongside RGB restore.
+        const int NormalCloseTimeoutMilliseconds = 25000;
         const int RgbInitializationMaximumAttempts = 3;
         const int RgbInitializationRetryBaseMilliseconds = 500;
         RgbBackupWork rgbBackupWork;
@@ -26,6 +29,7 @@ namespace Tk75.App
         uint? rgbAttemptedModel;
         string lastRgbUiStatus;
         bool rgbClosePending, rgbCloseFinished;
+        bool rgbCloseSucceeded = true;
         RgbLightingPlan rgbPlanCache;
 
         bool RgbOverrideReady
@@ -414,7 +418,15 @@ namespace Tk75.App
                 // Journals are immutable. A read-only retry needs its own
                 // request identity rather than overwriting the failed request.
                 string requestId = work.InitAttempts > 1 ? Guid.NewGuid().ToString("N") : work.RequestId;
-                prefix = Path.Combine(directory, "rgb-" + identityHash + "-" + work.StartedUtc.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + "-" + requestId);
+                // The full identity stays in the filename; the request GUID is
+                // encoded losslessly without padding. Time and the ordinary GUID
+                // remain in the JSON. Avoid exhausting MAX_PATH in a normal ZIP
+                // extraction directory before later transaction/resolution files.
+                string fileToken = Convert.ToBase64String(new Guid(requestId).ToByteArray()).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+                prefix = Path.Combine(directory, "rgb-" + identityHash + "-" + fileToken);
+                // Validate the longest future journal (including atomic-write
+                // staging) before any initial read or readiness publication.
+                RequireRgbJournalPath(prefix + ".resolved-" + Int32.MaxValue.ToString(CultureInfo.InvariantCulture) + "-" + new string('0', 32) + ".json");
                 journal = new Dictionary<string, object> {
                     { "SchemaVersion", 1 }, { "RequestId", requestId }, { "StartedUtc", work.StartedUtc.ToString("o", CultureInfo.InvariantCulture) },
                     { "Operation", "ReadOnlyLightingBackup" }, { "Layer", RgbBackupLayer }, { "Identity", identity },
@@ -614,6 +626,11 @@ namespace Tk75.App
         void RestoreRgbBeforeDisconnect(ReaderSession source, int timeoutMs)
         {
             RgbBackupWork work = rgbBackupWork; if (work == null || !Object.ReferenceEquals(work.Reader, source)) return;
+            RestoreRgbWorkBeforeDisconnect(work, timeoutMs);
+        }
+        static void RestoreRgbWorkBeforeDisconnect(RgbBackupWork work, int timeoutMs)
+        {
+            if (work == null) return;
             var deadline = System.Diagnostics.Stopwatch.StartNew();
             lock (work.Gate)
             {
@@ -627,18 +644,33 @@ namespace Tk75.App
             if (rgbCloseFinished) return false;
             if (rgbClosePending) return true;
             RgbBackupWork work = rgbBackupWork; ReaderSession source = reader;
-            if (work == null || source == null || !Object.ReferenceEquals(work.Reader, source)) return false;
+            bool restoreLighting = work != null && source != null && Object.ReferenceEquals(work.Reader, source);
+            System.Threading.Tasks.Task connections = runtime.CancelPendingConnections();
+            if (!restoreLighting && connections.IsCompleted) return false;
             rgbClosePending = true; Enabled = false; uiTimer.Stop(); StopDeviceDiscovery();
             ThreadPool.QueueUserWorkItem(delegate
             {
-                RestoreRgbBeforeDisconnect(source, RgbCloseTimeoutMilliseconds);
-                string restoreFailure = null;
-                lock (work.Gate)
-                    if (work.Original != null && (work.Applied || work.RecoveryRequired || !work.Stopped))
-                        restoreFailure = work.Error ?? "Lighting restoration did not finish before closing.";
-                if (restoreFailure != null) store.Event("Lighting restoration incomplete; original backup retained: " + restoreFailure);
-                try { BeginInvoke((Action)delegate { rgbCloseFinished = true; rgbClosePending = false; Enabled = true; Close(); }); }
-                catch (InvalidOperationException) { }
+                bool restored = false;
+                var elapsed = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    if (restoreLighting) RestoreRgbBeforeDisconnect(source, RgbCloseTimeoutMilliseconds);
+                    string restoreFailure = null;
+                    if (restoreLighting)
+                        lock (work.Gate)
+                            if (work.Original != null && (work.Applied || work.RecoveryRequired || !work.Stopped))
+                                restoreFailure = work.Error ?? "Lighting restoration did not finish before closing.";
+                    if (restoreFailure != null) store.Event("Lighting restoration incomplete; original backup retained: " + restoreFailure);
+                    bool connectionsFinished = connections.Wait(Math.Max(0, NormalCloseTimeoutMilliseconds - (int)elapsed.ElapsedMilliseconds));
+                    if (!connectionsFinished) store.Event("Pending controller cleanup did not finish before closing; startup recovery remains unconfirmed.");
+                    restored = restoreFailure == null && connectionsFinished;
+                }
+                catch (Exception error) { LogShutdownFailure("Lighting restoration incomplete; original backup retained", error); }
+                finally
+                {
+                    try { BeginInvoke((Action)delegate { if (closing || IsDisposed) return; rgbCloseSucceeded = restored; rgbCloseFinished = true; rgbClosePending = false; Enabled = true; Close(); }); }
+                    catch (InvalidOperationException) { }
+                }
             });
             return true;
         }

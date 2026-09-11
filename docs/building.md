@@ -1,6 +1,8 @@
-# Build and verify
+# Install, build and verify
 
 [Back to the project](../README.md) · [User guide](user-guide.md) · [Current status](status.md)
+
+**1.0.0-rc.1 is a free, unsigned release candidate.** Final hardware and game acceptance is pending before stable 1.0. Use the version shown on the release asset; compiling these sources does not sign or publish a release.
 
 ## What the download contains
 
@@ -8,14 +10,16 @@ Choose a package from [Releases](https://github.com/SirRanjid/analog-key-mapper/
 
 | Package | Contents |
 | --- | --- |
-| `AnalogKeyMapper-0.1.0-preview.2-windows-x64.zip` | The unsigned Windows app, keyboard monitor, diagnostic tool and Xbox/DualSense output helper, plus licenses and checksum verification scripts. No compiler is required to open the editor. |
-| `AnalogKeyMapper-0.1.0-preview.2-source.zip` | Complete application and controller-helper sources, vendored Go dependencies, build scripts, tests, documentation, licenses and checksum verification scripts. |
+| `AnalogKeyMapper-1.0.0-rc.1-windows-x64.zip` | The unsigned Windows app, keyboard monitor, diagnostic tool and Xbox/DualSense output helper, plus licenses and checksum verification scripts. No compiler is required to open the editor. |
+| `AnalogKeyMapper-1.0.0-rc.1-source.zip` | Complete application and controller-helper sources, vendored Go dependencies, build scripts, tests, documentation, licenses and checksum verification scripts. |
 
 Both ZIPs contain an `AnalogKeyMapper` folder and `SHA256SUMS.txt`. Neither includes a driver installer, personal profiles or private device captures. Source test fixtures include sanitized sample pressure reports, with their provenance documented separately.
 
-Extract the ZIP before running a script or executable. Use a writable folder: the app keeps local data in `data/` beside its executable, or `bin/data/` after a source build. Keep that folder when updating. To use the Windows package, verify it as described below and open `AnalogKeyMapper.exe`.
+Extract the ZIP before running a script or executable. Use a short, writable folder: the app keeps local data in `data/` beside its executable, or `bin/data/` after a source build. Keep that folder when updating. To use the Windows package, verify it as described below and open `AnalogKeyMapper.exe`.
 
-The Windows package is an **unsigned development preview**. Windows may block it under your security policy; the package does not change that policy.
+Back up your existing `data/` folder and close the mapper and its helpers before replacing application files. Do not copy example profiles over your saved setup. Opening the executable normally shows the editor; Windows startup and controller reconnection each require a separate opt-in. See [background startup](background-startup.md).
+
+Windows application control may block the unsigned app or a helper. Such blocks occurred on the development machine; final candidate execution and hardware/game acceptance remain pending. Keep the actual error and stop the blocked attempt. The package does not change security policy or require protection to be disabled.
 
 ## Source-build requirements
 
@@ -39,8 +43,8 @@ This checks the files listed in the selected package folder's `SHA256SUMS.txt`. 
 The release also provides a separate `SHA256SUMS.txt` for the two ZIP downloads. Compare those entries with the ZIP hashes from PowerShell before extraction if you want to check the archives themselves:
 
 ```powershell
-Get-FileHash .\AnalogKeyMapper-0.1.0-preview.2-windows-x64.zip -Algorithm SHA256
-Get-FileHash .\AnalogKeyMapper-0.1.0-preview.2-source.zip -Algorithm SHA256
+Get-FileHash .\AnalogKeyMapper-1.0.0-rc.1-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\AnalogKeyMapper-1.0.0-rc.1-source.zip -Algorithm SHA256
 ```
 
 Checksums detect file changes. They are not a code signature or independent proof of the publisher's identity when the files and manifest come from the same download.
@@ -70,7 +74,7 @@ Build.bat --strict --no-pause
 Verify-Checksums.bat bin
 ```
 
-The local unsigned-monitor option accepts a helper with no signature; it still rejects an invalid existing signature. It does not bypass Windows application control. The strict build does not sign anything automatically. This preview must not be treated as a signed release.
+The local unsigned-monitor option accepts a helper with no signature; it still rejects an invalid existing signature. It does not bypass Windows application control. The strict build does not sign anything automatically. This candidate must not be treated as a signed release.
 
 If Windows blocks a script or executable, keep the actual error and stop that attempt. These instructions do not require disabling application control, antivirus, Secure Boot or driver-signing checks.
 
@@ -98,9 +102,11 @@ To select a Go executable directly:
 
 The helper source is derived from VIIPER v0.7.0, commit `6b71b148a2243fab77ee1a46f4e22e00bd7d5a04`. See [its source notice](../src/ViiperOutputHost/NOTICE.md) for the origin and licenses. The helper build does not install USB/IP or create a controller.
 
-The application offers **32 output slots in total**, which can mix Xbox and DualSense. Windows provides at most **four XInput slots**, including physical controllers; DualSense devices use HID separately and do not occupy XInput slots. A preceding helper build passed real-device acceptance with **two Xbox plus two DualSense outputs**. The latest optimized helper compiled and passed package tests, but Windows application control blocked its live test on the development machine. Larger configurations remain to be load-tested. See [the acceptance record](multi-controller-acceptance.md) and [known issue](status.md#current-known-issue).
+The application offers **32 configured output slots in total**, which can mix Xbox and DualSense. Windows provides at most **four XInput slots system-wide**, including physical controllers; DualSense devices use HID separately and do not occupy XInput slots. The recorded real-device acceptance is **two Xbox plus two DualSense outputs on an earlier helper build**. It does not establish final candidate acceptance or performance with 32 connected devices. Larger configurations remain to be load-tested. See [the acceptance record](multi-controller-acceptance.md) and [known issue](status.md#current-known-issue).
 
 Each connected slot owns its own isolated helper and USB/IP attachment. Connecting or disconnecting one does not intentionally alter other slots or unrelated devices. Installing ViGEm does not enable this backend. The tested dependency versions do not establish compatibility with arbitrary other driver versions, games or PS5 consoles; see [status and limits](status.md).
+
+Connection work is asynchronous and cancellable. Reconnection after startup is off by default; if enabled, it uses only the previous confirmed normal exit and consumes that record once. Windows shutdown limits the total cleanup wait rather than waiting indefinitely. These mechanisms improve handling of failures; they are not a guarantee of completed restoration after power loss or forced termination, or a promise of zero latency. See [startup and shutdown behavior](background-startup.md).
 
 ## Verify your local build
 
@@ -117,6 +123,18 @@ Or use the verifier directly:
 
 The source package's root manifest describes the distributed sources; the Windows package's root manifest describes its runtime files. The `bin` manifest describes files produced by your local build. A locally generated manifest confirms later file integrity; it does not claim that two separate compilers or machines produce identical bytes.
 
+`RELEASE_VERSION.json` records the source version. Building checks the version embedded in the app, keyboard monitor and diagnostic executable. A complete `--with-controller` build records the verified source manifest and all four executable hashes in `BUILD-RECEIPT.json`. Packaging checks that receipt and rejects stale sources or executables. `BUILD-INFO.json` in the Windows download records the same source identity and signature status. These records do not substitute for a code signature.
+
+Maintainers can create both archives after building and updating the source checksums:
+
+```powershell
+./scripts/Write-Checksums.ps1
+./Build.bat --with-controller --no-pause
+./scripts/Package-Release.ps1
+```
+
+The packager never overwrites an existing release directory and excludes personal `data/` and backups from source manifests. It does not publish, sign, install or start the application.
+
 ## Run tests
 
 ```powershell
@@ -127,6 +145,7 @@ The source package's root manifest describes the distributed sources; the Window
 .\tests\Test-MappingSession.ps1
 .\tests\Test-MultiMappingIntegration.ps1
 .\tests\Test-IsolatedOutput.ps1
+.\tests\Test-ControllerReconnectStore.ps1
 .\Test-All.ps1
 ```
 

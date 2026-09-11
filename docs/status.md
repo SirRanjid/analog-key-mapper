@@ -1,12 +1,12 @@
 # Compatibility and validation
 
-Development preview **0.1.0-preview.2**, status: **11 September 2026**. [User guide](user-guide.md) · [Build instructions](building.md)
+Release candidate **1.0.0-rc.1**, status: **11 September 2026**. [User guide](user-guide.md) · [Build instructions](building.md)
 
 The release offers an unsigned Windows x64 package and a separate complete source package. Both include file checksums; the release also provides hashes for the ZIP downloads. See [package contents and verification](building.md#what-the-download-contains).
 
 ## Current known issue
 
-The unreleased tray-startup update (`0.1.0.3`) was also blocked at the main application's normal process start on the development machine (Code Integrity event 3077). Its synthetic background UI tests passed, including the actual windowless message-loop entry; the installed unsigned executable could not start, and Windows autostart was left disabled. See [background startup and validation](background-startup.md). This does not change the already published preview.2 assets.
+Stable 1.0 acceptance remains open. The preceding unsigned tray-startup executable (`0.1.0.3`) was blocked at normal process start on the development machine (Code Integrity event 3077). Windows autostart was left disabled. See [background startup and validation](background-startup.md). Automated tests do not establish that Windows will allow the downloaded application or its helpers to start.
 
 Windows application control blocked the latest optimized output-helper executable on the development machine at process startup (Code Integrity event 3077). The helper compiled and its Go package tests passed; it did not run for a new live acceptance or resource measurement. No protection settings were changed and no alternate-host retry was used.
 
@@ -34,14 +34,20 @@ The latest recorded targeted development runs passed:
 | Suite | Assertions | What it exercises |
 | --- | ---: | --- |
 | [App UI](../tests/Test-AppUi.ps1) | 6,513 | Real controls with synthetic sources: tabs, fixed layout, bulk edits, keyboard/controller drag images, connection gestures and aborts. |
+| [Background UI](../tests/Test-BackgroundUi.ps1) | 113 | Windowless startup, tray behavior and cancellation of startup reconnection after edits. |
+| [Pending USB connection](../tests/Test-ControllerPendingUi.ps1) | 28 | Docked pending graphics, cancellation gestures, accessibility and independent footer slots. |
+| [Reconnect persistence](../tests/Test-ControllerReconnectStore.ps1) | 52 | One-use confirmed records, stale files, failed writes and interrupted sessions. |
 | [Visual keyboard](../tests/Test-VisualKeyboard.ps1) | 1,407 | Layouts, geometry, selection, accessibility and own-control rendering. |
-| [RGB lifecycle](../tests/Test-RgbLifecycle.ps1) | 143 | Real app worker and ReaderSession with a simulated device: restore during writes, failed confirmations, queue coalescing, deadlines, retry limits and immutable backups. |
-| [Multiple controller sessions](../tests/Test-MultiControllerSession.ps1) | 125 | Per-slot selection, capacity, failures and independent neutral/removal phases with synthetic endpoints. |
-| [Mapping sessions](../tests/Test-MappingSession.ps1) | 293 | Real mapping workers with fake inputs/outputs, startup release gates, two-phase cleanup and inactive/active preview cadence. |
+| [RGB lifecycle](../tests/Test-RgbLifecycle.ps1) | 220 | Real app worker and ReaderSession with a simulated device: restore during writes, failed confirmations, deadlines, compact journal paths and recovery from unchanged older backups. |
+| [Shutdown](../tests/Test-Shutdown.ps1) | 77 | Windows shutdown budget, pending connections/restoration, cancelled logoff and clean-exit confirmation. |
+| [Multiple controller sessions](../tests/Test-MultiControllerSession.ps1) | 167 | Per-slot selection, pending capacity, cancellation, retired cleanup and independent neutral/removal phases with synthetic endpoints. |
+| [Mapping sessions](../tests/Test-MappingSession.ps1) | 403 | Real mapping workers with fake inputs/outputs, asynchronous creation, cancellation at publication, startup release gates and inactive/active preview cadence. |
 | [Multiple mapping workers](../tests/Test-MultiMappingIntegration.ps1) | 78 | Real coordinator and workers, independent Xbox/DualSense routing, shared keys, and neutralizing peers while one Submit is blocked. |
 | [Isolated output](../tests/Test-IsolatedOutput.ps1) | 22 protocol + 59 process | Memory-stream protocol cases and actual isolated-process boundaries using only synthetic helper executables. |
 
 The UI checks include original-size key and controller pixels, transparent contours, pickup anchors, the passive layered preview window and shared drag feedback. Screenshots were inspected in English. Tests cover Xbox and PS5-style front buttons, triggers, directional controls and stick segments.
+
+The full offline command discovers 47 suites. The initial finalization run exposed an RGB journal path-length failure; compact filenames fixed the underlying issue, with successful follow-up checks for ordinary download paths and legacy recovery. Packaging checks separately reject stale versions, changed executables, source/receipt mismatches and unlisted source files. The [GitHub workflow](https://github.com/SirRanjid/analog-key-mapper/actions/workflows/build.yml) builds both components, runs all offline suites and the Go protocol tests, then creates verified packages.
 
 These targeted runs use no real keyboard/controller and do not perform a complete native OLE drag. They do not establish that every suite in `Test-All.ps1` passed on every machine. A blocked or failed test must be reported as such.
 
@@ -66,7 +72,9 @@ These are bounded observations on one setup. They do not establish all button/ax
 - Each connected slot retains its own helper and exact USB/IP attachment identity. Successful ordinary disconnects do not guarantee removal after a crash, power loss or forced termination.
 - Keyboard suppression uses a Windows hook without per-device identity. Selected positions therefore affect all keyboards; Raw Input games may still receive keyboard events. Suppression starts disabled after an app restart.
 - Without a device serial number, calibration may be associated with a Windows device path and may need attention after a port change.
+- New lighting journals require the complete `data` path to fit within 92 characters; unusually deep installation paths are rejected before the initial lighting read. Normal extracted download paths were tested. Existing backup names are retained and may need a shorter folder for recovery.
 - There is no measured whole-app CPU/memory budget or end-to-end latency guarantee. Background-work reductions are implementation changes, not published benchmark claims.
-- The Windows preview and local builds are unsigned development builds. Windows decides whether a particular executable may run.
+- A [synthetic mapping benchmark](performance.md) covers 1, 4, 8, 16 and 32 workers. It excludes real input, helpers, the driver and games; it does not validate 32 live devices. The configured 4 ms wait produced roughly 16 ms p95 publication-to-fake-output latency on that setup.
+- The Windows candidate and local builds are unsigned. Windows decides whether a particular executable may run.
 
 The packages exclude personal profiles, private device captures and private diagnostic logs. The source package includes sanitized pressure-report fixtures with documented provenance. New compatibility claims should include a clearly described test setup and distinguish UI tests from physical device observations.

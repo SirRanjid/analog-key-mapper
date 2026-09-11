@@ -123,7 +123,7 @@ namespace Tk75.App
                 }
                 ControllerConnector connector = footerConnectors[definition.Id];
                 if (!connector.Enabled) connector.Enabled = true;
-                connector.SetConnection(runtime.IsControllerEnabled(definition.Id), error);
+                connector.SetConnection(runtime.IsControllerEnabled(definition.Id), error, runtime.IsControllerConnecting(definition.Id));
             }
         }
     }

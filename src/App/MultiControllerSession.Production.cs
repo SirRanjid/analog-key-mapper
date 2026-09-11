@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Tk75.Mapping;
 
 namespace Tk75.App
@@ -13,7 +15,7 @@ namespace Tk75.App
             if (store == null) throw new ArgumentNullException("store");
             return delegate { return new ProductionSession(store); };
         }
-        sealed class ProductionSession : IControllerSession, IPreviewDemandSession
+        sealed class ProductionSession : IControllerSession, IPreviewDemandSession, IAsyncControllerSession
         {
             readonly MappingSession inner;
             public ProductionSession(WorkspaceStore store) { inner = new MappingSession(store); }
@@ -21,6 +23,9 @@ namespace Tk75.App
             public ControllerFrame Frame { get { return inner.Frame; } }
             public PreviewSnapshot Preview { get { return inner.Preview; } }
             public string Status { get { return inner.Status; } }
+            public bool Connecting { get { return inner.Connecting; } }
+            public Task EnableAsync(CancellationToken cancellationToken) { return inner.EnableAsync(cancellationToken); }
+            public Task CancelPendingConnection() { return inner.CancelPendingConnection(); }
             public void SetPreviewActive(bool value) { inner.SetPreviewActive(value); }
             public void Configure(Profile profile, IDictionary<int, Calibration> calibration) { inner.Configure(profile, calibration); }
             public void SetInputSource(object value)

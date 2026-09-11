@@ -237,6 +237,41 @@ namespace Tk75.Tests
             Check(created.All(c => c.Disposes == 1), "Every synthetic endpoint is disposed exactly once.");
         }
 
+        static void ReconnectCancelsForPendingEdits(string directory)
+        {
+            using (var form = new MainForm(Path.Combine(directory, "startup-edit-data"), true))
+            {
+                var history = Field<EditHistory>(form, "history");
+                var startup = new ControllerReconnectSettings { Enabled = true };
+                Set(form, "controllerStartup", startup);
+                Set(form, "startupReconnectPending", true);
+                Set(form, "startupReconnectProfile", Field<string>(form, "profilePath"));
+                Set(form, "startupReconnectSnapshot", history.SnapshotToken);
+                Call(form, "TryReconnectStartupControllers");
+                Check(Field<bool>(form, "startupReconnectPending"), "Without input or edits, startup waits for the keyboard without discarding the request.");
+                string original = ProfileJson.Serialize(history.Current);
+                Set(form, "inputDirty", true);
+                Call(form, "TryReconnectStartupControllers");
+                Check(!Field<bool>(form, "startupReconnectPending") && Field<Queue<string>>(form, "startupReconnectQueue") == null,
+                    "A pending input draft cancels startup even though the profile snapshot has not changed.");
+                Check(Field<bool>(form, "inputDirty") && ProfileJson.Serialize(history.Current) == original,
+                    "Cancelling startup neither flushes nor discards the user's draft.");
+                Check(!Field<MultiControllerSession>(form, "runtime").AnyEnabled, "Draft cancellation opens no controller output.");
+
+                Set(form, "inputDirty", false);
+                Set(form, "startupReconnectPending", true);
+                Set(form, "startupReconnectProfile", Field<string>(form, "profilePath"));
+                Set(form, "startupReconnectSnapshot", history.SnapshotToken);
+                Profile edited = history.Current; edited.Name = "Manual edit while waiting"; history.Commit(edited);
+                Call(form, "TryReconnectStartupControllers");
+                Check(!Field<bool>(form, "startupReconnectPending") && Field<Queue<string>>(form, "startupReconnectQueue") == null,
+                    "A committed profile edit cancels startup before a keyboard is available.");
+                Check(history.Current.Name == "Manual edit while waiting", "The cancelled startup leaves the new profile edit intact.");
+                Check(Field<ReaderSession>(form, "reader") == null && !Field<MultiControllerSession>(form, "runtime").AnyEnabled,
+                    "Both cancellation paths remain entirely device-free.");
+            }
+        }
+
         static void BackgroundMessageLoop(string directory)
         {
             using (var form = new MainForm(Path.Combine(directory, "message-loop-data"), true))
@@ -284,6 +319,7 @@ namespace Tk75.Tests
                 System.Threading.Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
                 StartupRegistration(Path.GetFullPath(args[0]));
                 ReconnectPreferences();
+                ReconnectCancelsForPendingEdits(Path.GetFullPath(args[0]));
                 BackgroundAndRestore(Path.GetFullPath(args[0]));
                 BackgroundMessageLoop(Path.GetFullPath(args[0]));
                 Console.WriteLine("PASS: " + assertions + " background UI assertions (no hardware, hooks, registry or helper processes).");

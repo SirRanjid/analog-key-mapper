@@ -66,6 +66,7 @@ namespace Tk75.Tests
             public bool RgbReadAvailable { get { return !Disposed; } }
             public bool RgbWriteAvailable { get { return !Disposed; } }
             public Tk75RgbSnapshot Current { get { lock (gate) return current; } }
+            public void SetCurrent(Tk75RgbSnapshot value) { lock (gate) current = value; }
             public FakeSource()
             {
                 byte[] settings = new byte[64], picture = new byte[384];
@@ -130,11 +131,38 @@ namespace Tk75.Tests
             {
                 object work = Work; lock (Get<object>(work, "Gate")) { Set(work, "Desired", desired); Monitor.PulseAll(Get<object>(work, "Gate")); }
             }
+            public void AwaitGate(Barrier barrier, string message)
+            {
+                Await(delegate
+                {
+                    if (barrier.Entered.WaitOne(0)) return true;
+                    string error = State<string>("Error");
+                    if (error != null || State<bool>("Stopped"))
+                        throw new InvalidOperationException(message + " Worker failed before entering the synthetic transport: " + error +
+                            "; state=" + State<int>("State") + ", stopped=" + State<bool>("Stopped") +
+                            ", reads=" + Source.Reads + ", writes=" + Source.Writes);
+                    return false;
+                }, message);
+            }
             public void Idle()
-            { Await(delegate { return !State<bool>("Busy") && State<Tk75RgbSnapshot>("Desired") == null && !State<bool>("RestoreRequested"); }, "The worker consumes all queued work."); }
+            {
+                try { Await(delegate { return !State<bool>("Busy") && State<Tk75RgbSnapshot>("Desired") == null && !State<bool>("RestoreRequested"); }, "The worker consumes all queued work."); }
+                catch (Exception error)
+                {
+                    throw new InvalidOperationException("RGB idle state: busy=" + State<bool>("Busy") + ", stopped=" + State<bool>("Stopped") +
+                        ", abort=" + State<bool>("Abort") + ", quit=" + State<bool>("QuitAfterRestore") + ", restore=" + State<bool>("RestoreRequested") +
+                        ", state=" + State<int>("State") + ", error=" + State<string>("Error") + ", reader=" + Reader.IsReading +
+                        ", writes=" + Source.Writes + ", reads=" + Source.Reads, error);
+                }
+            }
             public void CloseWithRestore()
             {
-                Check((bool)Call(Form, "BeginRgbCloseRestore"), "Close starts the real asynchronous restore path.");
+                Form.Close();
+                Check(!Form.IsDisposed && Get<bool>(Form, "rgbClosePending"), "Actual window close defers disposal for the asynchronous restore path.");
+                Check(Get<bool>(Form, "closeProfileSaved"), "Actual window close saves the profile before waiting for restore.");
+                object firstWork = Work;
+                Form.Close();
+                Check(!Form.IsDisposed && Object.ReferenceEquals(firstWork, Work), "Repeated window close neither bypasses restore nor starts a replacement lighting worker.");
                 Await(delegate { return State<bool>("QuitAfterRestore"); }, "The restore request reaches the active worker.");
             }
             public Dictionary<string, byte[]> Files()
@@ -167,14 +195,14 @@ namespace Tk75.Tests
                 fixture.Source.BeforeWrite = delegate(int count, Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, int timeout) { if (count == 1) paint.Pass(timeout, fixture.Source); };
                 if (longBudget) fixture.Source.BeforeRead = delegate(int count, int timeout) { if (count == 2) restoreRead.Pass(timeout, fixture.Source); };
                 fixture.Start(); fixture.Ready(); var preserved = fixture.Files();
-                fixture.Queue(fixture.Color(0xAA2211)); Await(delegate { return paint.Entered.WaitOne(0); }, "Color change is held inside the actual worker.");
+                fixture.Queue(fixture.Color(0xAA2211)); fixture.AwaitGate(paint, "Color change is held inside the actual worker.");
                 foreach (var item in fixture.Files()) preserved[item.Key] = item.Value;
                 fixture.CloseWithRestore(); Stopwatch closing = Stopwatch.StartNew();
                 if (longBudget) Until(closing, 3300);
                 paint.Release.Set();
                 if (longBudget)
                 {
-                    Await(delegate { return restoreRead.Entered.WaitOne(0); }, "Close performs a fresh restore read after the in-flight write.");
+                    fixture.AwaitGate(restoreRead, "Close performs a fresh restore read after the in-flight write.");
                     Until(closing, 6500);
                     Check(!fixture.Form.IsDisposed && !fixture.Source.Disposed, "Close retains the source beyond six seconds while bounded restore work is still in progress.");
                     restoreRead.Release.Set();
@@ -192,7 +220,7 @@ namespace Tk75.Tests
                 fixture.Source.BeforeWrite = delegate(int count, Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, int timeout) { if (count == 1) paint.Pass(timeout, fixture.Source); };
                 fixture.Source.AfterWrite = delegate(int count, Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, int timeout) { if (count == 1) throw new IOException("Synthetic lost confirmation after color reached the device."); };
                 fixture.Start(); fixture.Ready(); var preserved = fixture.Files(); fixture.Queue(fixture.Color(0x1122AA));
-                Await(delegate { return paint.Entered.WaitOne(0); }, "The failing color operation is active.");
+                fixture.AwaitGate(paint, "The failing color operation is active.");
                 Call(fixture.Form, "RestoreKeyboardLighting");
                 Check(fixture.State<bool>("RestoreRequested"), "Manual restore is queued while color work is blocked.");
                 paint.Release.Set();
@@ -202,6 +230,37 @@ namespace Tk75.Tests
                 Console.WriteLine("PASS restore: request survives an in-flight write failure");
             }
         }
+
+        static void WindowsShutdownDuringRestore(string root)
+        {
+            using (var restoreRead = new Barrier()) using (var fixture = new Fixture(root))
+            {
+                fixture.Start(); fixture.Ready();
+                fixture.Queue(fixture.Color(0xAA2211)); fixture.Idle();
+                Check(!Same(fixture.Source.Current, fixture.Source.Original), "The synthetic keyboard actually has temporary lighting before shutdown.");
+                var preserved = fixture.Files();
+                int restoreReadNumber = fixture.Source.Reads + 1;
+                fixture.Source.BeforeRead = delegate(int count, int timeout) { if (count == restoreReadNumber) restoreRead.Pass(timeout, fixture.Source); };
+                fixture.CloseWithRestore();
+                fixture.AwaitGate(restoreRead, "Normal close is genuinely blocked in an in-flight restore read.");
+                var args = new FormClosingEventArgs(CloseReason.WindowsShutDown, false);
+                Stopwatch elapsed = Stopwatch.StartNew();
+                typeof(Form).GetMethod("OnFormClosing", Fields).Invoke(fixture.Form, new object[] { args });
+                Check(!args.Cancel && elapsed.ElapsedMilliseconds < 4500, "Windows shutdown does not wait indefinitely or cancel an already pending normal RGB close.");
+                Check(Get<bool>(fixture.Form, "closing"), "System shutdown seals the UI even while RGB is pending.");
+                fixture.Preserved(preserved);
+                string backup = Directory.GetFiles(fixture.Lighting, "*.backup.json").Single();
+                Check((string)ReadJournal(backup)["SnapshotBase64"] == Convert.ToBase64String(Tk75RgbProtocol.EncodeSnapshot(fixture.Source.Original)), "An interrupted restore retains the exact durable original backup.");
+                elapsed.Restart(); fixture.Form.Dispose();
+                Check(elapsed.ElapsedMilliseconds < 1000, "Final Form.Dispose does not wait again for the pending RGB operation.");
+                restoreRead.Release.Set();
+                Check(Get<ShutdownWork>(fixture.Form, "systemShutdownWork").Wait(5000), "The original cleanup lanes can finish after the blocked fake transport is released.");
+                Await(delegate { return fixture.State<bool>("Stopped"); }, "The interrupted lighting worker stops without requiring a live UI callback.");
+                fixture.Preserved(preserved);
+                Check(Get<bool>(fixture.Form, "systemShutdownStarted"), "An earlier successful ordinary save does not convert interrupted OS shutdown into a normal clean exit.");
+                Console.WriteLine("PASS Windows shutdown: pending RGB restore is bounded; original backup and journals survive");
+            }
+        }
         static void LatestColors(string root)
         {
             using (var paint = new Barrier()) using (var fixture = new Fixture(root))
@@ -209,7 +268,7 @@ namespace Tk75.Tests
                 fixture.Source.BeforeWrite = delegate(int count, Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, int timeout) { if (count == 1) paint.Pass(timeout, fixture.Source); };
                 fixture.Start(); fixture.Ready(); var preserved = fixture.Files();
                 Tk75RgbSnapshot first = fixture.Color(0x881100), superseded = fixture.Color(0x008811), latest = fixture.Color(0x110088);
-                fixture.Queue(first); Await(delegate { return paint.Entered.WaitOne(0); }, "First color is in flight.");
+                fixture.Queue(first); fixture.AwaitGate(paint, "First color is in flight.");
                 fixture.Queue(superseded); fixture.Queue(latest); paint.Release.Set();
                 Await(delegate { return fixture.Source.Writes == 2 && !fixture.State<bool>("Busy"); }, "The worker applies the latest queued color after the active write.");
                 Check(Same(fixture.Source.Current, latest) && !fixture.Source.Written.Any(value => Same(value, superseded)), "Superseded colors are coalesced; the newest colors win.");
@@ -246,6 +305,80 @@ namespace Tk75.Tests
                 }
                 Check(fixture.Source.Writes == 0, "Initialization and its retry paths perform no writes.");
                 Console.WriteLine("PASS initialization: " + mode);
+            }
+        }
+        static string RootAtLength(string parent, int length)
+        {
+            int remaining = length - parent.Length - 1;
+            if (remaining < 1) throw new InvalidOperationException("The dedicated temporary RGB root is too long for the path-budget test.");
+            return Path.Combine(parent, new string('p', remaining));
+        }
+        static void JournalPathBudget(string root)
+        {
+            // Same full data-root length as the ordinary Windows ZIP extraction:
+            // C:\Users\sven9\Downloads\AnalogKeyMapper-1.0.0-rc.1-windows-x64\AnalogKeyMapper\data
+            using (var fixture = new Fixture(RootAtLength(root, 84)))
+            {
+                fixture.Start(); fixture.Ready();
+                string backup = Directory.GetFiles(fixture.Lighting, "*.backup.json").Single();
+                var metadata = ReadJournal(backup);
+                string name = Path.GetFileName(backup), identity = (string)metadata["IdentitySha256"];
+                string token = name.Substring(("rgb-" + identity + "-").Length);
+                token = token.Substring(0, token.Length - ".backup.json".Length);
+                byte[] requestBytes = Convert.FromBase64String(token.Replace('-', '+').Replace('_', '/') + "==");
+                Check(token.Length == 22 && new Guid(requestBytes).ToString("N") == (string)metadata["RequestId"], "The short file token preserves every request GUID bit; full identity and time remain in the journal.");
+                Check(metadata.ContainsKey("StartedUtc") && name.StartsWith("rgb-" + identity + "-"), "Journal shortening preserves the full device identity and recorded timestamp.");
+                var preserved = fixture.Files();
+                fixture.Queue(fixture.Color(0x665544)); fixture.Idle();
+                Check(!Same(fixture.Source.Current, fixture.Source.Original) && fixture.Source.Writes == 1, "A normal download path allows a fully journaled color write.");
+                Call(fixture.Form, "RestoreKeyboardLighting"); fixture.Idle(); fixture.Restored();
+                int writes = fixture.Source.Writes;
+                Call(fixture.Form, "RestoreKeyboardLighting"); fixture.Idle();
+                string resolution = Directory.GetFiles(fixture.Lighting, "*.resolved-*.json").Single();
+                Check(resolution.Length + ".pending".Length < 260 && fixture.Source.Writes == writes, "The longest resolution journal also fits without a redundant device write.");
+                fixture.Preserved(preserved);
+                Console.WriteLine("PASS path: typical download data root 84 characters; longest actual staged journal " + (resolution.Length + ".pending".Length));
+            }
+            using (var fixture = new Fixture(RootAtLength(root, 100)))
+            {
+                fixture.Start(); Await(delegate { return fixture.Work != null && fixture.State<bool>("Stopped"); }, "An unsupported path budget is rejected during initialization.");
+                Check(fixture.Source.Reads == 0 && fixture.Source.Writes == 0 && fixture.State<int>("State") == 2, "Too-long future journal paths are rejected before the initial device read or readiness.");
+                Check(Directory.GetFiles(fixture.Lighting, "*.backup.json").Length == 0 && fixture.State<Tk75RgbSnapshot>("Original") == null, "A rejected path never publishes a misleading usable backup.");
+            }
+        }
+        static void LegacyTimestampRecovery(string root)
+        {
+            Dictionary<string, byte[]> originalFiles;
+            Tk75RgbSnapshot applied;
+            string compactPrefix, legacyPrefix;
+            using (var seed = new Fixture(Path.Combine(root, "seed")))
+            {
+                seed.Start(); seed.Ready(); seed.Queue(seed.Color(0xAA5544)); seed.Idle();
+                Check(!Same(seed.Source.Current, seed.Source.Original), "Legacy recovery fixture contains a real journaled temporary color.");
+                applied = seed.Source.Current; originalFiles = seed.Files();
+                string backup = originalFiles.Keys.Single(path => path.EndsWith(".backup.json", StringComparison.Ordinal));
+                var metadata = ReadJournal(backup);
+                compactPrefix = Path.GetFileName(backup).Substring(0, Path.GetFileName(backup).Length - ".backup.json".Length);
+                legacyPrefix = "rgb-" + metadata["IdentitySha256"] + "-20260911-000000-" + metadata["RequestId"];
+            }
+            string directory = Path.Combine(root, "legacy"), lighting = Path.Combine(directory, "lighting");
+            Directory.CreateDirectory(lighting);
+            // These are new, synthetic historical-format fixtures. The seed
+            // journals and every subsequently discovered backup remain immutable.
+            foreach (var file in originalFiles)
+            {
+                string name = Path.GetFileName(file.Key).Replace(compactPrefix, legacyPrefix);
+                string json = System.Text.Encoding.UTF8.GetString(file.Value).Replace(compactPrefix, legacyPrefix);
+                File.WriteAllText(Path.Combine(lighting, name), json, new System.Text.UTF8Encoding(false));
+            }
+            using (var fixture = new Fixture(directory))
+            {
+                var preserved = fixture.Files(); fixture.Source.SetCurrent(applied);
+                fixture.Start(); fixture.Ready(); fixture.Idle();
+                fixture.Restored(); fixture.Preserved(preserved);
+                Check(Directory.GetFiles(lighting, "*.backup.json").Length == 1 && Path.GetFileName(fixture.State<string>("BackupFile")).StartsWith(legacyPrefix), "Recovery reuses the exact timestamp-format backup instead of replacing it.");
+                Check(fixture.Source.Writes == 1, "A legacy unfinished override is restored with one journaled exchange.");
+                Console.WriteLine("PASS legacy: timestamp-format backup and transaction remain recoverable and unchanged");
             }
         }
         static void PlanCache(string root)
@@ -309,6 +442,9 @@ namespace Tk75.Tests
                 InitializationRetries(Path.Combine(root, "f"), 1);
                 InitializationRetries(Path.Combine(root, "g"), 2);
                 PlanCache(Path.Combine(root, "h"));
+                WindowsShutdownDuringRestore(Path.Combine(root, "i"));
+                JournalPathBudget(root);
+                LegacyTimestampRecovery(Path.Combine(root, "j"));
                 Console.WriteLine("PASS: " + checks + " RGB lifecycle assertions; actual MainForm worker and ReaderSession, synthetic source only.");
                 return 0;
             }
