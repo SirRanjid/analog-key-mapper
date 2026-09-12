@@ -129,14 +129,14 @@ namespace Tk75.App
             keySettingsToggle.Click += delegate { Attempt(delegate { SetDetailMode(null, true); }); };
             advancedToggle.Click += delegate { Attempt(delegate { SetDetailMode("advanced", true); }); };
             controllerToggle.Click += delegate { Attempt(delegate { SetDetailMode("controller", true); }); };
-            bar.Controls.Add(keySettingsToggle); bar.Controls.Add(advancedToggle); bar.Controls.Add(controllerToggle); UpdateDetailsButtons(); return bar;
+            bar.Controls.Add(keySettingsToggle); bar.Controls.Add(advancedToggle); bar.Controls.Add(controllerToggle); BuildSocdDragTabs(); UpdateDetailsButtons(); return bar;
         }
         void BuildKeyBehavior()
         {
             UiText.PreserveText(keyBehaviorStatus);
-            var form = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 8, Margin = Padding.Empty };
+            var form = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 9, Margin = Padding.Empty };
             form.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34)); form.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33)); form.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
-            foreach (int height in new[] { 26, 34, 62, 26, 42, 30, 48 }) form.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+            foreach (int height in new[] { 26, 34, 62, 26, 42, 44, 30, 48 }) form.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
             // Extra window height belongs to empty space, never to the actions.
             form.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             keyBehaviorPanel.Controls.Add(form); form.Controls.Add(keyBehaviorStatus, 0, 0); form.SetColumnSpan(keyBehaviorStatus, 3);
@@ -148,11 +148,12 @@ namespace Tk75.App
             oppositeKey.Dock = oppositeMode.Dock = DockStyle.Fill; oppositeKey.DropDownWidth = 240;
             form.Controls.Add(oppositeKey, 0, 4); form.Controls.Add(oppositeMode, 1, 4); form.SetColumnSpan(oppositeMode, 2);
             oppositeMode.Items.Add(new OppositeModeItem(InputOpposedPolicy.Neutral)); oppositeMode.Items.Add(new OppositeModeItem(InputOpposedPolicy.LastPressed)); oppositeMode.Items.Add(new OppositeModeItem(InputOpposedPolicy.FirstPressed)); oppositeMode.SelectedIndex = 0;
-            var explanation = Caption(Tr("Nur echte Tastendrücke. Das gewählte Tastenpaar wird gemeinsam geregelt.", "Physical key presses only. The selected pair shares one opposite-direction rule."), 30); explanation.Tag = "muted"; form.Controls.Add(explanation, 0, 5); form.SetColumnSpan(explanation, 3);
+            BuildSocdDragUi(form, 5);
+            var explanation = Caption(Tr("Nur echte Tastendrücke. Das gewählte Tastenpaar wird gemeinsam geregelt.", "Physical key presses only. The selected pair shares one opposite-direction rule."), 30); explanation.Tag = "muted"; form.Controls.Add(explanation, 0, 6); form.SetColumnSpan(explanation, 3);
             applyKeyBehavior.Text = Tr("Übernehmen", "Apply"); resetKeyBehavior.Text = Tr("Zurücksetzen", "Reset");
             var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
             actions.Controls.Add(applyKeyBehavior); actions.Controls.Add(resetKeyBehavior);
-            form.Controls.Add(actions, 0, 6); form.SetColumnSpan(actions, 3);
+            form.Controls.Add(actions, 0, 7); form.SetColumnSpan(actions, 3);
             applyKeyBehavior.Click += delegate { Attempt(SaveKeyBehavior); }; resetKeyBehavior.Click += delegate { Attempt(ResetKeyBehavior); };
             rapidTrigger.CheckStateChanged += delegate { if (!updatingInput) { MarkInputDirty(InputActivationFields.RapidTrigger); SetInputFieldAvailability(); } };
             oppositeKey.SelectedIndexChanged += delegate { if (!updatingInput) { MarkInputPairingDirty(); SetInputFieldAvailability(); } };
@@ -225,7 +226,7 @@ namespace Tk75.App
                 SetMixedInputTip(pressMovement, values.Skip(1).Any(other => other.PressMovement != value.PressMovement));
             }
             finally { updatingInput = false; }
-            SetInputFieldAvailability();
+            SetInputFieldAvailability(); RefreshSocdDropTarget();
         }
         string InputSelectionLabel()
         { return editingInputKeys.Length == 1 ? string.Format(Tr("Taste {0}", "Key {0}"), Label(editingInputKeys[0])) : string.Format(Tr("{0} Tasten", "{0} keys"), editingInputKeys.Length); }
@@ -291,9 +292,12 @@ namespace Tk75.App
         void FlushInputDraft()
         {
             if (!inputDirty || editingInputKeys.Length == 0 || updatingInput) return;
-            var next = MergePendingInput(history.Current); history.Commit(next); inputDirty = false; inputFieldsDirty = InputActivationFields.None; inputPairingDirty = false; Configure();
+            EditHistory previousHistory = history; object previousSnapshot = history.SnapshotToken;
+            var next = MergePendingInput(history.Current); history.Commit(next); inputDirty = false; inputFieldsDirty = InputActivationFields.None; inputPairingDirty = false;
+            AdvanceSocdDraftSnapshot(previousHistory, previousSnapshot); Configure();
             SetInputStatus(InputSelectionLabel() + " · " + Tr("Eigene Einstellung", "Custom behavior"));
             resetKeyBehavior.Enabled = true;
+            RefreshMappingSummaries(false);
         }
         sealed class OppositeKeyItem
         {

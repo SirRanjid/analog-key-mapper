@@ -12,7 +12,7 @@ namespace Tk75.App
 {
     // Calculated output only. Style changes presentation; the application owns
     // virtual output selection, OLE, and any devices. No input is synthesized.
-    public sealed class ControllerPreview : Control
+    public sealed partial class ControllerPreview : Control
     {
         struct Snapshot
         {
@@ -65,6 +65,7 @@ namespace Tk75.App
             {
                 ControllerPresentation.Validate(value); if (value == layout.Style) return;
                 CancelGesture(); hoverTarget = dropTarget = null; availableTargets.Clear(); layout = new ControllerLayout(value);
+                LayoutKeyAssignments();
                 RefreshPointer(); UpdateTooltip(); Invalidate(); AccessibilityNotifyClients(AccessibleEvents.Reorder, -1);
             }
         }
@@ -76,7 +77,19 @@ namespace Tk75.App
             {
                 StatusLayout status = MeasureStatus(graphics, font); Viewport viewport = GetViewport(status.FigureHeight);
                 if (viewport.Scale <= 0 || clientPoint.Y >= status.FigureHeight) return null;
-                return layout.HitTest(viewport.ToLayout(clientPoint));
+                PointF point = viewport.ToLayout(clientPoint);
+                // Badges are painted last. Their visible keycaps own the hit,
+                // including where a rounded edge reaches a controller region.
+                for (int index = layout.Regions.Count - 1; index >= 0; index--)
+                {
+                    ControllerRegion region = layout.Regions[index];
+                    KeyAssignmentLabel label;
+                    if (!keyAssignments.TryGetValue(region.Target, out label)) continue;
+                    RectangleF bounds = KeyAssignmentBounds(region, label);
+                    if (bounds.Contains(point)) using (GraphicsPath badge = ControllerLayout.Rounded(bounds, 3))
+                        if (badge.IsVisible(point)) return region.Target;
+                }
+                return layout.HitTest(point);
             }
         }
         internal MappingDragVisual CreateDragVisual(OutputTarget target)
@@ -94,7 +107,7 @@ namespace Tk75.App
                 if (viewport.Scale <= 0) return null;
                 bool drop = dropTarget == target, hover = !dropTarget.HasValue && hoverTarget == target;
                 float border = drop ? 2.5f : (hover ? 1.8f : availableTargets.Contains(target) ? 1.4f : 1f) * viewport.Scale;
-                using (GraphicsPath path = region.CreatePath())
+                using (GraphicsPath path = CreateDragTargetPath(region))
                 using (var transform = new Matrix(viewport.Scale, 0, 0, viewport.Scale, viewport.X, viewport.Y))
                 {
                     path.Transform(transform);
@@ -223,7 +236,7 @@ namespace Tk75.App
             get
             {
                 OutputTarget? target = dropTarget ?? hoverTarget;
-                return target.HasValue ? (dropTarget.HasValue ? UiText.Get("Ablegen: ", "Drop on: ") : "") + ControllerPresentation.Label(target.Value, Style)
+                return target.HasValue ? (dropTarget.HasValue ? UiText.Get("Ablegen: ", "Drop on: ") : "") + ControllerPresentation.Label(target.Value, Style) + AssignmentStatus(target.Value)
                     : UiText.Get("Ziel wählen oder eine Taste hierher ziehen", "Select an output or drag a key here");
             }
         }
@@ -384,6 +397,7 @@ namespace Tk75.App
                     DrawBody(graphics);
                     DrawLabel(graphics, Style == ControllerStyle.PlayStation5 ? "PS5" : "Xbox", labels, new RectangleF(181, 14, 78, 15), ModernTheme.Muted);
                     foreach (ControllerRegion region in layout.Regions) DrawRegion(graphics, region, labels, small, face, viewport.Scale);
+                    DrawKeyAssignments(graphics);
                     DrawStickPosition(graphics, layout.LeftStick, current.LeftX, current.LeftY);
                     DrawStickPosition(graphics, layout.RightStick, current.RightX, current.RightY);
                 }
@@ -455,14 +469,21 @@ namespace Tk75.App
                 }
             }
             Color legend = active && region.Kind == ControllerRegionKind.Face ? Color.FromArgb(25, 27, 35) : drop || active ? ModernTheme.Foreground : ModernTheme.Muted;
-            if (region.Kind == ControllerRegionKind.StickDirection || region.Kind == ControllerRegionKind.Dpad) DrawArrow(graphics, region.LabelCenter, region.Direction, legend);
+            if (region.Kind == ControllerRegionKind.StickDirection || region.Kind == ControllerRegionKind.Dpad)
+            { if (!InlineKeyAssignment(region)) DrawArrow(graphics, region.LabelCenter, region.Direction, legend); }
             else if (region.Kind == ControllerRegionKind.Trigger)
             {
                 DrawLabel(graphics, ControllerPresentation.ShortLabel(region.Target, Style), small, new RectangleF(region.Bounds.X + 7, region.Bounds.Y + 2, 24, 13), legend);
-                DrawLabel(graphics, current.HasInput ? Percent(amount) : "—", small, new RectangleF(region.Bounds.Right - 44, region.Bounds.Y + 2, 38, 13), legend);
+                DrawLabel(graphics, current.HasInput ? Percent(amount) : "—", small, new RectangleF(region.Bounds.Right - 30, region.Bounds.Y + 2, 26, 13), legend);
             }
             else if (region.Kind == ControllerRegionKind.Face && Style == ControllerStyle.PlayStation5) DrawPlayStationSymbol(graphics, region.Target, region.Center, legend);
-            else DrawLabel(graphics, ControllerPresentation.ShortLabel(region.Target, Style), region.Kind == ControllerRegionKind.Face ? face : region.Kind == ControllerRegionKind.Shoulder ? labels : small, region.Bounds, legend);
+            else
+            {
+                RectangleF labelBounds = region.Bounds;
+                if (keyAssignments.ContainsKey(region.Target) && region.Kind == ControllerRegionKind.Shoulder) labelBounds.Width = 30;
+                if (keyAssignments.ContainsKey(region.Target) && region.Kind == ControllerRegionKind.StickClick) labelBounds = new RectangleF(region.Bounds.X, region.Bounds.Y, region.Bounds.Width, 10);
+                DrawLabel(graphics, ControllerPresentation.ShortLabel(region.Target, Style), region.Kind == ControllerRegionKind.Face ? face : region.Kind == ControllerRegionKind.Shoulder ? labels : small, labelBounds, legend);
+            }
         }
         void DrawStickPosition(Graphics graphics, PointF center, double x, double y)
         {
@@ -535,6 +556,7 @@ namespace Tk75.App
             readonly ControllerPreview owner; readonly ControllerRegion region; readonly AccessibleObject parent;
             public TargetAccessibleObject(ControllerPreview owner, ControllerRegion region, AccessibleObject parent) { this.owner = owner; this.region = region; this.parent = parent; }
             public override string Name { get { return ControllerPresentation.Label(region.Target, owner.Style); } set { } }
+            public override string Description { get { return owner.GetAssignedKeyText(region.Target); } }
             public override string Value { get { return owner.HasValidInput ? Percent(owner.Amount(region.Target)) : UiText.Get("Keine aktuellen Messwerte", "No current readings"); } set { } }
             public override string DefaultAction { get { return UiText.Get("Auswählen", "Select"); } }
             public override AccessibleRole Role { get { return AccessibleRole.PushButton; } }

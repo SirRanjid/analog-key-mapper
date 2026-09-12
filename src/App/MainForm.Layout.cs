@@ -74,6 +74,7 @@ namespace Tk75.App
             player.Controls.Add(mainControllerSlotPicker, 0, 1); introductionRow.Controls.Add(player, 1, 0); keyboardArea.Controls.Add(introductionRow, 0, 0);
             keyboard.Dock = DockStyle.Fill; keyboard.LayoutModel = KeyboardLayout.Tk75Iso(); keyboard.LegendStyle = KeyboardLegendStyle.Qwertz;
             keyboard.SelectionChanged += delegate { if (!updating) SelectKeyboardKeys(); }; keyboardArea.Controls.Add(keyboard, 0, 1);
+            keyboard.KeyClicked += delegate { if (!updating && activeMappingDrag == null) SetDetailMode(null, true, false); };
             var legend = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty, Padding = new Padding(0, 4, 0, 0) };
             var mappingHint = new Label { Text = Tr("Drag & Drop: Taste ↔ Controller", "Drag & drop: key ↔ controller"), Width = 270, Height = 29, TextAlign = ContentAlignment.MiddleLeft, Tag = "muted" };
             keyCardTips.SetToolTip(mappingHint, Tr("Taste auf einen Controller-Button ziehen – oder den Controller-Button auf eine Taste. Strg + Klick wählt mehrere Tasten aus.", "Drag a key onto a controller button, or drag the controller button onto a key. Ctrl + click selects multiple keys."));
@@ -170,6 +171,7 @@ namespace Tk75.App
             addTargetButton = new SleekButton { Text = "+ Ziel hinzufügen", Dock = DockStyle.Fill }; addTargetButton.Click += delegate { Attempt(AddBinding); }; card.Controls.Add(addTargetButton, 0, 8);
             var bindingsPanel = new Panel { Dock = DockStyle.Fill }; bindingsPanel.Controls.Add(bindings);
             bindings.Columns.Add("key", "Taste"); bindings.Columns.Add("target", "Controller-Ziel"); bindings.Columns.Add("enabled", "An"); bindings.Columns.Add("value", "Wert"); bindings.Columns[0].Visible = false; bindings.Columns[2].MinimumWidth = 40; bindings.Columns[2].FillWeight = 18; bindings.Columns[3].MinimumWidth = 54; bindings.Columns[3].FillWeight = 24;
+            InitializeMappingSummaryGrid();
             bindings.SelectionChanged += delegate { if (!updating) { RefreshSettings(); UpdateKeyCard(); } };
             bindings.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e) { if (e.RowIndex >= 0) Attempt(delegate { SetDetailMode("advanced", true); }); };
             mappingEmpty.Text = "Noch keine Zuordnung\nWähle oben dein erstes Ziel."; mappingEmpty.TextAlign = ContentAlignment.MiddleCenter; mappingEmpty.Tag = "muted"; mappingEmpty.Dock = DockStyle.Fill; mappingEmpty.BackColor = ModernTheme.Surface; bindingsPanel.Controls.Add(mappingEmpty); card.Controls.Add(bindingsPanel, 0, 9);
@@ -180,7 +182,7 @@ namespace Tk75.App
             actions.Layout += delegate {
                 foreach (Control action in actions.Controls) { action.AutoSize = false; action.Width = Math.Max(1, actions.ClientSize.Width / 3 - action.Margin.Horizontal); }
             };
-            selectionStatus.Dock = DockStyle.Fill; selectionStatus.Tag = "muted"; selectionStatus.TextAlign = ContentAlignment.MiddleLeft; card.Controls.Add(selectionStatus, 0, 11); return surface;
+            selectionStatus.Dock = DockStyle.Fill; selectionStatus.Tag = "muted"; selectionStatus.TextAlign = ContentAlignment.MiddleLeft; selectionStatus.AutoEllipsis = true; UiText.PreserveText(selectionStatus); card.Controls.Add(selectionStatus, 0, 11); return surface;
         }
 
         void FitKeyHint(TableLayoutPanel card)
@@ -230,7 +232,6 @@ namespace Tk75.App
             int[] chosen = keyboard.SelectedKeyIndices; updating = true;
             try { keys.ClearSelection(); foreach (int index in chosen) { keys.Rows[index].Visible = true; keys.Rows[index].Selected = true; } }
             finally { updating = false; } RefreshBindings(); HighlightKeys();
-            if (activeMappingDrag == null) SetDetailMode(null, true, false);
         }
         IEnumerable<int> LayoutIndices()
         { return keyboard.LayoutModel == null ? Enumerable.Empty<int>() : keyboard.LayoutModel.Keys.Where(k => k.KeyIndex.HasValue).Select(k => k.KeyIndex.Value); }
@@ -251,6 +252,7 @@ namespace Tk75.App
             targetHeader.Text = string.Format(Tr("Ziele · {0}", "Targets · {0}"), ControllerDisplayName); keyCardTips.SetToolTip(targetHeader, targetHeader.Text);
             mappingEmpty.Visible = bindings.Rows.Count == 0; if (mappingEmpty.Visible) mappingEmpty.BringToFront();
             bindings.Columns[0].Visible = selected.Length > 1;
+            RefreshMappingSummaries(false);
             UpdateDetailsTitle();
             UpdatePressure(reader == null ? new KeyStateSnapshot[0] : reader.GetUiSnapshot(MappingSession.MaximumInputAgeMilliseconds));
         }

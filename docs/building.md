@@ -2,7 +2,7 @@
 
 [Back to the project](../README.md) · [User guide](user-guide.md) · [Current status](status.md)
 
-**1.0.0-rc.1 is a free, unsigned release candidate.** Final hardware and game acceptance is pending before stable 1.0. Use the version shown on the release asset; compiling these sources does not sign or publish a release.
+**1.0.0-rc.3 is a free, unsigned release candidate.** Final hardware and game acceptance is pending before stable 1.0. Use the version shown on the release asset; compiling these sources does not sign or publish a release.
 
 ## What the download contains
 
@@ -10,8 +10,8 @@ Choose a package from [Releases](https://github.com/SirRanjid/analog-key-mapper/
 
 | Package | Contents |
 | --- | --- |
-| `AnalogKeyMapper-1.0.0-rc.1-windows-x64.zip` | The unsigned Windows app, keyboard monitor, diagnostic tool and Xbox/DualSense output helper, plus licenses and checksum verification scripts. No compiler is required to open the editor. |
-| `AnalogKeyMapper-1.0.0-rc.1-source.zip` | Complete application and controller-helper sources, vendored Go dependencies, build scripts, tests, documentation, licenses and checksum verification scripts. |
+| `AnalogKeyMapper-1.0.0-rc.3-windows-x64.zip` | The unsigned Windows app, keyboard monitor, diagnostic tool and Xbox/DualSense output helper, plus licenses and checksum verification scripts. No compiler is required to open the editor. |
+| `AnalogKeyMapper-1.0.0-rc.3-source.zip` | Complete application and controller-helper sources, vendored Go dependencies, build scripts, tests, documentation, licenses and checksum verification scripts. |
 
 Both ZIPs contain an `AnalogKeyMapper` folder and `SHA256SUMS.txt`. Neither includes a driver installer, personal profiles or private device captures. Source test fixtures include sanitized sample pressure reports, with their provenance documented separately.
 
@@ -43,8 +43,8 @@ This checks the files listed in the selected package folder's `SHA256SUMS.txt`. 
 The release also provides a separate `SHA256SUMS.txt` for the two ZIP downloads. Compare those entries with the ZIP hashes from PowerShell before extraction if you want to check the archives themselves:
 
 ```powershell
-Get-FileHash .\AnalogKeyMapper-1.0.0-rc.1-windows-x64.zip -Algorithm SHA256
-Get-FileHash .\AnalogKeyMapper-1.0.0-rc.1-source.zip -Algorithm SHA256
+Get-FileHash .\AnalogKeyMapper-1.0.0-rc.3-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\AnalogKeyMapper-1.0.0-rc.3-source.zip -Algorithm SHA256
 ```
 
 Checksums detect file changes. They are not a code signature or independent proof of the publisher's identity when the files and manifest come from the same download.
@@ -102,7 +102,7 @@ To select a Go executable directly:
 
 The helper source is derived from VIIPER v0.7.0, commit `6b71b148a2243fab77ee1a46f4e22e00bd7d5a04`. See [its source notice](../src/ViiperOutputHost/NOTICE.md) for the origin and licenses. The helper build does not install USB/IP or create a controller.
 
-The application offers **32 configured output slots in total**, which can mix Xbox and DualSense. Windows provides at most **four XInput slots system-wide**, including physical controllers; DualSense devices use HID separately and do not occupy XInput slots. The recorded real-device acceptance is **two Xbox plus two DualSense outputs on an earlier helper build**. It does not establish final candidate acceptance or performance with 32 connected devices. Larger configurations remain to be load-tested. See [the acceptance record](multi-controller-acceptance.md) and [known issue](status.md#current-known-issue).
+The application offers **32 configured output slots in total**, which can mix Xbox and DualSense. Windows provides at most **four XInput slots system-wide**, including physical controllers; DualSense devices use HID separately and do not occupy XInput slots. The recorded real-device acceptance is **two Xbox plus two DualSense outputs on an earlier helper build**. It does not establish final candidate acceptance or performance with 32 connected devices. Larger configurations remain to be load-tested. See [the acceptance record](multi-controller-acceptance.md) and [release-candidate limits](status.md#release-candidate-limits).
 
 Each connected slot owns its own isolated helper and USB/IP attachment. Connecting or disconnecting one does not intentionally alter other slots or unrelated devices. Installing ViGEm does not enable this backend. The tested dependency versions do not establish compatibility with arbitrary other driver versions, games or PS5 consoles; see [status and limits](status.md).
 

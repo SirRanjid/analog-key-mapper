@@ -31,7 +31,10 @@ namespace Tk75.App
             public KeyboardLayout Layout;
             public MappingPairingPolicy Pairings;
             public DragPreviewWindow Preview;
-            public bool Cancelled;
+            public bool Cancelled, Completed;
+            public SocdDragContext Socd;
+            public EditHistory History;
+            public object SnapshotToken;
         }
         sealed class ControllerSlotItem
         {
@@ -88,6 +91,7 @@ namespace Tk75.App
             controllerConnector.ConnectionRequested += SetControllerConnection;
 
             keyboard.AllowDrop = controllerPreview.AllowDrop = true;
+            keyboard.KeyPressStarted += CaptureSocdDragContext;
             keyboard.KeyDragRequested += delegate(int[] indices) { Attempt(delegate { StartKeyDrag(indices); }); };
             controllerPreview.TargetDragRequested += delegate(OutputTarget target) { Attempt(delegate { StartControllerDrag(target); }); };
             controllerPreview.TargetSelected += delegate(OutputTarget target) {
@@ -193,6 +197,24 @@ namespace Tk75.App
                 }
                 keyboard.SetControllerAssignments(index, badges);
             }
+            controllerPreview.SetKeyAssignments(CurrentControllerBindings(profile).Select(binding =>
+            {
+                KeyboardKeyDefinition key = keyboard.LayoutModel == null ? null : keyboard.LayoutModel.FindByIndex(binding.KeyIndex);
+                string legend = key == null ? Label(binding.KeyIndex) : key.GetLegend(keyboard.LegendStyle);
+                legend = legend.Replace("\r", " ").Replace("\n", " ");
+                string description = legend;
+                if (key != null)
+                {
+                    switch (key.Code)
+                    {
+                        case "ShiftLeft": case "ControlLeft": case "AltLeft": case "MetaLeft":
+                            description = string.Format(Tr("{0} links", "Left {0}"), legend); break;
+                        case "ShiftRight": case "ControlRight": case "AltRight": case "MetaRight":
+                            description = string.Format(Tr("{0} rechts", "Right {0}"), legend); break;
+                    }
+                }
+                return new ControllerKeyAssignment(binding.Target, binding.KeyIndex, legend, description, binding.Enabled, key == null ? null : key.Code);
+            }).ToArray());
         }
         void AddControllerSlot()
         {
@@ -255,8 +277,10 @@ namespace Tk75.App
             {
                 bool any = activeMappingDrag.Keys != null ? activeMappingDrag.Pairings.AvailableTargets(activeMappingDrag.Keys).Length != 0 :
                     activeMappingDrag.Pairings.MissingKeys(LayoutIndices(), activeMappingDrag.Target.Value).Length != 0;
-                SetDragHint(any ? Tr("Hell markierte Partner sind noch frei · Esc bricht ab.", "Highlighted partners are available · Esc cancels.") :
-                    Tr("Alle möglichen Paare sind bereits zugeordnet · Esc bricht ab.", "Every possible pair is already mapped · Esc cancels."));
+                string hint = any ? Tr("Hell markierte Partner sind noch frei · Esc bricht ab.", "Highlighted partners are available · Esc cancels.") :
+                    Tr("Alle möglichen Paare sind bereits zugeordnet · Esc bricht ab.", "Every possible pair is already mapped · Esc cancels.");
+                if (CanPairSocdDrag()) hint = Tr("Controller zuordnen · für Gegentaste über Tasten ziehen · Esc bricht ab.", "Map a controller control · hover Keys to pair an opposite · Esc cancels.");
+                SetDragHint(hint);
                 return;
             }
             SetDragHint(Tr("Taste auf Controller ziehen – oder Controller-Button auf Taste.", "Drag a key onto the controller — or a controller button onto a key."));
@@ -277,9 +301,16 @@ namespace Tk75.App
             using (MappingDragVisual visual = keyboard.CreateDragVisual(keysToMap))
             {
                 if (visual == null) return;
-                FlushInputDraft(); SetDetailMode("controller", true, false); controllerPanel.PerformLayout();
-                StartMappingDrag(keyboard, new MappingDrag { Keys = keysToMap }, visual);
+                MappingDrag drag = PrepareKeyMappingDrag(keysToMap);
+                StartMappingDrag(keyboard, drag, visual);
             }
+        }
+        MappingDrag PrepareKeyMappingDrag(int[] keysToMap)
+        {
+            FlushInputDraft();
+            var drag = new MappingDrag { Keys = (int[])keysToMap.Clone(), Socd = TakeSocdDragContext(keysToMap) };
+            SetDetailMode("controller", true, false); controllerPanel.PerformLayout();
+            return drag;
         }
         void StartControllerDrag(OutputTarget target)
         {
@@ -291,14 +322,20 @@ namespace Tk75.App
                 StartMappingDrag(controllerPreview, new MappingDrag { Target = target }, visual);
             }
         }
-        void StartMappingDrag(Control source, MappingDrag drag, MappingDragVisual visual)
+        void InitializeMappingDrag(MappingDrag drag)
         {
             var profile = history.Current;
             drag.Token = "AnalogKeyMapper:" + Guid.NewGuid().ToString("N");
             drag.ProfilePath = profilePath; drag.ProfileJson = ProfileJson.Serialize(profile);
             drag.ControllerId = runtime.SelectedControllerId;
             drag.Layout = keyboard.LayoutModel; drag.Pairings = new MappingPairingPolicy(profile, drag.ControllerId);
+            drag.History = history; drag.SnapshotToken = history.SnapshotToken;
             activeMappingDrag = drag;
+            RefreshSocdDropTarget();
+        }
+        void StartMappingDrag(Control source, MappingDrag drag, MappingDragVisual visual)
+        {
+            InitializeMappingDrag(drag);
             // Only an opaque random string crosses OLE. Key indices and output
             // objects stay in this process; no external serialized objects load.
             Form owner = source.FindForm(); Exception feedbackError = null;
@@ -342,7 +379,7 @@ namespace Tk75.App
                 source.EnabledChanged -= unavailable; source.VisibleChanged -= unavailable; source.Disposed -= unavailable;
                 Deactivate -= lostFocus;
                 activeMappingDrag = null;
-                try { ClearMappingDragVisuals(); }
+                try { ClearMappingDragVisuals(); FinishSocdDrag(drag); }
                 finally { if (drag.Preview != null) drag.Preview.Dispose(); Cursor.Current = Cursors.Default; }
             }
             if (feedbackError != null) throw new InvalidOperationException(Tr("Die Ziehvorschau wurde beendet. Bitte erneut versuchen.", "The drag preview stopped. Please try again."), feedbackError);
@@ -377,6 +414,7 @@ namespace Tk75.App
         }
         void ClearMappingDragVisuals()
         {
+            SetSocdDropHighlight(false);
             if (!controllerPreview.IsDisposed) { controllerPreview.SetDropTarget(null); controllerPreview.SetAvailableTargets(new OutputTarget[0]); }
             if (!keyboard.IsDisposed) { keyboard.SetDropKeys(new int[0]); keyboard.SetAvailableKeys(new int[0]); }
             if (!IsDisposed && !Disposing && !mappingDragHint.IsDisposed) SetDefaultDragHint();
@@ -423,7 +461,7 @@ namespace Tk75.App
             if (!IsOurMappingDrag(e) || activeMappingDrag.Keys == null || !DragProfileUnchanged()) return;
             var target = controllerPreview.HitTestTarget(controllerPreview.PointToClient(new Point(e.X, e.Y)));
             if (!target.HasValue || activeMappingDrag.Pairings.MissingKeys(activeMappingDrag.Keys, target.Value).Length == 0) return;
-            Attempt(delegate { AddDroppedMapping(activeMappingDrag.Keys, target.Value); e.Effect = DragDropEffects.Copy; });
+            Attempt(delegate { MappingDrag drag = activeMappingDrag; AddDroppedMapping(drag.Keys, target.Value); drag.Completed = true; e.Effect = DragDropEffects.Copy; });
         }
         void DropOnKeyboard(object sender, DragEventArgs e)
         {
@@ -431,7 +469,7 @@ namespace Tk75.App
             if (!IsOurMappingDrag(e) || !activeMappingDrag.Target.HasValue || !DragProfileUnchanged()) return;
             int[] indices = KeyboardDropKeys(e); if (indices.Length == 0) return;
             if (activeMappingDrag.Pairings.MissingKeys(indices, activeMappingDrag.Target.Value).Length == 0) return;
-            Attempt(delegate { AddDroppedMapping(indices, activeMappingDrag.Target.Value); e.Effect = DragDropEffects.Copy; });
+            Attempt(delegate { MappingDrag drag = activeMappingDrag; AddDroppedMapping(indices, drag.Target.Value); drag.Completed = true; e.Effect = DragDropEffects.Copy; });
         }
         void AddDroppedMapping(int[] indices, OutputTarget target)
         {

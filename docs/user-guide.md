@@ -6,7 +6,7 @@
 
 Download the **Windows x64 ZIP** from [Releases](https://github.com/SirRanjid/analog-key-mapper/releases), extract it, and open the `AnalogKeyMapper` folder. Run `Verify-Checksums.bat`, then open `AnalogKeyMapper.exe`. The editor requires Windows x64 and .NET Framework 4.x; it does not require a compiler or installer.
 
-This is the unsigned 1.0.0-rc.1 release candidate, and Windows may block it under your security policy. Keep the actual error if that happens; do not disable protections. If you prefer to compile it yourself, use the separate source ZIP and [build instructions](building.md#compile-from-source).
+The release candidates are unsigned, and Windows may block them under your security policy. Keep the actual error if that happens; do not disable protections. If you prefer to compile it yourself, use the separate source ZIP and [build instructions](building.md#compile-from-source).
 
 ## Connect the keyboard
 
@@ -20,7 +20,7 @@ Uncalibrated keys use the default raw range **0–385**. **Adjust pressure range
 
 ## Select and map keys
 
-- Click a key to select it. **Ctrl+click** adds or removes keys.
+- Click a key to select it and open **Keys**. **Ctrl+click** adds or removes keys. Holding the mouse button keeps the current tab until you either release it or begin dragging.
 - Drag a rectangle from empty keyboard space to select the keys it intersects. Hold **Ctrl** or **Shift** to add that rectangle to your current selection.
 - Choose **Player / controller** above the keyboard. New mappings belong to that slot.
 
@@ -29,6 +29,8 @@ Drag selected keys onto a controller output, or drag a controller output onto a 
 The actual grabbed shape follows your pointer with about 50% opacity. Multiple keys retain their original arrangement. Available destinations are light blue; a valid current destination has a dashed amber border. An invalid drop adds nothing. Press **Escape** to cancel.
 
 A key can have several outputs, and a drop adds only missing pairs. Repeating an existing key/output/controller pairing keeps its settings and does not duplicate it. **Undo/Redo** reverses or reapplies edits.
+
+The controller preview displays assigned keyboard keys beside their outputs. Modifier keycaps spell out **Shift**, **Ctrl/Strg** or **Alt/AltGr**, with **L** or **R** to identify the side. A combined **L/R** label shows both sides of the same modifier; an additional count indicates further assignments. Hover an output to read the complete key list.
 
 ![Controller view with selection, lighting and connection controls](images/controller.png)
 
@@ -45,7 +47,7 @@ Once the [output dependencies](building.md#virtual-controller-output) are instal
 
 Profiles support **32 output-capable slots in total**, freely assigned to Xbox or DualSense. Connect each slot you want to use; disconnecting one leaves the others connected. Xbox output is limited by Windows to **four XInput controllers in total, including physical controllers**. DualSense uses a separate HID path and does not consume that four-slot allowance.
 
-The recorded mixed-device test is **two Xbox plus two DualSense controllers** on a preceding helper build. Windows blocked the final optimized helper on the development machine before it could be live-tested; see [the current known issue](status.md#current-known-issue). The 32-slot software limit is not a completed load test of every possible configuration. See [the acceptance record](multi-controller-acceptance.md). DualSense supports the common mapped buttons, triggers and sticks; this does not promise PS5-console compatibility, touchpad or motion-sensor support.
+The recorded mixed-device test is **two Xbox plus two DualSense controllers** on a preceding helper build. Windows blocked the optimized helper's recorded live-validation attempt; see [release-candidate limits](status.md#release-candidate-limits). The 32-slot software limit is not a completed load test of every possible configuration. See [the acceptance record](multi-controller-acceptance.md). DualSense supports the common mapped buttons, triggers and sticks; this does not promise PS5-console compatibility, touchpad or motion-sensor support.
 
 **Keyboard mode** keeps connected controller output neutral. Controller mode uses your mappings. The USB connection and input mode are separate controls. Open **Controller input & shortcuts** to set the profile's default mode and optional mode/stop shortcuts. F9 and F8 are editable defaults. Release keys held during connection before using them for output.
 
@@ -55,11 +57,23 @@ The recorded mixed-device test is **two Xbox plus two DualSense controllers** on
 
 In **Curve**, edit deadzones, activation thresholds, minimum/maximum output, smoothing and response shape. Linear, custom segmented and Bézier curves are available. The curve editor remains square.
 
+![Square curve editor showing mixed settings across selected mappings](images/response-curve.png)
+
+*When selected mappings have different curves, the editor marks them as mixed and previews the first mapping.*
+
 With several keys selected, signal settings, curves and presets apply to all their mappings in the selected controller. Unselected keys and other controllers retain their settings. Select a single key when you want to work on an individual mapping.
 
-![Square response-curve editor](images/response-curve.png)
+The output list in **Keys** outlines its selected row even when the list has only one entry. Its **Response** column summarizes each output's curve and changed signal settings; hover the summary for the complete values. The line below the buttons separately summarizes behavior shared by all outputs of the physical key.
+
+![Keys tab with outlined output rows and separate response summaries](images/mapping.png)
 
 **Behavior** under Keys controls Rapid Trigger and opposite-key handling (SOCD). These belong to physical keys and are shared by their mappings. Mixed values are marked; editing one field preserves the others. With two selected keys, you can pair them explicitly and choose neutral, first-pressed or last-pressed resolution. Larger selections retain existing pairs and do not offer pair editing.
+
+To pair by dragging, select the first key and open **Behavior**. Drag the opposite key from the keyboard, hover **Keys** to reopen the original key's behavior, and drop onto **Drop the opposite key for … here**. The field names the original key and lights up for a valid drop. This pairs both keys, keeps the original key's SOCD policy and preserves their actuation settings. Existing partners are unpaired; **Undo** restores the previous pairings. Dropping on a tab alone does not create a pair, and **Escape** cancels the drag.
+
+![Behavior editor with the valid opposite-key drop area highlighted](images/socd-opposite-drop.png)
+
+*Synthetic preview: the amber field identifies W as the original key and accepts its dragged opposite. No hardware is connected in these guide images.*
 
 ## Profiles and saved data
 

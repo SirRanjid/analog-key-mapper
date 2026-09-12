@@ -43,12 +43,14 @@ namespace Tk75.App
         Point dragOrigin;
         Point pointerPosition;
         bool pointerInside;
-        bool clickArmed, dragArmed, dragDispatching, collapseSelectionOnClick;
+        bool clickArmed, clickMoved, dragArmed, dragDispatching, collapseSelectionOnClick;
         bool marqueeArmed, marqueeDragging;
         Point marqueeOrigin;
         Rectangle marqueeBounds;
         readonly HashSet<int> marqueeSeed = new HashSet<int>(), marqueeSelection = new HashSet<int>();
         public event EventHandler SelectionChanged;
+        public event Action<KeyboardKeyDefinition> KeyPressStarted;
+        public event Action<KeyboardKeyDefinition> KeyClicked;
         public event Action<KeyboardKeyDefinition> UnassignedKeySelected;
         // The consumer starts its normal OLE drag synchronously. The payload is
         // a detached selection snapshot, never the internal selected collection.
@@ -347,6 +349,9 @@ namespace Tk75.App
                 if ((SelectionModifiers & (Keys.Control | Keys.Shift)) != 0) marqueeSeed.UnionWith(selected);
                 hoverCode = null; tooltip.Hide(this); Cursor = Cursors.Cross; Capture = true; return;
             }
+            Action<KeyboardKeyDefinition> starting = KeyPressStarted;
+            if (starting != null) starting(key);
+            if (IsDisposed || !Enabled || layout == null || layout.FindByCode(key.Code) != key) return;
             bool toggle = (SelectionModifiers & Keys.Control) != 0;
             bool deferSelection = !toggle && key.KeyIndex.HasValue && selected.Contains(key.KeyIndex.Value);
             if (deferSelection) { focusCode = key.Code; Invalidate(); }
@@ -355,9 +360,8 @@ namespace Tk75.App
             // not unexpectedly start a drag of the remaining selected keys.
             if (IsDisposed || !Focused || !Enabled || layout == null || layout.FindByCode(key.Code) != key ||
                 !key.KeyIndex.HasValue) return;
-            clickArmed = true; Capture = true; RefreshPointerCursor();
+            clickArmed = true; pressedCode = key.Code; dragOrigin = e.Location; Capture = true; RefreshPointerCursor();
             if (!selected.Contains(key.KeyIndex.Value)) return;
-            pressedCode = key.Code; dragOrigin = e.Location;
             collapseSelectionOnClick = deferSelection; dragArmed = true;
         }
         protected override void OnMouseMove(MouseEventArgs e)
@@ -372,6 +376,7 @@ namespace Tk75.App
                 return;
             }
             if (clickArmed && !dragDispatching && ((e.Button & MouseButtons.Left) == 0 || !Capture)) CancelDragGesture();
+            if (clickArmed && !dragArmed && !InsideClickThreshold(e.Location)) clickMoved = true;
             if (dragArmed && !dragDispatching)
             {
                 if ((e.Button & MouseButtons.Left) == 0 || !Capture) CancelDragGesture();
@@ -425,14 +430,23 @@ namespace Tk75.App
                 CancelDragGesture(); SetSelectedKeys(next); return;
             }
             string clickedCode = pressedCode;
+            bool click = clickArmed && !clickMoved && Capture && !dragDispatching && InsideClickThreshold(e.Location);
             bool collapse = dragArmed && collapseSelectionOnClick && !dragDispatching;
             CancelDragGesture();
-            KeyboardKeyDefinition clicked = collapse ? HitTest(e.Location) : null;
-            if (clicked != null && clicked.Code == clickedCode) SelectKey(clicked, false);
+            KeyboardKeyDefinition clicked = click ? HitTest(e.Location) : null;
+            if (clicked == null || clicked.Code != clickedCode) return;
+            if (collapse) SelectKey(clicked, false);
+            Action<KeyboardKeyDefinition> handler = KeyClicked;
+            if (handler != null) handler(clicked);
+        }
+        bool InsideClickThreshold(Point point)
+        {
+            Size size = SystemInformation.DragSize;
+            return new Rectangle(dragOrigin.X - size.Width / 2, dragOrigin.Y - size.Height / 2, size.Width, size.Height).Contains(point);
         }
         void CancelDragGesture()
         {
-            clickArmed = dragArmed = collapseSelectionOnClick = false; pressedCode = null;
+            clickArmed = clickMoved = dragArmed = collapseSelectionOnClick = false; pressedCode = null;
             if (marqueeArmed || marqueeDragging)
             {
                 marqueeArmed = marqueeDragging = false; marqueeBounds = Rectangle.Empty;

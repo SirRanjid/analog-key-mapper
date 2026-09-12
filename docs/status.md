@@ -1,14 +1,16 @@
 # Compatibility and validation
 
-Release candidate **1.0.0-rc.1**, status: **11 September 2026**. [User guide](user-guide.md) · [Build instructions](building.md)
+Release-candidate validation, updated **12 September 2026**. [Downloads and release versions](https://github.com/SirRanjid/analog-key-mapper/releases) · [User guide](user-guide.md) · [Build instructions](building.md)
+
+This page describes implemented features and recorded validation. Release assets identify their own version; the observations below apply only to the builds and test setups stated here. A release candidate is not a stable 1.0 acceptance claim.
 
 The release offers an unsigned Windows x64 package and a separate complete source package. Both include file checksums; the release also provides hashes for the ZIP downloads. See [package contents and verification](building.md#what-the-download-contains).
 
-## Current known issue
+## Release-candidate limits
 
-Stable 1.0 acceptance remains open. The preceding unsigned tray-startup executable (`0.1.0.3`) was blocked at normal process start on the development machine (Code Integrity event 3077). Windows autostart was left disabled. See [background startup and validation](background-startup.md). Automated tests do not establish that Windows will allow the downloaded application or its helpers to start.
+The application and helper are unsigned. Windows application control has blocked earlier development executables at normal process startup (Code Integrity event 3077). See [background startup and validation](background-startup.md). Automated tests and published checksums do not establish that Windows will allow a downloaded application or helper to start.
 
-Windows application control blocked the latest optimized output-helper executable on the development machine at process startup (Code Integrity event 3077). The helper compiled and its Go package tests passed; it did not run for a new live acceptance or resource measurement. No protection settings were changed and no alternate-host retry was used.
+The optimized output-helper build compiled and passed its Go package tests, but Windows blocked its recorded live-validation attempt. It therefore has no new live acceptance or resource measurement. No protection settings were changed and no alternate-host retry was used.
 
 The successful two-Xbox/two-DualSense observations below apply to the preceding helper build. They must not be read as a successful live test of the final optimized executable. A 32-device live test has not been completed. See [the detailed acceptance record](multi-controller-acceptance.md).
 
@@ -33,7 +35,7 @@ The latest recorded targeted development runs passed:
 
 | Suite | Assertions | What it exercises |
 | --- | ---: | --- |
-| [App UI](../tests/Test-AppUi.ps1) | 6,513 | Real controls with synthetic sources: tabs, fixed layout, bulk edits, keyboard/controller drag images, connection gestures and aborts. |
+| [App UI](../tests/Test-AppUi.ps1) | 6,967 | Real controls with synthetic sources: tabs, fixed layout, bulk edits, readable modifier badges, outlined output summaries, SOCD drag pairing, keyboard/controller drag images, connection gestures and aborts. |
 | [Background UI](../tests/Test-BackgroundUi.ps1) | 113 | Windowless startup, tray behavior and cancellation of startup reconnection after edits. |
 | [Pending USB connection](../tests/Test-ControllerPendingUi.ps1) | 28 | Docked pending graphics, cancellation gestures, accessibility and independent footer slots. |
 | [Reconnect persistence](../tests/Test-ControllerReconnectStore.ps1) | 52 | One-use confirmed records, stale files, failed writes and interrupted sessions. |
@@ -46,6 +48,8 @@ The latest recorded targeted development runs passed:
 | [Isolated output](../tests/Test-IsolatedOutput.ps1) | 22 protocol + 59 process | Memory-stream protocol cases and actual isolated-process boundaries using only synthetic helper executables. |
 
 The UI checks include original-size key and controller pixels, transparent contours, pickup anchors, the passive layered preview window and shared drag feedback. Screenshots were inspected in English. Tests cover Xbox and PS5-style front buttons, triggers, directional controls and stick segments.
+
+The recorded UI revision includes 136 modifier-label checks, 66 output-summary checks and 147 SOCD-drag checks. Output summaries and selection outlines were also inspected in German and at minimum window size. A separate deterministic layout check covered 200 mixtures of all 24 controller targets in both styles, including 2,396 broad modifier labels, without creating a window or touching hardware. The background UI and visual-keyboard suites above also passed on this UI revision.
 
 The full offline command discovers 47 suites. The initial finalization run exposed an RGB journal path-length failure; compact filenames fixed the underlying issue, with successful follow-up checks for ordinary download paths and legacy recovery. Packaging checks separately reject stale versions, changed executables, source/receipt mismatches and unlisted source files. The [GitHub workflow](https://github.com/SirRanjid/analog-key-mapper/actions/workflows/build.yml) builds both components, runs all offline suites and the Go protocol tests, then creates verified packages.
 

@@ -5,7 +5,7 @@ MainForm(..., preview:true). Eigenes Fenster offscreen, keine fremde Anwendung,
 keine Hardware und kein Controller. Bei Windows-Blockade kein Umgehungsweg.
 #>
 [CmdletBinding()]
-param([switch] $KeepArtifacts, [ValidateRange(5,120)] [int] $TimeoutSeconds = 40)
+param([switch] $KeepArtifacts, [ValidateRange(5,120)] [int] $TimeoutSeconds = 80)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'Der App-UI-Test benoetigt Windows.' }
@@ -27,6 +27,10 @@ try {
     $arguments += $appSources
     $arguments += (Join-Path $PSScriptRoot 'AppUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'AppDialogHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'KeyboardGestureUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'ControllerModifierUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'MappingSummaryUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'SocdDragUiHarness.cs')
     & $compiler @arguments
     if ($LASTEXITCODE -ne 0) { throw 'App-UI-Harness konnte nicht kompiliert werden.' }
     $stdout = Join-Path $testFolder 'stdout.txt'; $stderr = Join-Path $testFolder 'stderr.txt'

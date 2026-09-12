@@ -17,8 +17,6 @@ namespace Tk75.Tests
     {
         static int assertions;
         static readonly List<string> layoutFailures = new List<string>();
-        static readonly Size DefaultClientSize = new Size(1440, 880);
-        static readonly Size SupportedMinimumSize = new Size(1080, 740);
         const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
         static T Field<T>(object owner, string name)
         {
@@ -182,42 +180,10 @@ namespace Tk75.Tests
             LayoutCheck(Relative(form, host).Left >= bounds.Right, label + ": details are to the right of the keyboard.");
             LayoutCheck(form.OwnedForms.Length == 0, label + ": changing the sidebar creates no floating detail window.");
         }
-        static void CheckDefaultWindowGeometry(MainForm form)
-        {
-            // WinForms can clamp both initial and minimum bounds to the current
-            // desktop. Compare with an independent ordinary Form configured with
-            // the intended dimensions, before changing this preview's test limits.
-            using (var expected = new Form())
-            {
-                expected.ClientSize = DefaultClientSize; expected.MinimumSize = SupportedMinimumSize;
-                expected.Font = form.Font; expected.ShowInTaskbar = false;
-                expected.StartPosition = FormStartPosition.Manual; expected.Location = form.Location;
-                expected.Show(); expected.PerformLayout(); Application.DoEvents();
-                Console.WriteLine("WINDOW: client=" + form.ClientSize + "; bounds=" + form.Bounds + "; minimum=" + form.MinimumSize
-                    + "; expected client=" + expected.ClientSize + "; expected minimum=" + expected.MinimumSize
-                    + "; working area=" + Screen.FromControl(form).WorkingArea + "; max track=" + SystemInformation.MaxWindowTrackSize);
-                Check(form.ClientSize == expected.ClientSize, "Main window uses the intended default client size within the current Windows desktop limits.");
-                Check(form.MinimumSize == expected.MinimumSize, "Main window retains its supported minimum size within the current Windows desktop limits.");
-            }
-        }
-        [System.Runtime.InteropServices.DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
-        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
-        static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
-        static void SetPreviewClientSize(MainForm form, Size size)
-        {
-            // Only our own hidden/offscreen preview. Native sizing avoids the
-            // Framework's desktop-sized SetBoundsCore cap on small CI displays;
-            // the actual client dimensions and every layout assertion stay exact.
-            Size chrome = new Size(form.Width - form.ClientSize.Width, form.Height - form.ClientSize.Height);
-            if (!SetWindowPos(form.Handle, IntPtr.Zero, 0, 0, size.Width + chrome.Width, size.Height + chrome.Height, 0x0216))
-                throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
-            Pump(form);
-            Console.WriteLine("RESIZE: requested client=" + size + "; actual client=" + form.ClientSize + "; bounds=" + form.Bounds);
-        }
         static void CheckLayout(MainForm form, Size size, string artifacts)
         {
             Call(form, "ShowPage", "mapping"); DetailMode(form, null);
-            SetPreviewClientSize(form, size); string label = size.Width + "x" + size.Height;
+            form.ClientSize = size; Pump(form); string label = size.Width + "x" + size.Height;
             Check(form.ClientSize == size, "Requested client size applied: " + label);
             foreach (string name in new[] { "devices", "profiles", "keyboard", "layoutMode", "mainControllerSlotPicker", "targets", "bindings", "keyTitle", "keyHint", "pressure", "calibrateButton", "addTargetButton", "controllerToggle", "keyBehaviorToggle", "advancedToggle", "deviceStatus", "outputStatus" })
                 VisibleInside(form, Field<Control>(form, name), label + "/" + name);
@@ -1318,7 +1284,7 @@ namespace Tk75.Tests
             Check(ControllerRouting.EffectiveControllers(Current(form)).Single(c => c.Id == addedId).Kind == ControllerKind.DualSense, "Controller kind editing affects the selected controller.");
             AssertPassive(form);
             var keyboard = Field<VisualKeyboard>(form, "keyboard"); Rectangle keyboardBounds = Relative(form, keyboard);
-            keyboard.SelectKey(keyboard.LayoutModel.FindByIndex(9), false); Pump(form);
+            ShortKeyboardClick(keyboard, 9); Pump(form);
             Check(Field<string>(form, "detailsMode") == null && Field<Control>(form, "keyTitle").Visible, "Selecting a physical key opens its settings in the sidebar.");
             Check(Relative(form, keyboard) == keyboardBounds, "Contextual key selection leaves keyboard size and position unchanged.");
             Field<Button>(form, "keyBehaviorToggle").PerformClick(); Pump(form);
@@ -1332,9 +1298,186 @@ namespace Tk75.Tests
             Check(mainPicker.Items.Count == 1 && detailPicker.Items.Count == 1 && runtime.SelectedControllerId == ControllerRouting.DefaultControllerId, "Removing the temporary controller restores a valid synchronized selection.");
             CheckControllerFooter(form, "restored controller profile");
         }
+        static void RunControllerAssignmentVisuals(string artifacts)
+        {
+            string[] legends = { "D", "A", "W", "S", "L", "J", "I", "K", "Q", "E", "Space", "C", "R", "F", "Shift", "Ctrl", "Tab", "Esc", "Z", "X", "↑", "↓", "←", "→" };
+            OutputTarget[] targets = Enum.GetValues(typeof(OutputTarget)).Cast<OutputTarget>().ToArray();
+            var assigned = targets.Select((target, index) => new ControllerKeyAssignment(target, index, legends[index], legends[index], true)).ToArray();
+            foreach (ControllerStyle style in new[] { ControllerStyle.Xbox, ControllerStyle.PlayStation5 })
+            using (var host = new Form { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual, Location = new Point(-30000, -30000), ClientSize = new Size(440, 295) })
+            using (var controller = new ControllerPreview { Dock = DockStyle.Fill, CompactStatus = true, Style = style })
+            {
+                string label = style == ControllerStyle.Xbox ? "xbox" : "ps";
+                host.Controls.Add(controller); controller.SetKeyAssignments(assigned); host.Show(); Application.DoEvents();
+                using (var bitmap = new Bitmap(controller.Width, controller.Height))
+                {
+                    controller.DrawToBitmap(bitmap, controller.ClientRectangle);
+                    bitmap.Save(Path.Combine(artifacts, "controller-all-keys-" + label + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+                }
+                Rectangle face = ControllerTargetBounds(controller, OutputTarget.A); Point? badgePickup = null;
+                for (int y = face.Bottom + 1; y < Math.Min(controller.Height, face.Bottom + 35) && !badgePickup.HasValue; y++)
+                {
+                    for (int x = Math.Max(0, face.Left - 15); x < Math.Min(controller.Width, face.Right + 25) && !badgePickup.HasValue; x++)
+                    {
+                        Point point = new Point(x, y);
+                        if (controller.HitTestTarget(point) == OutputTarget.A &&
+                            new[] { new Point(x - 2, y), new Point(x + 2, y), new Point(x, y - 2), new Point(x, y + 2) }.All(near => controller.HitTestTarget(near) == OutputTarget.A))
+                            badgePickup = point;
+                    }
+                }
+                Check(badgePickup.HasValue, label + ": the visible key badge below the face button is an interactive part of its assigned target.");
+                Point pickup = badgePickup.Value;
+                controller.SetKeyAssignments(new ControllerKeyAssignment[0]);
+                Check(controller.HitTestTarget(pickup) != OutputTarget.A, label + ": that external hit area belongs to the annotation, not an unrelated original control.");
+                controller.SetKeyAssignments(assigned);
+                Bitmap source;
+                using (MappingDragVisual visual = CaptureControllerDragVisual(controller, OutputTarget.A, pickup, out source))
+                using (source)
+                {
+                    Rectangle crop = new Rectangle(pickup.X - visual.Anchor.X, pickup.Y - visual.Anchor.Y, visual.Image.Width, visual.Image.Height);
+                    Check(crop.Contains(pickup) && visual.Image.GetPixel(visual.Anchor.X, visual.Anchor.Y).A != 0,
+                        label + ": picking up the external key badge keeps its visible pixels and original cursor anchor in the dragged picture.");
+                    int opaqueBelowFace = 0;
+                    for (int y = Math.Max(0, face.Bottom + 1 - crop.Top); y < visual.Image.Height; y++)
+                        for (int x = 0; x < visual.Image.Width; x++) if (visual.Image.GetPixel(x, y).A > 200) opaqueBelowFace++;
+                    Check(opaqueBelowFace > 10, label + ": the controller drag picture includes the key annotation below the original face shape.");
+                    visual.Image.Save(Path.Combine(artifacts, "controller-assigned-drag-" + label + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+                }
+                var broadLabels = assigned.Select(item => item.Target == OutputTarget.Start || item.Target == OutputTarget.X
+                    ? new ControllerKeyAssignment(item.Target, item.KeyIndex, "AltGr", "Right Alt", true) : item).ToArray();
+                controller.SetKeyAssignments(broadLabels);
+                foreach (OutputTarget target in style == ControllerStyle.Xbox ? new[] { OutputTarget.Start } : new[] { OutputTarget.X, OutputTarget.Start })
+                {
+                    Rectangle originalShape = ControllerTargetBounds(controller, target);
+                    Point targetPickup = new Point(originalShape.Left + originalShape.Width / 2, originalShape.Top + originalShape.Height / 2);
+                    Bitmap actualSource;
+                    using (MappingDragVisual visual = CaptureControllerDragVisual(controller, target, targetPickup, out actualSource))
+                    using (actualSource)
+                    {
+                        Point cropOrigin = new Point(targetPickup.X - visual.Anchor.X, targetPickup.Y - visual.Anchor.Y);
+                        int ownBadgePixels = 0, otherTargetPixels = 0; var annotationPixels = new List<Point>();
+                        for (int y = 0; y < visual.Image.Height; y++)
+                            for (int x = 0; x < visual.Image.Width; x++)
+                            {
+                                Point client = new Point(cropOrigin.X + x, cropOrigin.Y + y);
+                                if (originalShape.Contains(client) || visual.Image.GetPixel(x, y).A < 240) continue;
+                                annotationPixels.Add(client);
+                                OutputTarget? hit = controller.HitTestTarget(client);
+                                if (hit == target) ownBadgePixels++;
+                                else if (hit.HasValue) otherTargetPixels++;
+                            }
+                        Check(ownBadgePixels > 5, label + "/" + target + ": the broad external label is present in the actual drag image and remains independently clickable.");
+                        Check(otherTargetPixels == 0, label + "/" + target + ": the external label and its drag mask do not cover a neighboring target or that target's label.");
+                        controller.SetKeyAssignments(new ControllerKeyAssignment[0]);
+                        int coveredControls = annotationPixels.Count(point => { OutputTarget? hit = controller.HitTestTarget(point); return hit.HasValue && hit != target; });
+                        controller.SetKeyAssignments(broadLabels);
+                        Check(coveredControls == 0, label + "/" + target + ": the broad key badge also leaves the original neighboring controls uncovered, regardless of hit-test priority.");
+                    }
+                }
+                host.Close();
+            }
+        }
+        static void CheckControllerKeyAssignments(MainForm form, string artifacts)
+        {
+            int started = assertions;
+            Profile original = Current(form); string originalJson = Json(original), language = UiText.Language;
+            var originalKeymap = Field<Tk75.Diagnostics.KeyMapDocument>(form, "keymap");
+            int? originalLegend = Field<int?>(form, "legendOverride");
+            ComboBox layoutPicker = Field<ComboBox>(form, "layoutMode"); int originalLayout = layoutPicker.SelectedIndex;
+            var controller = Field<ControllerPreview>(form, "controllerPreview");
+            try
+            {
+                Call(form, "SwitchLanguage", "en"); layoutPicker.SelectedIndex = 2; Call(form, "SetLegendOverride", (int?)0);
+                var learned = Tk75.Diagnostics.KeyMapStore.SetLabel(originalKeymap, 200, "Benutzername");
+                typeof(MainForm).GetField("keymap", Private).SetValue(form, learned);
+                var fixture = new Profile { Name = "Controller key labels" };
+                fixture = ControllerRouting.Add(fixture, "labels-other", "Other player", ControllerKind.DualSense);
+                foreach (int index in new[] { 9, 14 }) fixture.Bindings.Add(new Binding { KeyIndex = index, Target = OutputTarget.A });
+                fixture.Bindings.Add(new Binding { KeyIndex = 14, Target = OutputTarget.RightTrigger, Enabled = false });
+                fixture.Bindings.Add(new Binding { KeyIndex = 38, Target = OutputTarget.X });
+                fixture.Bindings.Add(new Binding { KeyIndex = 4, Target = OutputTarget.LB });
+                fixture.Bindings.Add(new Binding { KeyIndex = 76, Target = OutputTarget.LB });
+                fixture.Bindings.Add(new Binding { KeyIndex = 200, Target = OutputTarget.B });
+                fixture.Bindings.Add(new Binding { KeyIndex = 201, Target = OutputTarget.Y });
+                fixture.Bindings.Add(new Binding { KeyIndex = 80, Target = OutputTarget.Start });
+                fixture.Bindings.Add(new Binding { KeyIndex = 14, Target = OutputTarget.LeftYPositive });
+                fixture.Bindings.Add(new Binding { KeyIndex = 9, Target = OutputTarget.LeftXNegative });
+                fixture.Bindings.Add(new Binding { KeyIndex = 15, Target = OutputTarget.LeftYNegative });
+                fixture.Bindings.Add(new Binding { KeyIndex = 21, Target = OutputTarget.LeftXPositive });
+                fixture.Bindings.Add(new Binding { KeyIndex = 9, Target = OutputTarget.B, ControllerId = "labels-other" });
+                Call(form, "Commit", fixture); SelectKeys(form, 15); DetailMode(form, "controller");
+                Equal("A, W", controller.GetAssignedKeyText(OutputTarget.A), "Controller shows every assigned key, including keys outside the current selection.");
+                Equal("W (disabled)", controller.GetAssignedKeyText(OutputTarget.RightTrigger), "Disabled mappings remain readable on the controller.");
+                Equal("Left Shift, Right Shift", controller.GetAssignedKeyText(OutputTarget.LB), "The full assignment description distinguishes both physical Shift keys.");
+                Equal("Benutzername", controller.GetAssignedKeyText(OutputTarget.B), "Unknown layout indices retain learned user names.");
+                Equal("Index 201", controller.GetAssignedKeyText(OutputTarget.Y), "An unnamed unknown index has a readable fallback.");
+                Equal("Y", controller.GetAssignedKeyText(OutputTarget.X), "QWERTY uses the actual Y legend.");
+                Equal("Enter", controller.GetAssignedKeyText(OutputTarget.Start), "The ISO matrix identifies physical index 80 as Enter.");
+                SelectKeys(form, 9); Equal("A, W", controller.GetAssignedKeyText(OutputTarget.A), "Changing the selected key does not filter the controller's assignments.");
+                var slots = Field<ComboBox>(form, "mainControllerSlotPicker"); slots.SelectedIndex = 1; Pump(form);
+                Equal("A", controller.GetAssignedKeyText(OutputTarget.B), "Selecting another controller displays only that controller's assigned key.");
+                Equal("", controller.GetAssignedKeyText(OutputTarget.A), "Other players' assignments do not leak onto an unused target.");
+                Equal("", controller.GetAssignedKeyText(OutputTarget.LeftYPositive), "Controller switching clears unassigned stick directions too.");
+                slots.SelectedIndex = 0; Pump(form);
+                Equal("A, W", controller.GetAssignedKeyText(OutputTarget.A), "Returning to the first controller restores its complete assignments.");
+                SelectKeys(form, 14);
+                string triggerId = Current(form).Bindings.Single(binding => binding.Target == OutputTarget.RightTrigger).BindingId;
+                SelectBindings(form, triggerId); Call(form, "ToggleBindings");
+                Equal("W", controller.GetAssignedKeyText(OutputTarget.RightTrigger), "Enabling a mapping immediately removes its disabled indication.");
+                Call(form, "Undo"); Equal("W (disabled)", controller.GetAssignedKeyText(OutputTarget.RightTrigger), "Undo immediately restores a disabled mapping's visible state.");
+                SelectBindings(form, triggerId); Call(form, "RemoveBinding");
+                Equal("", controller.GetAssignedKeyText(OutputTarget.RightTrigger), "Removing the last mapping clears its controller annotation.");
+                Call(form, "Undo"); Equal("W (disabled)", controller.GetAssignedKeyText(OutputTarget.RightTrigger), "Undo restores the removed controller annotation.");
+                Call(form, "Redo"); Equal("", controller.GetAssignedKeyText(OutputTarget.RightTrigger), "Redo clears the annotation again.");
+                Call(form, "Undo");
+                string beforeLegends = Json(Current(form));
+                Call(form, "SetLegendOverride", (int?)1);
+                Equal("Z", controller.GetAssignedKeyText(OutputTarget.X), "QWERTZ immediately changes the same physical key's controller legend to Z.");
+                Call(form, "SwitchLanguage", "de");
+                Equal("Shift links, Shift rechts", controller.GetAssignedKeyText(OutputTarget.LB), "Language changes refresh the full modifier descriptions.");
+                Equal("W (inaktiv)", controller.GetAssignedKeyText(OutputTarget.RightTrigger), "Language changes refresh disabled mapping descriptions.");
+                Equal("Benutzername", controller.GetAssignedKeyText(OutputTarget.B), "Language changes preserve learned user text.");
+                Call(form, "SetLegendOverride", (int?)0); layoutPicker.SelectedIndex = 1; Pump(form);
+                Equal("\\", controller.GetAssignedKeyText(OutputTarget.Start), "Changing to ANSI reinterprets physical index 80 with the displayed matrix.");
+                layoutPicker.SelectedIndex = 2; Pump(form);
+                Equal("Enter", controller.GetAssignedKeyText(OutputTarget.Start), "Returning to ISO restores its physical Enter label.");
+                Equal(beforeLegends, Json(Current(form)), "Layout and language presentation changes never edit mappings.");
+                learned = Tk75.Diagnostics.KeyMapStore.SetLabel(learned, 200, "Renamed key");
+                typeof(MainForm).GetField("keymap", Private).SetValue(form, learned); Call(form, "RefreshKeys");
+                Equal("Renamed key", controller.GetAssignedKeyText(OutputTarget.B), "Refreshing a newly learned label updates its controller annotation.");
+                Call(form, "SwitchLanguage", "en");
+                Profile picture = Current(form);
+                picture.Bindings.RemoveAll(binding => binding.KeyIndex == 200 || binding.KeyIndex == 201);
+                picture.Bindings.Add(new Binding { KeyIndex = 41, Target = OutputTarget.B });
+                picture.Bindings.Add(new Binding { KeyIndex = 10, Target = OutputTarget.Y });
+                picture.Bindings.Add(new Binding { KeyIndex = 2, Target = OutputTarget.Back });
+                Call(form, "Commit", picture); DetailMode(form, "controller");
+                foreach (int kind in new[] { 0, 1 })
+                {
+                    Field<ComboBox>(form, "controllerKindPicker").SelectedIndex = kind; Pump(form);
+                    using (var bitmap = new Bitmap(controller.Width, controller.Height))
+                    {
+                        controller.DrawToBitmap(bitmap, controller.ClientRectangle);
+                        bitmap.Save(Path.Combine(artifacts, "controller-key-assignments-" + (kind == 0 ? "xbox" : "ps") + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+                    }
+                    Equal("W", controller.GetAssignedKeyText(OutputTarget.LeftYPositive), "Both controller styles retain the keyboard letter on the up direction.");
+                }
+                RunControllerAssignmentVisuals(artifacts);
+                AssertPassive(form);
+            }
+            finally
+            {
+                typeof(MainForm).GetField("keymap", Private).SetValue(form, originalKeymap);
+                layoutPicker.SelectedIndex = originalLayout; Call(form, "SetLegendOverride", originalLegend);
+                Call(form, "Commit", original); Call(form, "SwitchLanguage", language); SelectKeys(form, 14); DetailMode(form, null);
+            }
+            Equal(originalJson, Json(Current(form)), "Controller-label checks restore the original synthetic profile.");
+            Console.WriteLine("CONTROLLER KEY ASSIGNMENTS PASS: " + (assertions - started) + " assertions; actual selection, edits, undo/redo, layout and language events; no hardware.");
+        }
         static void Run(MainForm form, string data, string artifacts)
         {
-            Check(form.ClientSize == DefaultClientSize, "Offscreen preview retains the exact default-size layout test surface.");
+            Check(form.ClientSize == new Size(1440, 880), "Main window uses the intended default client size.");
+            Check(form.MinimumSize == new Size(1080, 740), "Main window retains its supported minimum size.");
             form.ShowInTaskbar = false; form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-30000, -30000);
             form.Show(); Pump(form); AssertPassive(form);
             CheckDetailTabNavigation(form); CheckMappingDragFeedback(form);
@@ -1429,12 +1572,13 @@ namespace Tk75.Tests
             Console.WriteLine("BEHAVIOR PASS: " + assertions + " assertions; real selection/edit/add/undo/redo/copy/paste/save paths.");
             SelectKeys(form, 14);
             CheckControllerSelection(form);
+            CheckControllerKeyAssignments(form, artifacts);
             CheckMultiKeySignalScope(form);
             CheckMultiKeyInputScope(form);
             CheckManyControllerFooter(form, artifacts);
             CheckLayout(form, new Size(1440, 880), artifacts); CheckLayout(form, new Size(1080, 740), artifacts);
             Size chrome = new Size(form.Width - form.ClientSize.Width, form.Height - form.ClientSize.Height);
-            CheckLayout(form, new Size(SupportedMinimumSize.Width - chrome.Width, SupportedMinimumSize.Height - chrome.Height), artifacts);
+            CheckLayout(form, new Size(form.MinimumSize.Width - chrome.Width, form.MinimumSize.Height - chrome.Height), artifacts);
             AssertPassive(form);
             foreach (string failure in layoutFailures) Console.Error.WriteLine("LAYOUT FAILURE: " + failure);
             Check(layoutFailures.Count == 0, "Critical controls visible without overlap at the default, compact and true minimum window sizes (see layout diagnostics).");
@@ -1477,7 +1621,7 @@ namespace Tk75.Tests
             string englishArtifacts = Path.Combine(artifacts, "english"); Directory.CreateDirectory(englishArtifacts);
             CheckLayout(form, new Size(1440, 880), englishArtifacts);
             Size chrome = new Size(form.Width - form.ClientSize.Width, form.Height - form.ClientSize.Height);
-            CheckLayout(form, new Size(SupportedMinimumSize.Width - chrome.Width, SupportedMinimumSize.Height - chrome.Height), englishArtifacts);
+            CheckLayout(form, new Size(form.MinimumSize.Width - chrome.Width, form.MinimumSize.Height - chrome.Height), englishArtifacts);
             Equal(original, Json(Current(form)), "Language changes preserve user profile values and names.");
             AssertPassive(form);
             foreach (string failure in layoutFailures) Console.Error.WriteLine("LAYOUT FAILURE: " + failure);
@@ -1502,18 +1646,16 @@ namespace Tk75.Tests
                 Equal("en", UiText.Language, "A new application keeps the default English preference.");
                 form.ShowInTaskbar = false; form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-30000, -30000);
                 form.Show(); Pump(form); AssertPassive(form);
-                CheckDefaultWindowGeometry(form);
-                // This preview alone needs room for the fixed layout cases. Keep
-                // real application sizing and the machine's display settings intact.
-                form.MaximumSize = new Size(2048, 2048);
-                SetPreviewClientSize(form, DefaultClientSize);
-                Check(form.ClientSize == DefaultClientSize, "The offscreen preview reaches the exact default client size before UI interaction.");
                 Equal("Key W", Field<Label>(form, "keyTitle").Text, "The first visible key card starts in English without a language toggle.");
                 CapturePreview(form, artifacts, "initial-english");
                 Call(form, "SwitchLanguage", "de");
                 Equal("de", UiPreferences.LoadLanguage(data), "Explicit German selection remains supported and persists.");
                 RunConnectorGestures(artifacts); RunMarqueeSelection(artifacts); RunKeyDragVisuals(artifacts); RunControllerDragVisuals(artifacts); Run(form, data, artifacts); RunDialogs(artifacts);
                 RunEnglishContexts(form, data, artifacts);
+                RunKeyboardTabClicks(form);
+                RunControllerModifierUi(artifacts);
+                CheckMappingSummaries(form, artifacts);
+                RunSocdDragUi(form, artifacts);
                 Console.WriteLine("PASS: " + assertions + " assertions; actual MainForm preview, synthetic data, no hardware/controller.");
                 return 0;
             }

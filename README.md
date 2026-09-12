@@ -2,26 +2,24 @@
 
 **Turn GamaKay TK75 TMR key pressure into controller input — with visual mapping, editable response curves and optional key lighting.**
 
-**Free and open source · 1.0.0-rc.1 release candidate.** Final hardware and game acceptance is still required before stable 1.0.
+**Free and open source · 1.0.0-rc.3 · Windows x64**
 
-**[Windows downloads](https://github.com/SirRanjid/analog-key-mapper/releases)** · [Build from source](docs/building.md#compile-from-source) · [User guide](docs/user-guide.md) · [Compatibility and test status](docs/status.md)
+**[Download Windows rc.3](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.3/AnalogKeyMapper-1.0.0-rc.3-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.3) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
 
 ![Analog Key Mapper showing keyboard mappings, controller selection, lighting and USB connection controls](docs/images/controller.png)
 
 ## Make each key work your way
 
-- **Map by dragging in either direction.** Move a key onto a controller output, or an output onto a key. The actual grabbed shape follows your pointer.
-- **Use several controllers together.** Configure up to 32 Xbox 360 or DualSense slots, with separate mappings, colors and USB connection controls. Windows permits at most four XInput controllers system-wide, including physical ones; DualSense uses a separate HID path.
-- **Tune the response.** Edit deadzones, activation thresholds and linear, custom or Bézier curves in a square editor.
-- **Edit several keys together.** Use Ctrl+click or a selection rectangle, apply shared settings, and undo changes in one step.
-- **See what is happening.** Live pressure fills the keycaps; controller previews and numbered badges show your mappings.
-- **Keep different setups.** Save JSON profiles, signal presets and named controller slots. English and German are included.
-- **Add optional lighting.** Choose controller colors for mapped keys, with a backup and restore workflow for normal keyboard lighting.
+- **Map in both directions.** Drag a key onto a controller output, or an output onto a key. The grabbed shape follows your pointer; readable left/right labels and numbered key badges identify assignments.
+- **Keep controller setups separate.** Mix Xbox 360 and DualSense slots, each with its own mappings, color and USB connection control. Pending connections stay visible and can be cancelled.
+- **See and tune each output.** Keys, Curve and Controller tabs keep the keyboard in place. A clear selection outline and per-output response summaries lead to deadzones, thresholds and a square linear/custom/Bézier curve editor.
+- **Set key behavior together.** Configure Rapid Trigger and opposite-key handling (SOCD), including pairing by drag. Use Ctrl+click or a selection rectangle for bulk edits, with undo.
+- **Save your setup and lighting.** Keep JSON profiles, signal presets and named controllers. Optional mapped-key colors include a backup and restore workflow. English and German are included.
 - **Keep the editor out of the way.** Use the tray or opt into Windows startup. Controller reconnection is a separate option that starts off. [Background startup guide](docs/background-startup.md).
 
 ## Quick start
 
-1. [Download the Windows ZIP from Releases](https://github.com/SirRanjid/analog-key-mapper/releases) and extract it into a writable folder.
+1. [Download the Windows rc.3 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.3/AnalogKeyMapper-1.0.0-rc.3-windows-x64.zip) and extract it into a writable folder.
 2. Double-click **`Verify-Checksums.bat`** to check the included files.
 3. Open **`AnalogKeyMapper.exe`** inside the extracted `AnalogKeyMapper` folder, connect your keyboard by USB, and create a mapping.
 
@@ -33,14 +31,18 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 ## Release candidate
 
-**1.0.0-rc.1** includes these connection and lifecycle improvements:
+**rc.3** adds readable left/right modifier labels, outlined output selection with response summaries, and SOCD pairing by dragging an opposite key into Behavior. Clicking a keyboard key opens **Keys**; dragging opens **Controller**. See the [gesture guide](docs/user-guide.md#tune-response-and-key-behavior).
+
+The release candidate also includes these connection and lifecycle safeguards:
 
 - Controller creation runs asynchronously. Cancelled or outdated requests cannot later activate a controller after its profile, input source or mode has changed.
 - Windows shutdown uses a shared cleanup time limit for controller neutralization, profile saving and lighting restoration. Unfinished lighting recovery retains its backup.
 - Optional startup reconnection consumes the previous confirmed session once. A failed save or interrupted exit does not silently reuse an old controller list; the app explains when manual connection is needed.
 - Compact lighting journal names support normal extracted download folders while preserving recovery from older backups.
 
-The earlier hardware test covered **two Xbox plus two DualSense devices** and wired TK75 TMR model 3591 input. The current candidate still needs final hardware and game acceptance; its 32-slot configuration limit is not a 32-device performance claim. DualSense support covers common mapped controls. [Current compatibility and Windows startup issue](docs/status.md) · [Hardware record](docs/multi-controller-acceptance.md) · [Synthetic performance measurements](docs/performance.md).
+Profiles support **up to 32 controller slots**, subject to Windows' limit of **four XInput controllers system-wide**, including physical devices. DualSense uses a separate HID path and covers common mapped controls.
+
+The earlier hardware test covered **two Xbox plus two DualSense devices** and wired TK75 TMR model 3591 input. It does not validate the current release candidate or 32 connected devices. Final hardware and game acceptance remains open. [Compatibility and test status](docs/status.md) · [Hardware record](docs/multi-controller-acceptance.md) · [Synthetic performance measurements](docs/performance.md).
 
 <details>
 <summary>Key settings and response-curve views</summary>

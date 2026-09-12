@@ -191,7 +191,7 @@ namespace Tk75.App
                 displayedBindingKeys.Clear(); displayedBindingKeys.UnionWith(selectedKeys);
                 selectionStatus.Text = selectedKeys.Count + (selectedKeys.Count == 1 ? Tr(" Taste · ", " key · ") : Tr(" Tasten · ", " keys · ")) + bindings.Rows.Count + (bindings.Rows.Count == 1 ? Tr(" Zuordnung", " mapping") : Tr(" Zuordnungen", " mappings"));
             }
-            finally { updating = false; } RefreshSettings(); UpdateKeyCard(); RefreshInputEditor();
+            finally { updating = false; } RefreshSettings(); UpdateKeyCard(); RefreshInputEditor(); RefreshMappingSummaries(true);
         }
         void RefreshSettings()
         {
