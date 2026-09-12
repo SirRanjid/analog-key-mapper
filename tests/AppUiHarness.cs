@@ -17,6 +17,8 @@ namespace Tk75.Tests
     {
         static int assertions;
         static readonly List<string> layoutFailures = new List<string>();
+        static readonly Size DefaultClientSize = new Size(1440, 880);
+        static readonly Size SupportedMinimumSize = new Size(1080, 740);
         const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
         static T Field<T>(object owner, string name)
         {
@@ -180,10 +182,42 @@ namespace Tk75.Tests
             LayoutCheck(Relative(form, host).Left >= bounds.Right, label + ": details are to the right of the keyboard.");
             LayoutCheck(form.OwnedForms.Length == 0, label + ": changing the sidebar creates no floating detail window.");
         }
+        static void CheckDefaultWindowGeometry(MainForm form)
+        {
+            // WinForms can clamp both initial and minimum bounds to the current
+            // desktop. Compare with an independent ordinary Form configured with
+            // the intended dimensions, before changing this preview's test limits.
+            using (var expected = new Form())
+            {
+                expected.ClientSize = DefaultClientSize; expected.MinimumSize = SupportedMinimumSize;
+                expected.Font = form.Font; expected.ShowInTaskbar = false;
+                expected.StartPosition = FormStartPosition.Manual; expected.Location = form.Location;
+                expected.Show(); expected.PerformLayout(); Application.DoEvents();
+                Console.WriteLine("WINDOW: client=" + form.ClientSize + "; bounds=" + form.Bounds + "; minimum=" + form.MinimumSize
+                    + "; expected client=" + expected.ClientSize + "; expected minimum=" + expected.MinimumSize
+                    + "; working area=" + Screen.FromControl(form).WorkingArea + "; max track=" + SystemInformation.MaxWindowTrackSize);
+                Check(form.ClientSize == expected.ClientSize, "Main window uses the intended default client size within the current Windows desktop limits.");
+                Check(form.MinimumSize == expected.MinimumSize, "Main window retains its supported minimum size within the current Windows desktop limits.");
+            }
+        }
+        [System.Runtime.InteropServices.DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+        static void SetPreviewClientSize(MainForm form, Size size)
+        {
+            // Only our own hidden/offscreen preview. Native sizing avoids the
+            // Framework's desktop-sized SetBoundsCore cap on small CI displays;
+            // the actual client dimensions and every layout assertion stay exact.
+            Size chrome = new Size(form.Width - form.ClientSize.Width, form.Height - form.ClientSize.Height);
+            if (!SetWindowPos(form.Handle, IntPtr.Zero, 0, 0, size.Width + chrome.Width, size.Height + chrome.Height, 0x0216))
+                throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+            Pump(form);
+            Console.WriteLine("RESIZE: requested client=" + size + "; actual client=" + form.ClientSize + "; bounds=" + form.Bounds);
+        }
         static void CheckLayout(MainForm form, Size size, string artifacts)
         {
             Call(form, "ShowPage", "mapping"); DetailMode(form, null);
-            form.ClientSize = size; Pump(form); string label = size.Width + "x" + size.Height;
+            SetPreviewClientSize(form, size); string label = size.Width + "x" + size.Height;
             Check(form.ClientSize == size, "Requested client size applied: " + label);
             foreach (string name in new[] { "devices", "profiles", "keyboard", "layoutMode", "mainControllerSlotPicker", "targets", "bindings", "keyTitle", "keyHint", "pressure", "calibrateButton", "addTargetButton", "controllerToggle", "keyBehaviorToggle", "advancedToggle", "deviceStatus", "outputStatus" })
                 VisibleInside(form, Field<Control>(form, name), label + "/" + name);
@@ -1476,8 +1510,7 @@ namespace Tk75.Tests
         }
         static void Run(MainForm form, string data, string artifacts)
         {
-            Check(form.ClientSize == new Size(1440, 880), "Main window uses the intended default client size.");
-            Check(form.MinimumSize == new Size(1080, 740), "Main window retains its supported minimum size.");
+            Check(form.ClientSize == DefaultClientSize, "Offscreen preview retains the exact default-size layout test surface.");
             form.ShowInTaskbar = false; form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-30000, -30000);
             form.Show(); Pump(form); AssertPassive(form);
             CheckDetailTabNavigation(form); CheckMappingDragFeedback(form);
@@ -1578,7 +1611,7 @@ namespace Tk75.Tests
             CheckManyControllerFooter(form, artifacts);
             CheckLayout(form, new Size(1440, 880), artifacts); CheckLayout(form, new Size(1080, 740), artifacts);
             Size chrome = new Size(form.Width - form.ClientSize.Width, form.Height - form.ClientSize.Height);
-            CheckLayout(form, new Size(form.MinimumSize.Width - chrome.Width, form.MinimumSize.Height - chrome.Height), artifacts);
+            CheckLayout(form, new Size(SupportedMinimumSize.Width - chrome.Width, SupportedMinimumSize.Height - chrome.Height), artifacts);
             AssertPassive(form);
             foreach (string failure in layoutFailures) Console.Error.WriteLine("LAYOUT FAILURE: " + failure);
             Check(layoutFailures.Count == 0, "Critical controls visible without overlap at the default, compact and true minimum window sizes (see layout diagnostics).");
@@ -1621,7 +1654,7 @@ namespace Tk75.Tests
             string englishArtifacts = Path.Combine(artifacts, "english"); Directory.CreateDirectory(englishArtifacts);
             CheckLayout(form, new Size(1440, 880), englishArtifacts);
             Size chrome = new Size(form.Width - form.ClientSize.Width, form.Height - form.ClientSize.Height);
-            CheckLayout(form, new Size(form.MinimumSize.Width - chrome.Width, form.MinimumSize.Height - chrome.Height), englishArtifacts);
+            CheckLayout(form, new Size(SupportedMinimumSize.Width - chrome.Width, SupportedMinimumSize.Height - chrome.Height), englishArtifacts);
             Equal(original, Json(Current(form)), "Language changes preserve user profile values and names.");
             AssertPassive(form);
             foreach (string failure in layoutFailures) Console.Error.WriteLine("LAYOUT FAILURE: " + failure);
@@ -1646,6 +1679,12 @@ namespace Tk75.Tests
                 Equal("en", UiText.Language, "A new application keeps the default English preference.");
                 form.ShowInTaskbar = false; form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-30000, -30000);
                 form.Show(); Pump(form); AssertPassive(form);
+                CheckDefaultWindowGeometry(form);
+                // This preview alone needs room for the fixed layout cases. Keep
+                // real application sizing and the machine's display settings intact.
+                form.MaximumSize = new Size(2048, 2048);
+                SetPreviewClientSize(form, DefaultClientSize);
+                Check(form.ClientSize == DefaultClientSize, "The offscreen preview reaches the exact default client size before UI interaction.");
                 Equal("Key W", Field<Label>(form, "keyTitle").Text, "The first visible key card starts in English without a language toggle.");
                 CapturePreview(form, artifacts, "initial-english");
                 Call(form, "SwitchLanguage", "de");

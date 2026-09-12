@@ -56,7 +56,7 @@ namespace Tk75.Tests
             Profile original = Current(form); string language = UiText.Language;
             int[] originalKeys = (int[])Call(form, "SelectedKeys"); string[] originalBindings = (string[])Call(form, "SelectedBindings");
             string originalMode = Field<string>(form, "detailsMode");
-            Size originalSize = form.Size;
+            Size originalClientSize = form.ClientSize;
             var runtime = Field<MultiControllerSession>(form, "runtime"); string selectedController = runtime.SelectedControllerId;
             var standard = new Binding { BindingId = "summary-default", ControllerId = selectedController, KeyIndex = 14, Target = OutputTarget.A };
             var changed = new Binding { BindingId = "summary-custom", ControllerId = selectedController, KeyIndex = 14, Target = OutputTarget.B,
@@ -109,7 +109,10 @@ namespace Tk75.Tests
                 Rectangle keyboardBounds = Relative(form, Field<VisualKeyboard>(form, "keyboard"));
                 Call(form, "UpdateKeyCard"); Pump(form);
                 Check(Relative(form, Field<VisualKeyboard>(form, "keyboard")) == keyboardBounds, "Summary refresh never resizes the keyboard.");
-                form.Size = form.MinimumSize; Pump(form);
+                // Use the supported outer minimum, not a desktop-clamped Form.MinimumSize.
+                Size chrome = new Size(form.Width - form.ClientSize.Width, form.Height - form.ClientSize.Height);
+                SetPreviewClientSize(form, new Size(SupportedMinimumSize.Width - chrome.Width, SupportedMinimumSize.Height - chrome.Height));
+                Check(form.Size == SupportedMinimumSize, "Mapping summary layout uses the exact supported minimum window size.");
                 Check(grid.ClientSize.Height >= grid.ColumnHeadersHeight + grid.Rows[0].Height, "The minimum window retains one complete mapping row beneath the header.");
                 Check(grid.Columns.Cast<DataGridViewColumn>().Where(column => column.Visible).Sum(column => column.Width) <= grid.ClientSize.Width,
                     "Summary columns fit the minimum sidebar without a horizontal scrollbar.");
@@ -118,7 +121,7 @@ namespace Tk75.Tests
             }
             finally
             {
-                form.Size = originalSize; runtime.SelectedControllerId = selectedController;
+                SetPreviewClientSize(form, originalClientSize); runtime.SelectedControllerId = selectedController;
                 Call(form, "Commit", original); Call(form, "SwitchLanguage", language); SelectKeys(form, originalKeys); SelectBindings(form, originalBindings); DetailMode(form, originalMode);
             }
             Equal(Json(original), Json(Current(form)), "Mapping summary checks preserve the original synthetic profile.");
