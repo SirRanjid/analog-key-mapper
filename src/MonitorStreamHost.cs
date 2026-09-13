@@ -338,6 +338,10 @@ namespace Tk75.Diagnostics
             string failure = null;
             try
             {
+                // Register before taking HID ownership or sending any feature
+                // command; otherwise Windows could end this child before the
+                // editor's lighting restore has finished during session end.
+                MonitorShutdownOrder.ConfigureNative();
                 while (state.DevicePath == null) { RequireAlive(state, clock); Thread.Sleep(10); }
                 RequireAlive(state, clock);
                 // Own the shared feature/input session before identification or ON.

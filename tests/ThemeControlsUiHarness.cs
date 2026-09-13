@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -14,6 +15,14 @@ namespace Tk75.Tests
         static extern IntPtr ThemeSend(IntPtr window, int message, IntPtr wparam, IntPtr lparam);
         sealed class ThemeCombo : SleekComboBox
         { public void RecreateNativeHandle() { RecreateHandle(); } }
+        static List<string> themeFailures;
+        static void ThemeCheck(bool value, string description)
+        {
+            assertions++;
+            if (value) return;
+            themeFailures.Add(description);
+            Console.WriteLine("NATIVE THEME FAILURE: " + description);
+        }
 
         static Bitmap ThemeCapture(Control control)
         {
@@ -37,17 +46,28 @@ namespace Tk75.Tests
         static void CheckThemeSurface(Bitmap bitmap, Rectangle area, string description)
         {
             area.Intersect(new Rectangle(Point.Empty, bitmap.Size));
-            Check(area.Width > 2 && area.Height > 2, description + " has a visible native surface.");
-            int bright = 0, count = 0;
+            ThemeCheck(area.Width > 2 && area.Height > 2, description + " has a visible native surface (capture area " + area + ").");
+            int bright = 0, painted = 0, count = 0;
+            int[] surfaces = { ModernTheme.Background.ToArgb() & 0xFFFFFF, ModernTheme.Surface.ToArgb() & 0xFFFFFF,
+                ModernTheme.SurfaceAlt.ToArgb() & 0xFFFFFF, ModernTheme.Border.ToArgb() & 0xFFFFFF };
             for (int y = area.Top; y < area.Bottom; y++)
                 for (int x = area.Left; x < area.Right; x++)
-                { Color pixel = bitmap.GetPixel(x, y); count++; if (pixel.R > 205 && pixel.G > 205 && pixel.B > 205) bright++; }
-            Check(bright < count / 8, description + " uses the dark palette instead of a native white surface (bright " + bright + "/" + count + ").");
+                {
+                    Color pixel = bitmap.GetPixel(x, y); count++;
+                    if (pixel.R > 205 && pixel.G > 205 && pixel.B > 205) bright++;
+                    // Native GDI printing need not preserve alpha. Require real
+                    // palette coverage so an unpainted black bitmap cannot pass.
+                    if (Array.IndexOf(surfaces, pixel.ToArgb() & 0xFFFFFF) >= 0) painted++;
+                }
+            ThemeCheck(painted >= count / 4, description + " contains painted theme pixels (palette " + painted + "/" + count + ").");
+            ThemeCheck(bright < count / 8, description + " uses the dark palette instead of a native white surface (bright " + bright + "/" + count + ").");
         }
         static void CheckThemeScrollSurface(Control control, bool standalone, bool vertical, string description)
         {
             ScrollbarDrawing.ScrollInfo info;
-            Check(ScrollbarDrawing.Read(control.Handle, standalone ? 0xFFFFFFFC : vertical ? 0xFFFFFFFB : 0xFFFFFFFA, out info), description + " is a real visible native scrollbar.");
+            bool visible = ScrollbarDrawing.Read(control.Handle, standalone ? 0xFFFFFFFC : vertical ? 0xFFFFFFFB : 0xFFFFFFFA, out info);
+            ThemeCheck(visible, description + " is a real visible native scrollbar (state 0x" + info.State.ToString("X") + "; bounds " + info.Area.Bounds + ").");
+            if (!visible) return;
             NativeControlPaint.Rect window;
             Check(NativeControlPaint.GetWindowRect(control.Handle, out window), description + " exposes its real window bounds.");
             Rectangle area = info.Area.Bounds; area.Offset(-window.Left, -window.Top);
@@ -59,11 +79,14 @@ namespace Tk75.Tests
         static void RunNativeThemeControls(string artifacts)
         {
             int started = assertions;
+            themeFailures = new List<string>();
             using (Form host = new Form { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual,
                 Location = new Point(-30000, -30000), ClientSize = new Size(760, 570) })
             using (ThemeCombo combo = new ThemeCombo { Left = 18, Top = 18, Width = 320 })
             using (SleekNumericUpDown number = new SleekNumericUpDown { Left = 360, Top = 18, Width = 160,
                 Minimum = 0, Maximum = 100, DecimalPlaces = 1, Increment = .5M, Value = 25 })
+            using (NumericUpDown baselineNumber = new NumericUpDown { Minimum = 0, Maximum = 100,
+                DecimalPlaces = 1, Increment = .5M, Value = 25 })
             using (Panel scroll = new Panel { Left = 18, Top = 75, Width = 220, Height = 210, AutoScroll = true, AutoScrollMinSize = new Size(600, 850) })
             using (ListBox list = new ListBox { Left = 258, Top = 75, Width = 220, Height = 210 })
             using (TextBox text = new TextBox { Left = 498, Top = 75, Width = 240, Height = 210, Multiline = true, ScrollBars = ScrollBars.Vertical })
@@ -76,24 +99,54 @@ namespace Tk75.Tests
                 for (int i = 0; i < 80; i++) grid.Rows.Add("Item " + i, i);
                 host.Controls.AddRange(new Control[] { combo, number, scroll, list, text, grid });
                 ModernTheme.Apply(host); host.Show(); host.PerformLayout(); Application.DoEvents();
-                Check(combo.AccessibilityObject.Role == AccessibleRole.ComboBox, "The themed picker retains its native accessible combo role.");
-                Check(number.AccessibilityObject.Role == AccessibleRole.SpinButton, "The themed number retains its native accessible spin-button role.");
+                ThemeCheck(combo.AccessibilityObject.Role == AccessibleRole.ComboBox, "The themed picker retains its native accessible combo role (actual " + combo.AccessibilityObject.Role + ").");
+                // .NET Framework's legacy compatibility mode reports the parent
+                // as Text; AccessibilityImprovements.Level1 changes it to
+                // SpinButton. Compare with the genuine unthemed framework
+                // control, then verify its edit and two real arrow buttons.
+                baselineNumber.CreateControl();
+                AccessibleObject baselineAccessible = baselineNumber.AccessibilityObject;
+                AccessibleObject numberAccessible = number.AccessibilityObject;
+                ThemeCheck(baselineAccessible.Role == AccessibleRole.Text || baselineAccessible.Role == AccessibleRole.SpinButton,
+                    "The original .NET numeric role is Text or SpinButton (actual " + baselineAccessible.Role + ").");
+                ThemeCheck(numberAccessible.GetType() == baselineAccessible.GetType() && numberAccessible.Role == baselineAccessible.Role,
+                    "The themed number retains the original framework accessible provider and role (expected " + baselineAccessible.GetType().FullName +
+                    "/" + baselineAccessible.Role + "; actual " + numberAccessible.GetType().FullName + "/" + numberAccessible.Role + ").");
+                ThemeCheck(numberAccessible.GetChildCount() == 2 && numberAccessible.GetChildCount() == baselineAccessible.GetChildCount(),
+                    "The original numeric accessible edit/button tree remains intact (expected " + baselineAccessible.GetChildCount() +
+                    "; actual " + numberAccessible.GetChildCount() + ").");
                 Check(number.Controls.Count == 2 && number.Controls.OfType<TextBoxBase>().Count() == 1,
                     "The number keeps its original edit and button children, with no input overlay.");
                 Control spinner = number.Controls.Cast<Control>().Single(child => !(child is TextBoxBase));
                 TextBoxBase edit = number.Controls.OfType<TextBoxBase>().Single();
-                Check(edit.BorderStyle == BorderStyle.None, "The native numeric edit does not gain a second frame from recursive theming.");
+                TextBoxBase baselineEdit = baselineNumber.Controls.OfType<TextBoxBase>().Single();
+                Control baselineSpinner = baselineNumber.Controls.Cast<Control>().Single(child => !(child is TextBoxBase));
+                ThemeCheck(edit.AccessibilityObject.GetType() == baselineEdit.AccessibilityObject.GetType() && edit.AccessibilityObject.Role == baselineEdit.AccessibilityObject.Role,
+                    "The original numeric edit provider and role remain intact (expected " + baselineEdit.AccessibilityObject.Role +
+                    "; actual " + edit.AccessibilityObject.Role + ").");
+                AccessibleObject spinAccessible = spinner.AccessibilityObject;
+                ThemeCheck(spinAccessible.GetType() == baselineSpinner.AccessibilityObject.GetType() && spinAccessible.Role == AccessibleRole.SpinButton,
+                    "The actual numeric arrow child retains its original SpinButton provider (actual " + spinAccessible.GetType().FullName + "/" + spinAccessible.Role + ").");
+                ThemeCheck(spinAccessible.GetChildCount() == 2, "The numeric arrow child exposes two native accessible buttons (actual " + spinAccessible.GetChildCount() + ").");
+                for (int direction = 0; direction < 2; direction++)
+                {
+                    AccessibleObject arrow = spinAccessible.GetChild(direction);
+                    AccessibleObject baselineArrow = baselineSpinner.AccessibilityObject.GetChild(direction);
+                    ThemeCheck(arrow != null && baselineArrow != null && arrow.GetType() == baselineArrow.GetType() && arrow.Role == AccessibleRole.PushButton,
+                        "Numeric arrow " + direction + " retains its native PushButton provider (actual " + (arrow == null ? "missing" : arrow.GetType().FullName + "/" + arrow.Role) + ").");
+                }
+                ThemeCheck(edit.BorderStyle == BorderStyle.None, "The native numeric edit does not gain a second frame from recursive theming (actual " + edit.BorderStyle + ").");
                 int edits = 0; number.ValueChanged += delegate { edits++; };
                 ModernTheme.Apply(host); ModernTheme.Apply(host);
                 number.Focus(); ThemeSend(edit.Handle, 0x0100, (IntPtr)Keys.Up, IntPtr.Zero); Application.DoEvents();
-                Check(number.Value == 25.5M && edits == 1, "A native numeric Up key applies the decimal increment once after repeated theme application.");
+                ThemeCheck(number.Value == 25.5M && edits == 1, "A native numeric Up key applies the decimal increment once after repeated theme application (value " + number.Value + "; edits " + edits + ").");
                 ThemeSend(spinner.Handle, 0x0201, (IntPtr)1, (IntPtr)(2 | (2 << 16)));
                 ThemeSend(spinner.Handle, 0x0202, IntPtr.Zero, (IntPtr)(2 | (2 << 16))); Application.DoEvents();
-                Check(number.Value == 26M && edits == 2, "The real themed spinner up button still changes the value exactly once.");
+                ThemeCheck(number.Value == 26M && edits == 2, "The real themed spinner up button still changes the value exactly once (value " + number.Value + "; edits " + edits + ").");
                 number.Value = number.Maximum; number.UpButton();
-                Check(number.Value == number.Maximum, "The native numeric maximum remains enforced.");
+                ThemeCheck(number.Value == number.Maximum, "The native numeric maximum remains enforced (value " + number.Value + "; maximum " + number.Maximum + ").");
                 number.Value = number.Minimum; number.DownButton();
-                Check(number.Value == number.Minimum, "The native numeric minimum remains enforced.");
+                ThemeCheck(number.Value == number.Minimum, "The native numeric minimum remains enforced (value " + number.Value + "; minimum " + number.Minimum + ").");
                 using (Bitmap image = ThemeCapture(number))
                 { CheckThemeSurface(image, spinner.Bounds, "Numeric spinner arrows"); image.Save(Path.Combine(artifacts, "preview-theme-number.png")); }
                 number.Enabled = false;
@@ -101,7 +154,7 @@ namespace Tk75.Tests
                 number.Enabled = true;
 
                 combo.Focus(); ThemeSend(combo.Handle, 0x0100, (IntPtr)Keys.Down, IntPtr.Zero); Application.DoEvents();
-                Check(combo.SelectedIndex == 1, "The themed picker preserves native closed arrow navigation.");
+                ThemeCheck(combo.SelectedIndex == 1, "The themed picker preserves native closed arrow navigation (actual index " + combo.SelectedIndex + ").");
                 using (Bitmap image = ThemeCapture(combo))
                 {
                     NativeControlPaint.ComboInfo info = new NativeControlPaint.ComboInfo(); info.Size = Marshal.SizeOf(typeof(NativeControlPaint.ComboInfo));
@@ -109,11 +162,12 @@ namespace Tk75.Tests
                     CheckThemeSurface(image, info.Button.Bounds, "Combo arrow"); image.Save(Path.Combine(artifacts, "preview-theme-combo.png"));
                 }
                 ThemeSend(combo.Handle, 0x0100, (IntPtr)Keys.F4, IntPtr.Zero); Application.DoEvents();
-                Check(combo.DroppedDown, "Native F4 still opens the original drop-down popup.");
+                ThemeCheck(combo.DroppedDown, "Native F4 still opens the original drop-down popup (actual " + combo.DroppedDown + ").");
                 NativeControlPaint.ComboInfo popup = new NativeControlPaint.ComboInfo(); popup.Size = Marshal.SizeOf(typeof(NativeControlPaint.ComboInfo));
                 Check(NativeControlPaint.GetComboBoxInfo(combo.Handle, ref popup) && popup.List != IntPtr.Zero, "The popup remains a real native list window.");
                 ScrollbarDrawing.ScrollInfo popupScroll;
-                Check(ScrollbarDrawing.Read(popup.List, 0xFFFFFFFB, out popupScroll), "Long native drop-downs expose their original vertical scrollbar.");
+                bool popupScrollbarVisible = ScrollbarDrawing.Read(popup.List, 0xFFFFFFFB, out popupScroll);
+                ThemeCheck(popupScrollbarVisible, "Long native drop-downs expose their original vertical scrollbar (state 0x" + popupScroll.State.ToString("X") + "; bounds " + popupScroll.Area.Bounds + ").");
                 using (Bitmap image = ThemeCapturePopup(popup.List))
                 {
                     NativeControlPaint.Rect bounds; NativeControlPaint.GetWindowRect(popup.List, out bounds);
@@ -123,27 +177,28 @@ namespace Tk75.Tests
                 }
                 combo.DroppedDown = false;
                 combo.RecreateNativeHandle(); Application.DoEvents();
-                Check(combo.Items.Count == 80 && combo.SelectedIndex == 1, "Theme attachment survives native combo handle recreation without changing its items or value.");
+                ThemeCheck(combo.Items.Count == 80 && combo.SelectedIndex == 1, "Theme attachment survives native combo handle recreation without changing its items or value (items " + combo.Items.Count + "; index " + combo.SelectedIndex + ").");
 
                 ThemeSend(scroll.Handle, 0x0115, (IntPtr)3, IntPtr.Zero); Application.DoEvents();
-                Check(scroll.AutoScrollPosition.Y < 0, "A native page-down scroll still moves the panel content.");
+                ThemeCheck(scroll.AutoScrollPosition.Y < 0, "A native page-down scroll still moves the panel content (actual " + scroll.AutoScrollPosition + ").");
                 ThemeSend(scroll.Handle, 0x0114, (IntPtr)1, IntPtr.Zero); Application.DoEvents();
-                Check(scroll.AutoScrollPosition.X < 0, "A native horizontal line scroll still moves the panel content.");
+                ThemeCheck(scroll.AutoScrollPosition.X < 0, "A native horizontal line scroll still moves the panel content (actual " + scroll.AutoScrollPosition + ").");
                 int first = list.TopIndex;
                 ThemeSend(list.Handle, 0x0115, (IntPtr)3, IntPtr.Zero); Application.DoEvents();
-                Check(list.TopIndex > first, "The native list page-down message preserves scrolling.");
+                ThemeCheck(list.TopIndex > first, "The native list page-down message preserves scrolling (before " + first + "; after " + list.TopIndex + ").");
                 CheckThemeScrollSurface(scroll, false, true, "Panel vertical scrollbar");
                 CheckThemeScrollSurface(scroll, false, false, "Panel horizontal scrollbar");
                 CheckThemeScrollSurface(list, false, true, "List scrollbar");
                 CheckThemeScrollSurface(text, false, true, "Multiline text scrollbar");
                 VScrollBar gridScroll = grid.Controls.OfType<VScrollBar>().Single(control => control.Visible);
-                Check(gridScroll.AccessibilityObject.Role == AccessibleRole.ScrollBar, "The grid scrollbar retains its native accessible scrollbar role.");
+                ThemeCheck(gridScroll.AccessibilityObject.Role == AccessibleRole.ScrollBar, "The grid scrollbar retains its native accessible scrollbar role (actual " + gridScroll.AccessibilityObject.Role + ").");
                 CheckThemeScrollSurface(gridScroll, true, true, "Grid scrollbar");
                 grid.FirstDisplayedScrollingRowIndex = 25; Application.DoEvents();
-                Check(grid.FirstDisplayedScrollingRowIndex == 25, "The styled grid retains its scroll-position contract.");
+                ThemeCheck(grid.FirstDisplayedScrollingRowIndex == 25, "The styled grid retains its scroll-position contract (actual " + grid.FirstDisplayedScrollingRowIndex + ").");
                 using (Bitmap image = ThemeCapture(host)) image.Save(Path.Combine(artifacts, "preview-theme-controls.png"));
                 host.Close();
             }
+            Check(themeFailures.Count == 0, "Native theme failures: " + String.Join(" | ", themeFailures.ToArray()));
             Console.WriteLine("NATIVE THEME PASS: " + (assertions - started) + " assertions; real native arrows, numeric editing, popup lifecycle, accessibility and scrollbar surfaces.");
         }
     }

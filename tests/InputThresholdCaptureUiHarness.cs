@@ -82,7 +82,25 @@ namespace Tk75.Tests
                 Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") != null, "Waiting without initial samples keeps recording armed.");
                 PushDialog(input, 21, 300, 50); Call(form, "UpdateLive");
                 Check(Field<int>(form, "inputThresholdCaptureSource") == -1, "An unselected key cannot become the option recording source.");
-                PushDialog(input, 9, 60, 180); Call(form, "UpdateLive");
+                PushDialog(input, 9, 60); Call(form, "UpdateLive");
+                var status = Field<Label>(form, "keyBehaviorStatus"); Rectangle statusBounds = status.Bounds;
+                var statusAncestors = new List<Control>();
+                for (Control parent = status.Parent; parent != null; parent = parent.Parent) statusAncestors.Add(parent);
+                int statusLayouts = 0;
+                LayoutEventHandler statusLayout = delegate { statusLayouts++; };
+                foreach (Control parent in statusAncestors) parent.Layout += statusLayout;
+                try
+                {
+                    // Exercise only real input delivery and the regular live tick.
+                    // Pump/PerformLayout would hide which readout triggered layout.
+                    foreach (int peak in new[] { 90, 120, 150, 180 })
+                    {
+                        PushDialog(input, 9, peak); Call(form, "UpdateLive");
+                        Check(status.Bounds == statusBounds, "A new calibration peak keeps the live status bounds fixed.");
+                    }
+                }
+                finally { foreach (Control parent in statusAncestors) parent.Layout -= statusLayout; }
+                Check(statusLayouts == 0, "Changing calibration peak text does not lay out any status ancestor or the surrounding editor.");
                 Equal(Json(before), Json(Current(form)), "A held press only previews the measured threshold and does not write the profile.");
                 Check(Field<int>(form, "inputThresholdCaptureSource") == 9 && Field<InputThresholdSlider>(form, "actuationSlider").MeasuredPercent == 40,
                     "The first selected press owns the recording and its peak appears on the vertical scale.");

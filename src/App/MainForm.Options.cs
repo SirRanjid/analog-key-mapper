@@ -21,7 +21,7 @@ namespace Tk75.App
         readonly CheckBox rapidTrigger = new CheckBox { AutoSize = true };
         readonly NumericUpDown actuationPoint = PercentInput(), releaseMovement = PercentInput(), pressMovement = PercentInput();
         readonly SleekComboBox oppositeKey = new SleekComboBox(), oppositeMode = new SleekComboBox();
-        readonly Label keyBehaviorStatus = new Label { Dock = DockStyle.Fill, Tag = "muted", AutoEllipsis = true };
+        readonly Label keyBehaviorStatus = new LiveValueLabel { Dock = DockStyle.Fill, Tag = "muted", AutoEllipsis = true };
         readonly Button applyKeyBehavior = new SleekButton { Size = new Size(140, 38), Margin = new Padding(3, 3, 9, 3), Tag = "primary" };
         readonly Button resetKeyBehavior = new SleekButton { Size = new Size(140, 38), Margin = new Padding(3) };
         Button controllerToggle, keyBehaviorToggle, keySettingsToggle;
@@ -238,7 +238,7 @@ namespace Tk75.App
         }
         string InputSelectionLabel()
         { return editingInputKeys.Length == 1 ? string.Format(Tr("Taste {0}", "Key {0}"), Label(editingInputKeys[0])) : string.Format(Tr("{0} Tasten", "{0} keys"), editingInputKeys.Length); }
-        void SetInputStatus(string text) { keyBehaviorStatus.Text = text; keyCardTips.SetToolTip(keyBehaviorStatus, text); }
+        void SetInputStatus(string text) { if (keyBehaviorStatus.Text == text) return; keyBehaviorStatus.Text = text; keyCardTips.SetToolTip(keyBehaviorStatus, text); }
         void SetMixedInputTip(Control control, bool mixed)
         { if (mixed) keyCardTips.SetToolTip(control, keyCardTips.GetToolTip(control) + Tr(" Gemischte Werte: angezeigt wird die erste Taste. Eine Änderung gilt für alle ausgewählten Tasten.", " Mixed values: the first key is shown. Editing applies to every selected key.")); }
         static decimal ToPercent(double value) { return Math.Max(0.01M, Math.Min(100M, (decimal)value * 100M)); }
