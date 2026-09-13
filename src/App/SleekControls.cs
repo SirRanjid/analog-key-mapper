@@ -7,13 +7,16 @@ namespace Tk75.App
 {
     internal sealed class LiveValueLabel : Label
     {
-        protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
+        protected override void OnTextChanged(EventArgs e)
         {
             // Label.AdjustSize repeats the existing bounds on each Text change,
-            // even with AutoSize off. That still lays out its TableLayoutPanel.
-            // A fixed-size live readout needs only the normal text repaint.
-            if (!AutoSize && x == Left && y == Top && width == Width && height == Height) return;
-            base.SetBoundsCore(x, y, width, height, specified);
+            // even with AutoSize off. Size also requests parent layout after
+            // SetBoundsCore. A docked fixed-size readout needs neither pass.
+            Control parent = Parent;
+            if (AutoSize || Dock != DockStyle.Fill || parent == null) { base.OnTextChanged(e); return; }
+            parent.SuspendLayout();
+            try { base.OnTextChanged(e); }
+            finally { parent.ResumeLayout(false); }
         }
     }
 
