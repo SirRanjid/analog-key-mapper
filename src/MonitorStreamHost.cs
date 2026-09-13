@@ -269,6 +269,18 @@ namespace Tk75.Diagnostics
             output.Send(result);
         }
 
+        static uint IdentifyRgbCleanup(SafeFileHandle feature, Action requireTime)
+        {
+            requireTime(); SendFeature(feature, MonitorProtocol.IdentifyRequest(), "Tastatur vor der Wiederherstellung prüfen");
+            for (int attempt = 0; attempt < 10; attempt++)
+            {
+                Thread.Sleep(20); requireTime(); byte[] reply = new byte[65];
+                if (!FeatureNative.HidD_GetFeature(feature, reply, reply.Length)) throw Native.Error("Tastatur vor der Wiederherstellung prüfen");
+                if (reply[0] == 0 && reply[1] == 0x8f) return MonitorProtocol.DeviceId(reply);
+            }
+            throw new InvalidDataException("Die Tastaturidentität konnte vor der Wiederherstellung nicht bestätigt werden.");
+        }
+
         static void RestoreRgbOnExit(SafeFileHandle feature, Tk75RgbRestoreGuard restoreGuard)
         {
             if (!restoreGuard.Armed) return;
@@ -276,7 +288,7 @@ namespace Tk75.Diagnostics
             Action requireTime = delegate { if (deadline.ElapsedMilliseconds >= 5000) throw new TimeoutException("Die normale Beleuchtung konnte vor dem Verbindungsende nicht vollständig bestätigt werden."); };
             // Cleanup uses the same owned HID handle, after input monitoring is
             // off. It deliberately needs neither a parent heartbeat nor stdout.
-            restoreGuard.Restore(delegate(byte[] command)
+            restoreGuard.Restore(delegate { return IdentifyRgbCleanup(feature, requireTime); }, delegate(byte[] command)
             {
                 requireTime(); SendFeature(feature, command, "Normale Beleuchtung lesen"); Thread.Sleep(20); requireTime();
                 byte[] reply = new byte[65];

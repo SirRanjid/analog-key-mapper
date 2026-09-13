@@ -155,15 +155,16 @@ namespace Tk75.App
             var card = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 12, Padding = Padding.Empty, Margin = Padding.Empty };
             surface.Controls.Add(card);
             card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            foreach (int height in new[] { 38, 34, 24, 8, 94, 0, 26, 38, 40 }) card.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
-            card.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+            foreach (int height in new[] { 38, 28, 24, 0, 80, 0, 24, 34, 34 }) card.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+            card.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
             keyTitle.Text = "Taste auswählen"; keyTitle.Font = new Font("Segoe UI", 20, FontStyle.Bold); keyTitle.AutoSize = false; keyTitle.AutoEllipsis = true; keyTitle.Dock = DockStyle.Fill; card.Controls.Add(keyTitle, 0, 0);
             keyHint.AutoSize = false; keyHint.AutoEllipsis = true; keyHint.UseMnemonic = false; keyHint.TextAlign = ContentAlignment.TopLeft; keyHint.Margin = new Padding(3, 0, 3, 3); keyHint.Dock = DockStyle.Fill; keyHint.Tag = "muted"; keyHint.Text = "Klicke auf eine Taste in der Abbildung."; card.Controls.Add(keyHint, 0, 1);
             EventHandler resizeHint = delegate { FitKeyHint(card); };
             keyHint.TextChanged += resizeHint; keyHint.FontChanged += resizeHint; keyHint.SizeChanged += resizeHint;
             keyCardTips.SetToolTip(keyHint, keyHint.Text); Disposed += delegate { keyCardTips.Dispose(); };
             pressureText.AutoSize = false; pressureText.AutoEllipsis = true; pressureText.UseMnemonic = false; pressureText.Dock = DockStyle.Fill; pressureText.Text = "Druck: —"; pressureText.Tag = "muted"; pressureText.TextAlign = ContentAlignment.MiddleLeft; pressureText.TextChanged += delegate { keyCardTips.SetToolTip(pressureText, pressureText.Text); }; card.Controls.Add(pressureText, 0, 2);
-            pressure.Dock = DockStyle.Fill; pressure.Margin = new Padding(3, 0, 3, 6); card.Controls.Add(pressure, 0, 3);
+            // The range slider's live marker replaces the old separate bar.
+            pressure.Visible = false; pressure.Dock = DockStyle.Fill; pressure.Margin = Padding.Empty; card.Controls.Add(pressure, 0, 3);
             card.Controls.Add(BuildPressureRangeEditor(), 0, 4);
             inputDetails.Click += delegate { if (reader != null) MessageBox.Show(this, UiText.Get(reader.Status), Tr("Druckwert-Verbindung", "Pressure input connection"), MessageBoxButtons.OK, MessageBoxIcon.Information); }; card.Controls.Add(inputDetails, 0, 5);
             UiText.PreserveText(targetHeader); targetHeader.Text = "Controller-Ziele"; targetHeader.Font = new Font("Segoe UI", 12, FontStyle.Bold); card.Controls.Add(targetHeader, 0, 6);
@@ -190,7 +191,7 @@ namespace Tk75.App
             if (keyHint.IsDisposed || card.IsDisposed || keyHint.ClientSize.Width <= 0) return;
             int width = Math.Max(1, keyHint.ClientSize.Width - keyHint.Padding.Horizontal);
             Size measured = TextRenderer.MeasureText(keyHint.Text, keyHint.Font, new Size(width, Int32.MaxValue), TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
-            int height = Math.Max(34, Math.Min(64, measured.Height + keyHint.Padding.Vertical + keyHint.Margin.Vertical + 4));
+            int height = Math.Max(28, Math.Min(64, measured.Height + keyHint.Padding.Vertical + keyHint.Margin.Vertical + 4));
             if (Math.Abs(card.RowStyles[1].Height - height) > 0.5f) card.RowStyles[1].Height = height;
             keyCardTips.SetToolTip(keyHint, keyHint.Text);
         }
@@ -241,7 +242,7 @@ namespace Tk75.App
         {
             int[] selected = SelectedKeys(); bool one = selected.Length == 1; bool any = selected.Length != 0;
             keyTitle.Text = one ? string.Format(Tr("Taste {0}", "Key {0}"), Label(selected[0])) : any ? string.Format(Tr("{0} Tasten", "{0} keys"), selected.Length) : Tr("Taste auswählen", "Choose a key");
-            keyHint.Text = !any ? Tr("Klicke auf eine Taste in der Abbildung.", "Click a key on the keyboard.") : string.Format(Tr("{0}–{1} · gemeinsamer Druckbereich für alle Tasten", "{0}–{1} · shared pressure range for all keys"), sharedPressureRange.Minimum, sharedPressureRange.Maximum);
+            keyHint.Text = !any ? Tr("Klicke auf eine Taste in der Abbildung.", "Click a key on the keyboard.") : Tr("Druckbereich · alle Tasten", "Pressure range · all keys");
             RefreshPressureRangeEditor();
             if (one && reader != null && !reader.IsReading) keyHint.Text = Tr("Keine Druckwerte.\nVerbindungsdetails stehen unten.", "No pressure data.\nSee connection details below.");
             inputDetails.Visible = reader != null && (!reader.IsReading || !reader.HasReceivedSamples);

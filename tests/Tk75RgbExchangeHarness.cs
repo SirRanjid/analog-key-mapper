@@ -55,7 +55,7 @@ public static class Tk75RgbExchangeHarness
     static void AutomaticRestoreChecks()
     {
         Device device = new Device(); var guard = new Tk75RgbRestoreGuard();
-        Check(!guard.Armed && guard.Restore(device.Read, device.Write) == null && device.Reads == 0 && device.Writes == 0,
+        Check(!guard.Armed && guard.Restore(delegate { throw new Exception("Unarmed cleanup must not identify."); }, device.Read, device.Write) == null && device.Reads == 0 && device.Writes == 0,
             "A reader without authorized temporary lighting performs no cleanup RGB traffic.");
         for (int failure = 0; failure <= 8; failure++)
         {
@@ -69,23 +69,23 @@ public static class Tk75RgbExchangeHarness
             try { Tk75RgbExchange.Execute(original, desired, device.Read, device.Write); }
             catch (IOException) { Check(failure > 0, "Only the requested synthetic write interruption is swallowed."); }
             device.FailWriteAt = 0;
-            Tk75RgbSnapshot restored = guard.Restore(device.Read, device.Write);
+            Tk75RgbSnapshot restored = guard.Restore(delegate { return 3591; }, device.Read, device.Write);
             Check(Tk75RgbProtocol.Equal(Tk75RgbProtocol.EncodeSnapshot(restored), Tk75RgbProtocol.EncodeSnapshot(original)),
                 "Helper cleanup restores every original LED, effect, brightness and reserved byte after write boundary " + failure + ".");
-            int writes = device.Writes; guard.Restore(device.Read, device.Write);
+            int writes = device.Writes; guard.Restore(delegate { return 3591; }, device.Read, device.Write);
             Check(device.Writes == writes, "Repeated cleanup never repaints an already restored keyboard.");
         }
         device = new Device(); Tk75RgbSnapshot baseline = device.Snapshot(), painted = Paint(baseline, true);
         guard = new Tk75RgbRestoreGuard(); guard.Track(baseline, baseline, painted);
         Tk75RgbExchange.Execute(baseline, painted, device.Read, device.Write);
         device.Picture[42] ^= 0x80; int before = device.Writes;
-        Reject(delegate { guard.Restore(device.Read, device.Write); }, "Automatic cleanup rejects an unrelated LED color change.");
+        Reject(delegate { guard.Restore(delegate { return 3591; }, device.Read, device.Write); }, "Automatic cleanup rejects an unrelated LED color change.");
         Check(device.Writes == before, "Unrelated changes receive no cleanup writes.");
         device = new Device(); baseline = device.Snapshot(); painted = Paint(baseline, true);
         guard = new Tk75RgbRestoreGuard(); guard.Track(baseline, baseline, painted);
         Tk75RgbExchange.Execute(baseline, painted, device.Read, device.Write); device.Profile++;
         before = device.Writes;
-        Reject(delegate { guard.Restore(device.Read, device.Write); }, "Automatic cleanup cannot write an original into another onboard profile.");
+        Reject(delegate { guard.Restore(delegate { return 3591; }, device.Read, device.Write); }, "Automatic cleanup cannot write an original into another onboard profile.");
         Check(device.Writes == before, "Profile mismatch receives no cleanup writes.");
         Reject(delegate { guard.Track(painted, painted, baseline); }, "The startup-original snapshot cannot be replaced by temporary colors.");
         device = new Device(); baseline = device.Snapshot(); painted = Paint(baseline, true);
@@ -94,7 +94,15 @@ public static class Tk75RgbExchangeHarness
         // Initial state on reconnect can still be the previous temporary colors:
         // the explicit original must win, rather than that first observed state.
         guard = new Tk75RgbRestoreGuard(); guard.Track(baseline, painted, baseline);
-        Check(Tk75RgbExchange.Equivalent(guard.Restore(device.Read, device.Write), baseline), "Recovery session cleanup uses the explicit persisted original.");
+        Check(Tk75RgbExchange.Equivalent(guard.Restore(delegate { return 3591; }, device.Read, device.Write), baseline), "Recovery session cleanup uses the explicit persisted original.");
+        device = new Device(); baseline = device.Snapshot(); painted = Paint(baseline, true);
+        guard = new Tk75RgbRestoreGuard(); guard.Track(baseline, baseline, painted);
+        Reject(delegate { guard.Restore(delegate { return 3590; }, device.Read, device.Write); }, "A different freshly identified model blocks cleanup even when its RGB bytes could match.");
+        Check(device.Reads == 0 && device.Writes == 0, "Changed model is rejected before RGB reads or writes.");
+        bool identityFailed = false;
+        try { guard.Restore(delegate { throw new IOException("Synthetic GET_ID failure."); }, device.Read, device.Write); }
+        catch (IOException) { identityFailed = true; }
+        Check(identityFailed && device.Reads == 0 && device.Writes == 0, "Unavailable identity preserves the backup without RGB traffic.");
     }
     public static int Run()
     {

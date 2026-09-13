@@ -219,7 +219,7 @@ namespace Tk75.Tests
             Call(form, "ShowPage", "mapping"); DetailMode(form, null);
             SetPreviewClientSize(form, size); string label = size.Width + "x" + size.Height;
             Check(form.ClientSize == size, "Requested client size applied: " + label);
-            foreach (string name in new[] { "devices", "profiles", "keyboard", "layoutMode", "mainControllerSlotPicker", "targets", "bindings", "keyTitle", "keyHint", "pressure", "pressureRange", "addTargetButton", "controllerToggle", "keyBehaviorToggle", "advancedToggle", "deviceStatus", "outputStatus" })
+            foreach (string name in new[] { "devices", "profiles", "keyboard", "layoutMode", "mainControllerSlotPicker", "targets", "bindings", "keyTitle", "keyHint", "pressureText", "pressureRange", "pressureScaleMaximum", "calibrateRange", "addTargetButton", "controllerToggle", "keyBehaviorToggle", "advancedToggle", "deviceStatus", "outputStatus" })
                 VisibleInside(form, Field<Control>(form, name), label + "/" + name);
             foreach (string name in new[] { "preset", "pasteMode", "keys", "settings", "curve", "monitor", "controllerPreview", "keyBehaviorPanel" })
                 LayoutCheck(!Field<Control>(form, name).Visible, label + "/" + name + " is hidden in the simple default view.");

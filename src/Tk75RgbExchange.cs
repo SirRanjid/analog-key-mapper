@@ -112,9 +112,13 @@ namespace Tk75.Diagnostics
             if (!Tk75RgbExchange.Equivalent(snapshot, desired)) throw new InvalidDataException("The cleanup guard received an unexpected write confirmation.");
             confirmed = true;
         }
-        public Tk75RgbSnapshot Restore(Func<byte[], byte[]> read, Action<byte[]> write)
+        public Tk75RgbSnapshot Restore(Func<uint> identify, Func<byte[], byte[]> read, Action<byte[]> write)
         {
             if (original == null) return null;
+            if (identify == null) throw new ArgumentNullException("identify");
+            // RGB snapshots carry a caller-supplied model ID. A fresh independent
+            // GET_ID must validate the live device before trusting those snapshots.
+            if (identify() != original.ModelId) throw new InvalidDataException("The keyboard model changed; automatic cleanup retained the original backup.");
             Tk75RgbSnapshot current = Tk75RgbProtocol.ReadSnapshot(original.ModelId, original.Layer, read);
             if (Tk75RgbExchange.Equivalent(current, original)) return current;
             Tk75RgbExchange.Validate(current, original);

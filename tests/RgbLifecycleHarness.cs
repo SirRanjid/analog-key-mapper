@@ -146,7 +146,18 @@ namespace Tk75.Tests
             }
             public void Idle()
             {
-                try { Await(delegate { return !State<bool>("Busy") && State<Tk75RgbSnapshot>("Desired") == null && !State<bool>("RestoreRequested"); }, "The worker consumes all queued work."); }
+                // These fields form one state: the worker consumes its queue and
+                // sets Busy under the same gate. Separate reads could combine
+                // old Busy=false with an already-consumed new request and report
+                // idle while the next read/write is actually in progress.
+                object work = Work, gate = Get<object>(Work, "Gate");
+                try
+                {
+                    Await(delegate
+                    {
+                        lock (gate) return !Get<bool>(work, "Busy") && Get<Tk75RgbSnapshot>(work, "Desired") == null && !Get<bool>(work, "RestoreRequested");
+                    }, "The worker consumes all queued work.");
+                }
                 catch (Exception error)
                 {
                     throw new InvalidOperationException("RGB idle state: busy=" + State<bool>("Busy") + ", stopped=" + State<bool>("Stopped") +

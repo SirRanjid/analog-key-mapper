@@ -32,6 +32,7 @@ namespace Tk75.App
             }
             if (closing) return;
             if (TryMinimizeToTrayOnClosing(args)) return;
+            CancelPressureCapture();
             if (rgbClosePending) { args.Cancel = true; return; }
             if (deviceDetachInProgress) { closeAfterDeviceDetach = true; args.Cancel = true; return; }
             if (!rgbCloseFinished)
@@ -65,6 +66,7 @@ namespace Tk75.App
             systemShutdownStarted = true;
             var deadline = Stopwatch.StartNew();
             closing = true; closeAfterDeviceDetach = false; Enabled = false;
+            CancelPressureCapture();
             CancelStartupReconnect(); CancelControllerReconnectSave();
             uiTimer.Stop(); StopDeviceDiscovery(); ReleaseShortcutRegistrations();
             CancelMappingDrag(); keyboardSuppression.SetEnabled(false);
