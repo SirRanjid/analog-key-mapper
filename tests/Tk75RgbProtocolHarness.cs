@@ -101,7 +101,7 @@ public static class Tk75RgbProtocolHarness
         Tk75RgbSnapshot actual = Tk75RgbProtocol.VerifyKnownSnapshot(expected, fixture.Exchange);
         Check(fixture.Calls == 10 && Tk75RgbProtocol.Equal(Tk75RgbProtocol.EncodeSnapshot(actual), Tk75RgbProtocol.EncodeSnapshot(expected)),
             "Known-state verification reads all six picture pages with profile/settings brackets in ten GETs.");
-        foreach (int position in new[] { 0, 42, 63, 64, 127, 128, 191, 192, 255, 256, 319, 320, 377, 378, 383 })
+        for (int position = 0; position < Tk75RgbProtocol.PictureLength; position++)
         {
             int byteIndex = position;
             fixture = new ReadFixture { Alter = delegate(int call, byte[] reply)

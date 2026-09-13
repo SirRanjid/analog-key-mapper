@@ -79,6 +79,7 @@ namespace Tk75.App
             }
             if (previous == null) return;
             if (handler != null) previous.Sample -= handler;
+            actuationSlider.MeasuredPercent = releaseSlider.MeasuredPercent = repressSlider.MeasuredPercent = null;
             if (!IsDisposed && !closing)
             {
                 SetInputFieldAvailability(); RefreshInputThresholdCaptureButtons();
@@ -95,6 +96,7 @@ namespace Tk75.App
                 bool active = capturing && inputThresholdCaptureField == fields[i];
                 buttons[i].Text = active ? Tr("Abbrechen", "Cancel") : Tr("Kalibrieren", "Calibrate");
                 buttons[i].MinimumSize = System.Drawing.Size.Empty;
+                buttons[i].Padding = new Padding(2, 0, 2, 0); buttons[i].Margin = new Padding(0, 0, 0, 2);
                 buttons[i].Enabled = active || !capturing && editingInputKeys.Length != 0 && calibration != null && reader != null && reader.IsReading &&
                     (fields[i] == InputActivationFields.Actuation || rapidTrigger.CheckState != CheckState.Unchecked);
                 string help = active ? Tr("Messung abbrechen. Der bisherige Wert bleibt erhalten.", "Cancel the measurement and keep the previous value.") :
@@ -129,6 +131,8 @@ namespace Tk75.App
             }
             if (source < 0) return;
             double amount = CapturedInputThreshold(sharedPressureRange.ForKey(source), maximum);
+            var measuredSlider = inputThresholdCaptureField == InputActivationFields.Actuation ? actuationSlider : inputThresholdCaptureField == InputActivationFields.Release ? releaseSlider : repressSlider;
+            measuredSlider.MeasuredPercent = amount * 100;
             SetInputStatus(string.Format(Tr("{0}: {1:0.##} % · Loslassen übernimmt", "{0}: {1:0.##}% · release to apply"), Label(source), amount * 100));
             if (!complete) return;
             int[] keys = inputThresholdCaptureKeys; InputActivationFields field = inputThresholdCaptureField;

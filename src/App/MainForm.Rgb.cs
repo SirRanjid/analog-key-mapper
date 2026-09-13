@@ -684,13 +684,13 @@ namespace Tk75.App
                         lock (work.Gate)
                             if (work.Original != null && (work.Applied || work.RecoveryRequired || !work.Stopped))
                                 restoreFailure = work.Error ?? "Lighting restoration did not finish before closing.";
-                    if (restoreFailure != null) store.Event("Lighting restoration incomplete; original backup retained: " + restoreFailure);
+                    if (restoreFailure != null) LogShutdownFailure("Lighting restoration incomplete; original backup retained", new IOException(restoreFailure));
                     SetClosePhase(2, restoreFailure == null ? ShutdownPhaseState.Completed : ShutdownPhaseState.Failed);
                     bool connectionsFinished = connections.Wait(Math.Max(0, NormalCloseTimeoutMilliseconds - (int)elapsed.ElapsedMilliseconds));
                     if (!connectionsFinished)
                     {
                         SetClosePhase(3, ShutdownPhaseState.Failed);
-                        store.Event("Pending controller cleanup did not finish before closing; startup recovery remains unconfirmed.");
+                        LogShutdownFailure("Pending controller cleanup; startup recovery remains unconfirmed", new TimeoutException("Cleanup did not finish before closing."));
                     }
                     restored = restoreFailure == null && connectionsFinished;
                 }

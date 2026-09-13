@@ -1696,6 +1696,7 @@ namespace Tk75.Tests
                 RunKeyboardTabClicks(form);
                 RunControllerModifierUi(artifacts);
                 RunNativeThemeControls(artifacts);
+                RunInputThresholdCapture(artifacts);
                 RunKeyAnnotations(form, artifacts);
                 CheckMappingSummaries(form, artifacts);
                 RunSocdDragUi(form, artifacts);

@@ -43,7 +43,9 @@ namespace Tk75.Tests
                 "Releasing a vertical gesture marks only its own field for the existing Apply flow.");
             Equal(Json(before), Json(Current(form)), "Release preserves the existing pending-edit semantics until Apply.");
             Call(form, "SaveKeyBehavior"); Pump(form);
-            var expected = KeyInputEditing.ApplyActivation(before, new[] { 9, 14 }, new KeyInputSettings { ActuationPoint = .357 }, InputActivationFields.Actuation);
+            double storedActuation = Current(form).Inputs.Single(input => input.KeyIndex == 9).ActuationPoint;
+            Check(Math.Abs(storedActuation - .357) < 1e-12, "35.7 percent normalizes to the intended actuation fraction.");
+            var expected = KeyInputEditing.ApplyActivation(before, new[] { 9, 14 }, new KeyInputSettings { ActuationPoint = storedActuation }, InputActivationFields.Actuation);
             Equal(Json(expected), Json(Current(form)), "Apply shares only the chosen actuation setting and preserves mixed RT settings and unselected keys.");
             Call(form, "Undo"); Pump(form); Equal(Json(before), Json(Current(form)), "One undo restores the vertical threshold edit.");
 

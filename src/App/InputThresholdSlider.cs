@@ -13,12 +13,18 @@ namespace Tk75.App
         int pointerOrigin;
         float thumbOffset;
         bool preserveThumb;
+        double? measuredPercent;
         public event Action<double> Previewed;
         public event Action<double> Committed;
         public event Action Canceled;
         public bool IsEditing { get { return editing; } }
         public double Value { get { return value; } }
         public bool Mixed { get { return mixed; } }
+        public double? MeasuredPercent
+        {
+            get { return measuredPercent; }
+            set { if (measuredPercent == value) return; measuredPercent = value; Invalidate(); }
+        }
         public InputThresholdSlider()
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
@@ -94,6 +100,11 @@ namespace Tk75.App
             {
                 TextRenderer.DrawText(graphics, "?", Font, new Rectangle((int)x - 7, (int)((top + bottom) / 2) - Font.Height / 2, 14, Font.Height + 1),
                     ModernTheme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+            }
+            if (measuredPercent.HasValue)
+            {
+                float y = Position(Limit(measuredPercent.Value));
+                using (var marker = new Pen(ModernTheme.Foreground, 1.5f)) graphics.DrawLine(marker, x - 10, y, x + 13, y);
             }
             if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(graphics, new Rectangle(1, 1, Width - 3, Height - 3), accent, BackColor);
         }

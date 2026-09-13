@@ -37,6 +37,7 @@ try {
     $arguments += (Join-Path $PSScriptRoot 'KeyAnnotationUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'CurveSettingsSliderUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'InputThresholdUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'InputThresholdCaptureUiHarness.cs')
     & $compiler @arguments
     if ($LASTEXITCODE -ne 0) { throw 'App-UI-Harness konnte nicht kompiliert werden.' }
     if ($CompileOnly) { $success = $true; Write-Output 'App UI harness compiled; no windows or hardware were opened.'; return }
