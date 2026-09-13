@@ -114,6 +114,26 @@ namespace Tk75.Mapping
     }
 
     // Hardware calibration and runtime state are intentionally absent from profiles.
+    // Learned sources supplement automatically identified keys. The logical
+    // destination stays stable; physical identity is retained for RGB/suppression.
+    [DataContract]
+    public sealed class LearnedKeyBinding
+    {
+        [DataMember(IsRequired = true, Order = 0)] public int KeyIndex;
+        [DataMember(IsRequired = true, Order = 1)] public string Backend;
+        [DataMember(IsRequired = true, Order = 2)] public string SourceDeviceId;
+        [DataMember(IsRequired = true, Order = 3)] public string SourceName;
+        [DataMember(IsRequired = true, Order = 4)] public string ControlId;
+        [DataMember(Order = 5, EmitDefaultValue = false)] public int? SourceKeyIndex;
+        [DataMember(IsRequired = true, Order = 6)] public int Kind;
+        [DataMember(IsRequired = true, Order = 7)] public double Minimum;
+        [DataMember(IsRequired = true, Order = 8)] public double Maximum;
+        [DataMember(IsRequired = true, Order = 9)] public double Rest;
+        [DataMember(IsRequired = true, Order = 10)] public double Active;
+        [DataMember(IsRequired = true, Order = 11)] public int Direction;
+        [DataMember(Order = 12, EmitDefaultValue = false)] public double? HatValue;
+    }
+
     [DataContract]
     public sealed class Profile
     {
@@ -138,6 +158,7 @@ namespace Tk75.Mapping
         [DataMember(Order = 14, EmitDefaultValue = false)] public KeyboardSuppressionMode KeyboardSuppressionMode;
         [DataMember(Order = 15, EmitDefaultValue = false)] public bool ModeSwitchLightingEnabled;
         [DataMember(Order = 16)] public int ModeSwitchRgbColor;
+        [DataMember(Order = 17, EmitDefaultValue = false)] public List<LearnedKeyBinding> LearnedInputs;
         public Profile() { Defaults(); Version = 1; Name = "Neues Profil"; Bindings = new List<Binding>(); }
         [OnDeserializing] private void OnReading(StreamingContext context) { Defaults(); }
         private void Defaults() { StickShape = StickShape.Circle; OpposedPolicy = OpposedPolicy.Neutral; Aggregation = AggregationMode.Maximum; Inputs = new List<KeyInputSettings>(); Controller = ControllerKind.Xbox360; Controllers = new List<ControllerDefinition>(); SuppressedKeyboardKeys = new List<int>(); RgbOverrideEnabled = false; ModeSwitchHotkey = new HotkeySettings(); EmergencyStopHotkey = new HotkeySettings { KeyCode = 0x77 }; ControllerInputEnabled = true; KeyboardSuppressionMode = Tk75.Mapping.KeyboardSuppressionMode.Off; ModeSwitchLightingEnabled = false; ModeSwitchRgbColor = 0xFFC65C; }

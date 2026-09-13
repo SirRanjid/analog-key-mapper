@@ -1,16 +1,17 @@
 # Analog Key Mapper
 
-**Turn GamaKay TK75 TMR key pressure into controller input — with visual mapping, editable response curves and optional key lighting.**
+**Turn keyboard pressure and supported hardware inputs into controller controls — with visual mapping, editable response curves and optional key lighting.**
 
-**Free and open source · 1.0.0-rc.8 · Windows x64**
+**Free and open source · 1.0.0-rc.9 · Windows x64**
 
-**[Download Windows rc.8](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.8/AnalogKeyMapper-1.0.0-rc.8-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.8) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
+**[Download Windows rc.9](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.9/AnalogKeyMapper-1.0.0-rc.9-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.9) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
 
 ![Analog Key Mapper showing keyboard mappings, controller selection, lighting and USB connection controls](docs/images/controller.png)
 
 ## Make each key work your way
 
 - **Map in both directions.** Drag a key onto a controller output, or an output onto a key. The grabbed shape follows your pointer; readable left/right labels and numbered key badges identify assignments.
+- **Learn missing inputs together.** Select unresolved keys, right-click and choose **Learn unknown inputs…**. Pick the source device, then press or move each input in turn. Standard keyboard keys are identified automatically; supported buttons, axes, hats and relative controls can fill the remaining gaps. [Input learning guide](docs/input-learning.md).
 - **Keep controller setups separate.** Mix Xbox 360 and DualSense slots, each with its own mappings, color and USB connection control. Pending connections stay visible and can be cancelled.
 - **See and tune each output.** Keys, Curve and Controller tabs keep the keyboard in place. A larger square graph, compact settings and directly editable Bézier handles let you refine any curve, including presets.
 - **Set key behavior together.** Configure Rapid Trigger and opposite-key handling (SOCD). Use Capture, then click the opposite key to pair it. Use Ctrl+click or a selection rectangle for bulk edits, with undo.
@@ -20,7 +21,7 @@
 
 ## Quick start
 
-1. [Download the Windows rc.8 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.8/AnalogKeyMapper-1.0.0-rc.8-windows-x64.zip) and extract it into a writable folder.
+1. [Download the Windows rc.9 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.9/AnalogKeyMapper-1.0.0-rc.9-windows-x64.zip) and extract it into a writable folder.
 2. Double-click **`Verify-Checksums.bat`** to check the included files.
 3. Open **`AnalogKeyMapper.exe`** inside the extracted `AnalogKeyMapper` folder, connect your keyboard by USB, and create a mapping.
 
@@ -32,7 +33,11 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 ## Release candidate
 
-**rc.8** gives the curve more room beside two vertical controls and keeps the settings below compact. **Actuation** also determines Rapid Trigger's renewed press; **Release** sets the release movement. Both have a calibration button. Every built-in preset curve can be refined with Bézier points and handles without changing the saved preset. Sliders share finer dragging away from their track. The graph has no hover popups; other setting hints are brief and delayed. Scrollbar painting also covers native visibility and handle changes. See the [user guide](docs/user-guide.md).
+**rc.9** adds guided input learning for unresolved keys. It recognizes standard keyboard positions automatically and can route supported standard HID controls into selected logical keys. A review step applies the selection together, with one undo; existing assignments and curve settings stay intact. The new routes are saved per profile and reconnect only to their matching device identity. [What's new](docs/release-notes-1.0.0-rc.9.md) · [How learning works](docs/input-learning.md).
+
+The new source backends are implemented, with automated release validation pending. Their physical hardware and game acceptance remains open. Analog keyboard pressure still needs a supported protocol: the existing wired TK75 TMR path is included, while a standard keyboard's on/off events cannot supply pressure values. This is not universal HID or analog-keyboard compatibility.
+
+The rc.8 curve improvements remain: a larger square graph beside actuation/release controls, compact settings, editable Bézier presets, and finer slider adjustment when dragging away from the track. See the [user guide](docs/user-guide.md).
 
 The release candidate also includes these connection and lifecycle safeguards:
 

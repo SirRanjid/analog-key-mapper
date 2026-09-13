@@ -1869,6 +1869,7 @@ namespace Tk75.Tests
                 RunIsolatedFeature("key-annotations", artifacts, featureFailures, RunKeyAnnotations);
                 RunIsolatedFeature("mapping-summaries", artifacts, featureFailures, CheckMappingSummaries);
                 RunIsolatedFeature("socd-capture", artifacts, featureFailures, RunSocdDragUi);
+                RunIsolatedFeature("input-learning", artifacts, featureFailures, RunLearnInputsUi);
                 foreach (string failure in layoutFailures) Console.Error.WriteLine("LAYOUT FAILURE: " + failure);
                 Check(featureFailures.Count == 0 && layoutFailures.Count == 0,
                     "All independent UI features and their layout checks pass. Failed features: " + String.Join(", ", featureFailures.ToArray()));

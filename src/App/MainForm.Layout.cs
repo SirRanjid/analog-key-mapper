@@ -95,7 +95,7 @@ namespace Tk75.App
             var rawPage = SecondaryPage("keys", "Erkannte Tasten"); rawPage.Controls.Add(keys);
             var rawBar = Bar(); Add(rawBar, "Taste anders benennen / anlernen", LearnKey); rawBar.Controls.Add(showAll); showAll.CheckedChanged += delegate { if (!updating) RefreshKeys(); }; rawPage.Controls.Add(rawBar);
 
-            var context = new ContextMenuStrip(); context.Items.Add("Einstellungen kopieren", null, delegate { Attempt(CopySettings); }); context.Items.Add("Einstellungen einfügen (gewählte Gruppe)", null, delegate { Attempt(PasteSettings); }); StyleMenu(context); keys.ContextMenuStrip = context; keyboard.ContextMenuStrip = context;
+            var context = new ContextMenuStrip(); context.Items.Add("Einstellungen kopieren", null, delegate { Attempt(CopySettings); }); context.Items.Add("Einstellungen einfügen (gewählte Gruppe)", null, delegate { Attempt(PasteSettings); }); AddLearningMenu(context); StyleMenu(context); keys.ContextMenuStrip = context; keyboard.ContextMenuStrip = context;
             var monitorPage = SecondaryPage("monitor", Tr("Live-Monitor · berechnete Vorschau", "Live monitor · calculated preview")); monitorPage.Controls.Add(monitor);
             foreach (string column in new[] { "Taste / Ziel", "Rohwert", "Hub mm¹", "Normalisiert", "Nach Deadzone", "Nach Kurve", "Final", "Status" }) monitor.Columns.Add(column, column);
             liveStatus.Dock = DockStyle.Bottom; liveStatus.Height = 64; monitorPage.Controls.Add(liveStatus);
@@ -263,23 +263,24 @@ namespace Tk75.App
             keyHint.Text = !any ? Tr("Klicke auf eine Taste in der Abbildung.", "Click a key on the keyboard.") : one ? Tr("Druckbereich · diese Taste", "Pressure range · this key") : Tr("Druckbereich · ausgewählte Tasten", "Pressure range · selected keys");
             RefreshPressureRangeEditor();
             RefreshInputThresholdCaptureButtons();
-            if (one && reader != null && !reader.IsReading) keyHint.Text = Tr("Keine Druckwerte.\nVerbindungsdetails stehen unten.", "No pressure data.\nSee connection details below.");
-            inputDetails.Visible = reader != null && (!reader.IsReading || !reader.HasReceivedSamples);
+            if (one && (reader != null || HasLearnedInputs) && !LiveInputReading) keyHint.Text = Tr("Keine Eingabewerte.\nVerbindungsdetails stehen unten.", "No input data.\nSee connection details below.");
+            inputDetails.Visible = (reader != null || HasLearnedInputs) && (!LiveInputReading || !LiveInputSamples);
             var keyRows = (TableLayoutPanel)inputDetails.Parent; keyRows.RowStyles[keyRows.GetRow(inputDetails)].Height = inputDetails.Visible ? 22 : 0;
+            keyHint.Text += LearnedSourceHint(selected);
             targets.Enabled = addTargetButton.Enabled = any; removeTargetButton.Enabled = toggleTargetButton.Enabled = SelectedBindings().Length != 0;
             targetHeader.Text = string.Format(Tr("Ziele · {0}", "Targets · {0}"), ControllerDisplayName); keyCardTips.SetToolTip(targetHeader, targetHeader.Text);
             mappingEmpty.Visible = bindings.Rows.Count == 0; if (mappingEmpty.Visible) mappingEmpty.BringToFront();
             bindings.Columns[0].Visible = selected.Length > 1;
             RefreshMappingSummaries(false);
             UpdateDetailsTitle();
-            UpdatePressure(reader == null ? new KeyStateSnapshot[0] : reader.GetUiSnapshot(MappingSession.MaximumInputAgeMilliseconds));
+            UpdatePressure(InputUiSnapshot());
         }
         void UpdatePressure(KeyStateSnapshot[] snapshot)
         {
             int[] selected = SelectedKeys();
             if (selected.Length != 1) { if (pressureCaptureReader == null) pressureRange.MeasuredValue = null; SetPressureDisplay(0, Tr("Druck: —", "Pressure: —")); return; }
             var samples = snapshot.Where(s => s.KeyIndex == selected[0] && s.Known).ToArray();
-            if (samples.Length == 0) { if (pressureCaptureReader == null) pressureRange.MeasuredValue = null; SetPressureDisplay(0, reader == null ? Tr("Zum Messen oben verbinden", "Connect above to measure") : !reader.IsReading ? Tr("Druckzugriff noch nicht bereit", "Pressure input is not ready") : Tr("Warte auf Druckdaten …", "Waiting for pressure data …")); return; }
+            if (samples.Length == 0) { if (pressureCaptureReader == null) pressureRange.MeasuredValue = null; SetPressureDisplay(0, reader == null && !HasLearnedInputs ? Tr("Zum Messen oben verbinden", "Connect above to measure") : !LiveInputReading ? Tr("Eingabegerät noch nicht bereit", "Input device is not ready") : Tr("Warte auf Eingabedaten …", "Waiting for input data …")); return; }
             var sample = samples[0];
             if (sample.Stale) { if (pressureCaptureReader == null) pressureRange.MeasuredValue = null; SetPressureDisplay(0, string.Format(Tr("Letzter Wert: {0} · veraltet", "Last value: {0} · stale"), sample.RawValue)); return; }
             double amount = sharedPressureRange.Depth(selected[0], sample.RawValue);

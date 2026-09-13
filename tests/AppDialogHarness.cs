@@ -306,7 +306,7 @@ namespace Tk75.Tests
                     CheckLivePressurePainting(form, input, path);
                     CheckPressureCalibrationButton(form, input, artifacts);
                     PushDialog(input, 14, 0); ClickPressureCalibration(form);
-                    Check(Object.ReferenceEquals(Field<ReaderSession>(form, "pressureCaptureReader"), input.Reader), "The inline action subscribes to the already-connected reader.");
+                    Check(Object.ReferenceEquals(Field<LearnedInputRouting>(form, "pressureCaptureReader"), Field<LearnedInputRouting>(form, "learnedInputRouting")) && Object.ReferenceEquals(Field<ReaderSession>(form, "routingReader"), input.Reader), "The inline action subscribes to the already-connected reader.");
                     Check(!slider.Enabled && !Field<NumericUpDown>(form, "pressureScaleMaximum").Enabled, "Manual edits are paused during a live measurement.");
                     Check(form.OwnedForms.Length == 0 && !DialogControls(form).OfType<CheckBox>().Any(box => box.Text.Contains("Anschlag") || box.Text.Contains("full press")),
                         "Calibration opens no dialog and asks for no bottom-out confirmation checkbox.");
@@ -317,11 +317,11 @@ namespace Tk75.Tests
                     Check(!File.Exists(path) && Field<KeyboardPressureRange>(form, "sharedPressureRange").Maximum == 385,
                         "An unfinished press remains a preview until the selected key is released.");
                     PushDialog(input, 9, 900, 0); Call(form, "UpdatePressureCapture");
-                    Check(slider.SelectedMaximum == 550 && Field<ReaderSession>(form, "pressureCaptureReader") != null,
+                    Check(slider.SelectedMaximum == 550 && Field<LearnedInputRouting>(form, "pressureCaptureReader") != null,
                         "An unrelated key does not cancel the capture or widen the selected key's measurement.");
                     PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
                     CheckPressureRange(form, 0, 550, 550);
-                    Check(Field<ReaderSession>(form, "pressureCaptureReader") == null && slider.Enabled && File.Exists(path),
+                    Check(Field<LearnedInputRouting>(form, "pressureCaptureReader") == null && slider.Enabled && File.Exists(path),
                         "One release automatically commits the selected key calibration without another click or second press.");
                     CalibrationDocument saved = store.LoadCalibration(new string('c', 64), input.Reader.Fingerprint);
                     Check(!saved.GlobalMinimum.HasValue && saved.KeyRanges.Count == 1 && saved.KeyRanges[0].KeyIndex == 14 &&
@@ -335,7 +335,7 @@ namespace Tk75.Tests
                     PushDialog(input, 14, 0); ClickPressureCalibration(form);
                     PushDialog(input, 14, 80, 610); Call(form, "UpdatePressureCapture");
                     ClickPressureCalibration(form);
-                    Check(Field<ReaderSession>(form, "pressureCaptureReader") == null && File.ReadAllText(path) == committed,
+                    Check(Field<LearnedInputRouting>(form, "pressureCaptureReader") == null && File.ReadAllText(path) == committed,
                         "Cancel unsubscribes the unfinished capture and leaves the saved range unchanged.");
                     CheckPressureRange(form, 0, 550, 550);
                     PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
@@ -347,10 +347,10 @@ namespace Tk75.Tests
                         PushDialog(input, 14, 0); ClickPressureCalibration(form);
                         PushDialog(input, 14, 80, 620); Call(form, "UpdatePressureCapture");
                         Call(form, "SetDetailMode", null, true, false);
-                        Check(Field<ReaderSession>(form, "pressureCaptureReader") != null,
+                        Check(Field<LearnedInputRouting>(form, "pressureCaptureReader") != null,
                             "Returning to the same Keys context preserves an intentional in-progress raw calibration.");
                         Field<Button>(form, tab).PerformClick();
-                        Check(Field<ReaderSession>(form, "pressureCaptureReader") == null,
+                        Check(Field<LearnedInputRouting>(form, "pressureCaptureReader") == null,
                             "Leaving Keys through " + tab + " cancels raw calibration before the next UI tick.");
                         PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
                         Check(File.ReadAllText(path) == committed, "A late release after a tab switch cannot save a hidden raw range.");
@@ -363,20 +363,20 @@ namespace Tk75.Tests
                         PushDialog(input, 14, 80, 630); Call(form, "UpdatePressureCapture");
                         FormWindowState previousState = form.WindowState;
                         if (minimize) form.WindowState = FormWindowState.Minimized; else form.Hide();
-                        Check(Field<ReaderSession>(form, "pressureCaptureReader") == null,
+                        Check(Field<LearnedInputRouting>(form, "pressureCaptureReader") == null,
                             "The " + (minimize ? "minimize" : "hide/tray") + " event immediately cancels raw calibration.");
                         PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
                         Check(File.ReadAllText(path) == committed, "A release while the editor is hidden cannot persist a background raw calibration.");
                         CheckPressureRange(form, 0, 550, 550);
                         if (minimize) form.WindowState = previousState; else form.Show();
                         Pump(form); DetailMode(form, null); RevealKeySetting(form, slider.Parent);
-                        Check(Field<Button>(form, "calibrateRange").Enabled && Field<ReaderSession>(form, "pressureCaptureReader") == null,
+                        Check(Field<Button>(form, "calibrateRange").Enabled && Field<LearnedInputRouting>(form, "pressureCaptureReader") == null,
                             "Restoring Keys makes Calibrate usable without rearming the canceled raw recording.");
                     }
 
                     ClickPressureCalibration(form); PushDialog(input, 14, 80, 620); Call(form, "UpdatePressureCapture");
                     SelectKeys(form, 9); PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
-                    Check(Field<ReaderSession>(form, "pressureCaptureReader") == null && File.ReadAllText(path) == committed,
+                    Check(Field<LearnedInputRouting>(form, "pressureCaptureReader") == null && File.ReadAllText(path) == committed,
                         "Changing the selected key cancels its pending capture instead of applying it to a different key.");
                     SelectKeys(form, 14);
                     var scale = Field<NumericUpDown>(form, "pressureScaleMaximum"); scale.Value = 700;
@@ -444,7 +444,7 @@ namespace Tk75.Tests
 
                     committed = File.ReadAllText(path); PushDialog(input, 14, 0); ClickPressureCalibration(form);
                     PushDialog(input, 14, 80, 740, 0); input.Reader.Stop(); Call(form, "UpdatePressureCapture");
-                    Check(Field<ReaderSession>(form, "pressureCaptureReader") == null && File.ReadAllText(path) == committed,
+                    Check(Field<LearnedInputRouting>(form, "pressureCaptureReader") == null && File.ReadAllText(path) == committed,
                         "Disconnect before the UI commits a completed measurement cannot change the saved range.");
                     Check(!Field<Button>(form, "calibrateRange").Enabled, "A stopped reader disables calibration without silently reconnecting it.");
                     CheckPressureRange(form, 10, 600, 700);
@@ -454,7 +454,7 @@ namespace Tk75.Tests
                 using (var form = PressurePreview(data, input))
                 {
                     CheckPressureRange(form, 10, 600, 700);
-                    Check(Field<ReaderSession>(form, "pressureCaptureReader") == null,
+                    Check(Field<LearnedInputRouting>(form, "pressureCaptureReader") == null,
                         "Reopening the editor restores the range without starting another calibration.");
                 }
             }

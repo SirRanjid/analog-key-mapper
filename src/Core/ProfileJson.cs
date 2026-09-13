@@ -145,6 +145,7 @@ namespace Tk75.Mapping
                     else if (name == "Version" || name == "StickShape" || name == "OpposedPolicy" || name == "Aggregation" || name == "Controller") Scalar(member, "number");
                     else if (name == "Bindings") CheckArray(member, "binding");
                     else if (name == "Inputs") CheckArray(member, "input");
+                    else if (name == "LearnedInputs") CheckArray(member, "learnedInput");
                     else if (name == "Controllers") CheckArray(member, "controller");
                     else if (name == "SuppressedKeyboardKeys") CheckKeyIndexArray(member);
                     else if (name == "RgbOverrideEnabled") Scalar(member, "boolean");
@@ -164,6 +165,19 @@ namespace Tk75.Mapping
                             throw new ArgumentException("Die Tastensperre benötigt einen gültigen Modus (0, 1 oder 2).");
                     }
                     else throw new ArgumentException("Unbekanntes Profilfeld: " + name + ".");
+                }
+                else if (kind == "learnedInput")
+                {
+                    if (name == "Backend" || name == "SourceDeviceId" || name == "SourceName" || name == "ControlId") Scalar(member, "string");
+                    else if ((name == "SourceKeyIndex" || name == "HatValue") && member.GetAttribute("type") == "null") Scalar(member, "null");
+                    else if (name == "KeyIndex" || name == "SourceKeyIndex" || name == "Kind" || name == "Direction")
+                    {
+                        Scalar(member, "number"); int value;
+                        if (!Int32.TryParse(member.InnerText, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out value))
+                            throw new ArgumentException("Learned input identifiers must be whole numbers.");
+                    }
+                    else if (name == "Minimum" || name == "Maximum" || name == "Rest" || name == "Active" || name == "HatValue") Scalar(member, "number");
+                    else throw new ArgumentException("Unknown learned input field: " + name + ".");
                 }
                 else if (kind == "hotkey")
                 {

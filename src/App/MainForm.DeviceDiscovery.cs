@@ -114,6 +114,7 @@ namespace Tk75.App
         }
         void ApplyDeviceInventory(CollectionInfo[] inventory, DeviceDiscoveryMetadata[] metadata)
         {
+            OpenSavedLearnedSources();
             var active = reader;
             if (active != null && !DeviceDiscoveryPolicy.ContainsPath(metadata, active.Device.devicePath)) DetachRemovedReader(active);
             bool recovered = discoveryFailed; discoveryFailed = false;
@@ -195,6 +196,7 @@ namespace Tk75.App
                     deviceDetachInProgress = false;
                     if (closing || IsDisposed) return;
                     foreach (Control control in interactive) if (!control.IsDisposed) control.Enabled = true;
+                    if (HasLearnedInputs) Configure();
                     SetDiscoverySelectionStatus(lastInventory ?? new DeviceDiscoveryMetadata[0]);
                     RefreshKeys(); RefreshBindings(); UpdateLive();
                     bool requestedClose = closeAfterDeviceDetach; closeAfterDeviceDetach = false;

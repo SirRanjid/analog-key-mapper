@@ -30,6 +30,8 @@ namespace Tk75.App
             public void Configure(Profile profile, IDictionary<int, Calibration> calibration) { inner.Configure(profile, calibration); }
             public void SetInputSource(object value)
             {
+                var routed = value as LearnedInputRouting;
+                if (routed != null) { inner.SetInputSource(delegate { return routed.IsReading; }, routed.CopyRawSnapshot); return; }
                 if (value != null && !(value is ReaderSession)) throw new ArgumentException("A keyboard reader is required.", "value");
                 inner.SetReader((ReaderSession)value);
             }

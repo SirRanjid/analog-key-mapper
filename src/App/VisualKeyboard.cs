@@ -36,6 +36,7 @@ namespace Tk75.App
         sealed class KeyState { public bool Mapped, Active, Estimated; public double? Depth; }
         readonly Dictionary<int, KeyState> states = new Dictionary<int, KeyState>();
         readonly Dictionary<int, string> labels = new Dictionary<int, string>();
+        readonly Dictionary<int, string> inputSources = new Dictionary<int, string>();
         readonly Dictionary<int, KeyboardControllerBadge[]> controllerAssignments = new Dictionary<int, KeyboardControllerBadge[]>();
         readonly Dictionary<int, KeyboardBehaviorAnnotation> behaviorAnnotations = new Dictionary<int, KeyboardBehaviorAnnotation>();
         readonly HashSet<int> selected = new HashSet<int>();
@@ -529,11 +530,17 @@ namespace Tk75.App
         { base.OnEnabledChanged(e); if (!Enabled) { CancelDragGesture(); SetDropKeys(new int[0]); SetAvailableKeys(new int[0]); } else RefreshPointerCursor(); }
         protected override void OnVisibleChanged(EventArgs e)
         { base.OnVisibleChanged(e); if (!Visible) { CancelDragGesture(); SetDropKeys(new int[0]); SetAvailableKeys(new int[0]); } else RefreshPointerCursor(); }
+        public void SetInputSourceDescription(int keyIndex, string description)
+        {
+            if (String.IsNullOrEmpty(description)) inputSources.Remove(keyIndex); else inputSources[keyIndex] = description;
+        }
         string TooltipFor(KeyboardKeyDefinition key)
         {
             string identity = !key.KeyIndex.HasValue ? UiText.Get("Zuordnung noch anlernen", "Identify this key first")
                 : key.VerifiedOnHardware ? UiText.Get("Physisch bestätigt", "Physically verified")
                 : UiText.Get("Herstellerlayout · Druckwerte noch prüfen", "Manufacturer layout · pressure data still needs verification");
+            string source;
+            if (key.KeyIndex.HasValue && inputSources.TryGetValue(key.KeyIndex.Value, out source)) identity = UiText.Get("Eingabe: ", "Input: ") + source;
             string action = key.IsKnob || key.Code == "Fn" ? "\n" + UiText.Get("Druckfähigkeit nicht bestätigt.", "Pressure sensing is not confirmed.") : "";
             KeyState state = null; if (key.KeyIndex.HasValue) states.TryGetValue(key.KeyIndex.Value, out state);
             string depth = state != null && state.Depth.HasValue ? (state.Estimated ? EstimatedDepthText() : UiText.Get("Kalibrierte Drucktiefe: ", "Calibrated depth: ") + PercentText(state.Depth.Value))

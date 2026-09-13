@@ -178,7 +178,7 @@ namespace Tk75.App
             // wrapper flush that edit and automatically use the new settings.
             if (inputDirty || settings.IsCurrentCellDirty || startupReconnectProfile != profilePath || !Object.ReferenceEquals(startupReconnectSnapshot, history.SnapshotToken))
             { CancelStartupReconnect(); return; }
-            if (reader == null || !reader.IsReading || !reader.HasReceivedSamples)
+            if (!LiveInputReading || !LiveInputSamples)
             {
                 // Waiting for the first keyboard is intentional. Losing input
                 // after connection started cancels the remaining startup work.

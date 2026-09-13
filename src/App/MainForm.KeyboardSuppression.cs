@@ -129,9 +129,8 @@ namespace Tk75.App
                 foreach (int index in candidates)
                 {
                     if (!activeKeys.Contains(index)) continue;
-                    KeyboardKeyDefinition key = keyboard.LayoutModel == null ? null : keyboard.LayoutModel.FindByIndex(index);
                     SuppressionKey code;
-                    if (key != null && KeyboardScanCodes.TryGet(key.Code, out code) && KeyboardSuppressionPolicy.CanSuppress(code)) eligible.Add(code);
+                    if (TryInputSuppressionKey(profile, index, out code) && KeyboardSuppressionPolicy.CanSuppress(code)) eligible.Add(code);
                 }
             }
             keyboardSuppression.UpdateEligibility(eligible, active, !preparingControllerMode && runtime.KeyboardMode);
@@ -181,8 +180,8 @@ namespace Tk75.App
                 var choices = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true, IntegralHeight = false, BorderStyle = BorderStyle.FixedSingle };
                 foreach (int index in original.Bindings.Select(binding => binding.KeyIndex).Distinct().OrderBy(index => index))
                 {
-                    var key = keyboard.LayoutModel == null ? null : keyboard.LayoutModel.FindByIndex(index); SuppressionKey code;
-                    if (key == null || !KeyboardScanCodes.TryGet(key.Code, out code) || !KeyboardSuppressionPolicy.CanSuppress(code)) continue;
+                    SuppressionKey code;
+                    if (!TryInputSuppressionKey(original, index, out code) || !KeyboardSuppressionPolicy.CanSuppress(code)) continue;
                     choices.Items.Add(new SuppressionChoice { Index = index, Text = Label(index) }, original.SuppressedKeyboardKeys.Contains(index));
                 }
                 var state = new Label { Dock = DockStyle.Fill, ForeColor = ModernTheme.Muted, Padding = new Padding(0, 8, 0, 0), Text = Tr(

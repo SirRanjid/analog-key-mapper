@@ -167,7 +167,7 @@ namespace Tk75.App
             if (cached != null && Object.ReferenceEquals(cached.Work, work) && Object.ReferenceEquals(cached.Profile, profile) &&
                 Object.ReferenceEquals(cached.Layout, layout) && cached.KeyboardMode == keyboardMode &&
                 cached.ShortcutActive == shortcutActive && cached.ShortcutIndex == shortcutIndex && cached.ActiveIds.SetEquals(activeIds)) return cached;
-            return rgbPlanCache = new RgbLightingPlan(work, profile, activeIds, keyboardMode, shortcutActive, shortcutIndex, layout);
+            return rgbPlanCache = new RgbLightingPlan(work, profile, activeIds, keyboardMode, shortcutActive, shortcutIndex, layout, PhysicalInputKey);
         }
         sealed class RgbLightingPlan
         {
@@ -181,11 +181,17 @@ namespace Tk75.App
             internal readonly string Key;
             internal readonly int UnsupportedKeys;
             internal RgbLightingPlan(RgbBackupWork work, Profile profile, string[] activeIds, bool keyboardMode,
-                bool shortcutActive, int? shortcutIndex, KeyboardLayout layout)
+                bool shortcutActive, int? shortcutIndex, KeyboardLayout layout, Func<int, int?> physicalKey)
             {
                 Work = work; Profile = profile; Layout = layout; KeyboardMode = keyboardMode; ShortcutActive = shortcutActive;
                 ShortcutIndex = shortcutIndex; ActiveIds = new HashSet<string>(activeIds, StringComparer.Ordinal);
-                Dictionary<int, int> planned = RgbOverridePlan.Build(profile, activeIds, keyboardMode, shortcutIndex, shortcutActive);
+                Dictionary<int, int> logical = RgbOverridePlan.Build(profile, activeIds, keyboardMode, null, false);
+                var planned = new Dictionary<int, int>();
+                foreach (var entry in logical)
+                { int? physical = physicalKey(entry.Key); if (physical.HasValue && !planned.ContainsKey(physical.Value)) planned.Add(physical.Value, entry.Value); }
+                // The mode hotkey is already a physical keyboard key, not a routed input.
+                if (profile.ModeSwitchLightingEnabled && profile.ModeSwitchHotkey.Enabled && shortcutActive && shortcutIndex.HasValue)
+                    planned[shortcutIndex.Value] = profile.ModeSwitchRgbColor;
                 Colors = new Dictionary<int, int>(); int unsupported = 0;
                 foreach (var entry in planned)
                 { int index; if (Tk75RgbProtocol.TryGetRgbMatrixIndex(work.Model, entry.Key, out index)) Colors.Add(entry.Key, entry.Value); else unsupported++; }

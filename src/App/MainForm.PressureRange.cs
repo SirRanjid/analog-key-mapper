@@ -23,7 +23,7 @@ namespace Tk75.App
         PressureRangeCapture pressureCapture;
         Dictionary<int, PressureRangeCapture> pressureCaptureCandidates;
         int[] pressureCaptureKeys = new int[0];
-        ReaderSession pressureCaptureReader;
+        LearnedInputRouting pressureCaptureReader;
         int pressureCaptureKey = -1;
 
         Control BuildPressureRangeEditor()
@@ -93,7 +93,7 @@ namespace Tk75.App
         void RefreshPressureRangeEditor()
         {
             int[] selected = SelectedKeys();
-            if (pressureCaptureReader != null && (!selected.SequenceEqual(pressureCaptureKeys) || !Object.ReferenceEquals(reader, pressureCaptureReader))) CancelPressureCapture();
+            if (pressureCaptureReader != null && (!selected.SequenceEqual(pressureCaptureKeys) || !Object.ReferenceEquals(InputView, pressureCaptureReader))) CancelPressureCapture();
             updatingPressureRange = true;
             try
             {
@@ -114,7 +114,7 @@ namespace Tk75.App
                 pressureRange.AccessibleName = Tr("Druckbereich der ausgewählten Tasten", "Pressure range of selected keys");
                 pressureRange.Enabled = selected.Length != 0 && calibration != null && pressureCaptureReader == null;
                 pressureScaleMaximum.Enabled = calibration != null && pressureCaptureReader == null;
-                calibrateRange.Enabled = selected.Length != 0 && reader != null && reader.IsReading && calibration != null;
+                calibrateRange.Enabled = CanCapturePressure(selected);
                 calibrateRange.Text = pressureCaptureReader != null ? Tr("Abbrechen", "Cancel") : Tr("Kalibrieren", "Calibrate");
                 calibrateRange.AccessibleName = calibrateRange.Text;
                 if (pressureCaptureReader == null && selected.Length != 0)
@@ -137,10 +137,10 @@ namespace Tk75.App
         void BeginPressureCapture()
         {
             RequireReader(); int[] selected = SelectedKeys();
-            if (selected.Length == 0 || calibration == null) return;
+            if (!CanCapturePressure(selected)) return;
             CancelInputThresholdCapture();
             CancelPressureCapture();
-            ReaderSession input = reader;
+            LearnedInputRouting input = InputView;
             var initial = input.GetUiSnapshot(MappingSession.MaximumInputAgeMilliseconds).Where(s => s.Known && !s.Stale).ToDictionary(s => s.KeyIndex, s => (double)s.RawValue);
             var candidates = new Dictionary<int, PressureRangeCapture>();
             foreach (int key in selected)
@@ -172,7 +172,7 @@ namespace Tk75.App
         }
         void CancelPressureCapture()
         {
-            ReaderSession previous;
+            LearnedInputRouting previous;
             lock (pressureCaptureGate)
             {
                 previous = pressureCaptureReader; pressureCaptureReader = null; pressureCapture = null; pressureCaptureCandidates = null;
@@ -183,9 +183,9 @@ namespace Tk75.App
         }
         void UpdatePressureCapture()
         {
-            ReaderSession input = pressureCaptureReader;
+            LearnedInputRouting input = pressureCaptureReader;
             if (input == null) return;
-            if (!Object.ReferenceEquals(input, reader) || !input.IsReading || closing || deviceDetachInProgress || !SelectedKeys().SequenceEqual(pressureCaptureKeys))
+            if (!Object.ReferenceEquals(input, InputView) || !input.IsReading || closing || deviceDetachInProgress || !SelectedKeys().SequenceEqual(pressureCaptureKeys))
             { CancelPressureCapture(); RefreshPressureRangeEditor(); return; }
             double minimum, maximum; double? latest; bool completed, pressing; int sourceKey, selectedCount;
             lock (pressureCaptureGate)

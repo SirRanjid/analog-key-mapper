@@ -5,6 +5,12 @@ namespace Tk75.Mapping
 {
     public static class MappingValidation
     {
+        static bool ValidLearnedText(string value, int maximum)
+        {
+            if (String.IsNullOrWhiteSpace(value) || value.Length > maximum) return false;
+            foreach (char c in value) if (Char.IsControl(c)) return false;
+            return true;
+        }
         public static bool IsFinite(double value) { return !double.IsNaN(value) && !double.IsInfinity(value); }
         private static bool Unit(double value) { return IsFinite(value) && value >= 0 && value <= 1; }
         public static List<string> ValidateHotkey(HotkeySettings value)
@@ -107,6 +113,38 @@ namespace Tk75.Mapping
                 var suppressedKeys = new HashSet<int>();
                 foreach (int key in value.SuppressedKeyboardKeys)
                     if (key < 0 || key > 255 || !suppressedKeys.Add(key)) errors.Add("Unterdrückte Tastenindizes müssen eindeutig in 0..255 liegen.");
+            }
+            if (value.LearnedInputs != null)
+            {
+                var learnedKeys = new HashSet<int>();
+                if (value.LearnedInputs.Count > 256) errors.Add("At most 256 learned inputs are supported.");
+                foreach (LearnedKeyBinding input in value.LearnedInputs)
+                {
+                    if (input == null) { errors.Add("A learned input is missing."); continue; }
+                    if ((uint)input.KeyIndex >= 256 || !learnedKeys.Add(input.KeyIndex)) errors.Add("Learned input destinations must be unique keys in 0..255.");
+                    if (input.Backend != "travel" && input.Backend != "hid" && input.Backend != "keyboard") errors.Add("Unknown learned input backend.");
+                    bool identity = input.SourceDeviceId != null && input.SourceDeviceId.Length == 64;
+                    if (identity) foreach (char c in input.SourceDeviceId) if (!(c >= '0' && c <= '9' || c >= 'a' && c <= 'f')) identity = false;
+                    if (!identity) errors.Add("A learned input needs a valid device identity.");
+                    if (!ValidLearnedText(input.SourceName, 128) || !ValidLearnedText(input.ControlId, 128)) errors.Add("Learned input names and identifiers must contain 1..128 characters.");
+                    if (input.Kind < 0 || input.Kind > 3 || input.Direction != 1 && input.Direction != -1) errors.Add("Invalid learned input type or direction.");
+                    if (!IsFinite(input.Minimum) || !IsFinite(input.Maximum) || input.Minimum >= input.Maximum || input.Minimum < -4294967296.0 || input.Maximum > 4294967296.0 ||
+                        !IsFinite(input.Rest) || !IsFinite(input.Active) || input.Active < input.Minimum || input.Active > input.Maximum)
+                        errors.Add("Invalid learned input range.");
+                    if (input.Kind != 3 && (input.Rest < input.Minimum || input.Rest > input.Maximum)) errors.Add("The rest value must be inside the input range.");
+                    if (input.Kind == 1 && IsFinite(input.Active) && IsFinite(input.Rest) && (input.Active == input.Rest || Math.Sign(input.Active - input.Rest) != input.Direction)) errors.Add("The learned axis needs an active direction.");
+                    if (input.Kind == 2 && (input.Minimum > 0 || input.Maximum < 0 || input.Rest != 0 || input.Active == 0 || IsFinite(input.Active) && Math.Sign(input.Active) != input.Direction)) errors.Add("Relative inputs require signed movement from zero.");
+                    if (input.Kind == 3 && (input.Minimum != Math.Truncate(input.Minimum) || input.Maximum != Math.Truncate(input.Maximum) || input.Rest != Math.Truncate(input.Rest) || input.Active == input.Rest || input.Active != input.HatValue)) errors.Add("A direction pad requires a discrete neutral and matching active direction.");
+                    if (input.Kind == 0 && (input.Minimum != 0 || input.Maximum != 1 || input.Rest != 0 || input.Active != 1 || input.Direction != 1)) errors.Add("A binary input must use released 0 and pressed 1.");
+                    if (input.Kind == 3 && (!input.HatValue.HasValue || !IsFinite(input.HatValue.Value) || input.HatValue.Value < input.Minimum || input.HatValue.Value > input.Maximum || input.HatValue.Value != Math.Truncate(input.HatValue.Value))) errors.Add("A direction pad needs one valid discrete direction.");
+                    if (input.Kind != 3 && input.HatValue.HasValue) errors.Add("Only a direction pad may store a hat direction.");
+                    if (input.Backend == "travel")
+                    {
+                        if (!input.SourceKeyIndex.HasValue || (uint)input.SourceKeyIndex.Value >= 256 || input.ControlId != "key:" + input.SourceKeyIndex.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) || input.Kind != 1)
+                            errors.Add("A keyboard travel route needs a valid physical key.");
+                    }
+                    else if (input.SourceKeyIndex.HasValue) errors.Add("External inputs must not claim a physical keyboard lighting index.");
+                }
             }
             if (value.Inputs == null || value.Inputs.Count > 256) errors.Add("Tasteinstellungen fehlen oder überschreiten 256 Einträge.");
             else

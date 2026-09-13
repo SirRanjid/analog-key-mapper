@@ -188,7 +188,10 @@ namespace Tk75.App
         }
 
         public void SetReader(ReaderSession value)
+        { SetInputSource(value == null ? (Func<bool>)null : delegate { return value.IsReading; }, value == null ? null : (Action<double, Dictionary<int, double>>)value.CopyRawSnapshot); }
+        public void SetInputSource(Func<bool> available, Action<double, Dictionary<int, double>> copy)
         {
+            if ((available == null) != (copy == null)) throw new ArgumentException("Input availability and snapshot access must be supplied together.");
             lock (gate)
             {
                 CheckDisposed();
@@ -196,9 +199,9 @@ namespace Tk75.App
                 ResetPreview(null);
                 observedKeys.Clear();
                 rawSnapshot.Clear();
-                isReading = value == null ? (Func<bool>)(delegate { return false; }) : delegate { return value.IsReading; };
+                isReading = available ?? delegate { return false; };
                 getRawSnapshot = null;
-                copyRawSnapshot = value == null ? null : (Action<double, Dictionary<int, double>>)value.CopyRawSnapshot;
+                copyRawSnapshot = copy;
                 changed.Set();
             }
         }

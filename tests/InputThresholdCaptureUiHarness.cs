@@ -16,7 +16,7 @@ namespace Tk75.Tests
             var button = Field<Button>(form, buttonName);
             Check(button.Enabled, "The scoped recording action is enabled for the injected reader: " + buttonName);
             button.PerformClick();
-            Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") != null, "Clicking the real option button subscribes its measurement to the existing reader.");
+            Check(Field<LearnedInputRouting>(form, "inputThresholdCaptureReader") != null, "Clicking the real option button subscribes its measurement to the existing reader.");
         }
         static void AssertCalibrationUnchanged(MainForm form, CalibrationDocument original, string path, string json)
         {
@@ -34,7 +34,7 @@ namespace Tk75.Tests
             Equal(Json(expected), Json(Current(form)), "Release commits only " + field + " for every selected key, retaining other mixed fields and unselected keys.");
             Check(Current(form).Inputs.Where(input => input.KeyIndex == 9 || input.KeyIndex == 14).All(input => input.PressMovement == input.ActuationPoint),
                 "A completed option capture preserves a single actuation/retrigger distance for every selected key.");
-            Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") == null, "Completed option capture unsubscribes before refreshing the editor.");
+            Check(Field<LearnedInputRouting>(form, "inputThresholdCaptureReader") == null, "Completed option capture unsubscribes before refreshing the editor.");
             Call(form, "Undo"); Pump(form);
             Equal(Json(before), Json(Current(form)), "One undo restores the whole completed " + field + " measurement.");
         }
@@ -99,7 +99,7 @@ namespace Tk75.Tests
 
                 ClickInputCalibration(form, "calibrateActuation");
                 Call(form, "UpdateLive");
-                Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") != null, "Waiting without initial samples keeps recording armed.");
+                Check(Field<LearnedInputRouting>(form, "inputThresholdCaptureReader") != null, "Waiting without initial samples keeps recording armed.");
                 PushDialog(input, 21, 300, 50); Call(form, "UpdateLive");
                 Check(Field<int>(form, "inputThresholdCaptureSource") == -1, "An unselected key cannot become the option recording source.");
                 PushDialog(input, 9, 60); Call(form, "UpdateLive");
@@ -131,7 +131,7 @@ namespace Tk75.Tests
                 PushDialog(input, 9, 180); ClickInputCalibration(form, "calibrateRelease");
                 PushDialog(input, 9, 240, 20); Call(form, "UpdateLive");
                 Equal(Json(before), Json(Current(form)), "Releasing a key held at calibration start arms the capture without applying the existing hold.");
-                Check(Field<int>(form, "inputThresholdCaptureSource") == -1 && Field<ReaderSession>(form, "inputThresholdCaptureReader") != null,
+                Check(Field<int>(form, "inputThresholdCaptureSource") == -1 && Field<LearnedInputRouting>(form, "inputThresholdCaptureReader") != null,
                     "A released initial hold waits for the next deliberate press.");
                 PushDialog(input, 9, 60, 100, 20); Call(form, "UpdateLive");
                 CheckCapturedOption(form, before, InputActivationFields.Release, .2); AssertCalibrationUnchanged(form, calibration, path, saved);
@@ -144,7 +144,7 @@ namespace Tk75.Tests
 
                 PushDialog(input, 9, 20); ClickInputCalibration(form, "calibrateActuation"); PushDialog(input, 9, 100); Call(form, "UpdateLive");
                 DetailMode(form, null); PushDialog(input, 9, 20); Call(form, "UpdateLive");
-                Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") == null, "Leaving Curve cancels recording before its progress controls become hidden.");
+                Check(Field<LearnedInputRouting>(form, "inputThresholdCaptureReader") == null, "Leaving Curve cancels recording before its progress controls become hidden.");
                 Equal(Json(before), Json(Current(form)), "A release after switching to Keys cannot silently apply a hidden calibration.");
                 DetailMode(form, "advanced"); RevealCurveSetting(form, Field<Control>(form, "keyBehaviorPanel"));
 
@@ -153,27 +153,27 @@ namespace Tk75.Tests
                     PushDialog(input, 9, 20); ClickInputCalibration(form, "calibrateActuation"); PushDialog(input, 9, 140); Call(form, "UpdateLive");
                     FormWindowState previousState = form.WindowState;
                     if (minimize) form.WindowState = FormWindowState.Minimized; else form.Hide();
-                    Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") == null,
+                    Check(Field<LearnedInputRouting>(form, "inputThresholdCaptureReader") == null,
                         "The " + (minimize ? "minimize" : "hide/tray") + " event immediately cancels recording, before another UI tick.");
                     PushDialog(input, 9, 20); Call(form, "UpdateLive");
                     Equal(Json(before), Json(Current(form)), "A later release while " + (minimize ? "minimized" : "hidden") + " cannot apply a background calibration.");
                     AssertCalibrationUnchanged(form, calibration, path, saved);
                     if (minimize) form.WindowState = previousState; else form.Show();
                     Pump(form); DetailMode(form, "advanced"); RevealCurveSetting(form, Field<Control>(form, "keyBehaviorPanel"));
-                    Check(form.Visible && Field<ReaderSession>(form, "inputThresholdCaptureReader") == null && Field<Button>(form, "calibrateActuation").Enabled,
+                    Check(form.Visible && Field<LearnedInputRouting>(form, "inputThresholdCaptureReader") == null && Field<Button>(form, "calibrateActuation").Enabled,
                         "Restoring the offscreen preview re-enables Calibrate without rearming the canceled gesture.");
                 }
 
                 PushDialog(input, 9, 20); ClickInputCalibration(form, "calibrateActuation"); PushDialog(input, 9, 100); Call(form, "UpdateLive");
                 SelectKeys(form, 21); PushDialog(input, 9, 20); Call(form, "UpdateLive");
-                Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") == null, "Changing selected keys cancels the real reader subscription.");
+                Check(Field<LearnedInputRouting>(form, "inputThresholdCaptureReader") == null, "Changing selected keys cancels the real reader subscription.");
                 Equal(Json(before), Json(Current(form)), "A canceled selection cannot apply a late release to the new key.");
 
                 SelectKeys(form, 9, 14); DetailMode(form, "advanced"); PushDialog(input, 9, 20); ClickInputCalibration(form, "calibrateActuation");
                 using (var replacement = new DialogInput())
                 {
                     typeof(MainForm).GetField("reader", Private).SetValue(form, replacement.Reader); Call(form, "UpdateLive");
-                    Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") == null, "Changing the connected reader cancels the old source before a late report can apply.");
+                    Check(Field<LearnedInputRouting>(form, "inputThresholdCaptureReader") == null, "Changing the connected reader cancels the old source before a late report can apply.");
                     typeof(MainForm).GetField("reader", Private).SetValue(form, input.Reader);
                 }
                 Call(form, "RefreshInputEditor"); PushDialog(input, 9, 20); ClickInputCalibration(form, "calibrateActuation");
@@ -181,13 +181,13 @@ namespace Tk75.Tests
                 AwaitDialog(delegate { return input.Reader.GetUiSnapshot(MappingSession.MaximumInputAgeMilliseconds).Any(s => s.KeyIndex == 9 && s.Stale); },
                     "The synthetic source becomes stale after the real configured input-age limit.");
                 Call(form, "UpdateLive");
-                Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") == null, "Stale pressure after a press cancels its pending calibration.");
+                Check(Field<LearnedInputRouting>(form, "inputThresholdCaptureReader") == null, "Stale pressure after a press cancels its pending calibration.");
                 Equal(Json(before), Json(Current(form)), "Reader replacement and stale cancellation preserve all profile fields.");
 
                 PushDialog(input, 9, 20); ClickInputCalibration(form, "calibrateActuation");
                 input.Source.Push(new IOException("Synthetic option capture disconnect"));
                 AwaitDialog(delegate { return !input.Reader.IsReading; }, "The injected source reports a deterministic disconnect."); Call(form, "UpdateLive");
-                Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") == null, "Reader disconnection cancels the real pending capture.");
+                Check(Field<LearnedInputRouting>(form, "inputThresholdCaptureReader") == null, "Reader disconnection cancels the real pending capture.");
                 Equal(Json(before), Json(Current(form)), "Disconnect never applies an incomplete threshold."); AssertCalibrationUnchanged(form, calibration, path, saved);
                 form.Close();
             }

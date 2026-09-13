@@ -73,7 +73,7 @@ namespace Tk75.App
             }
             if (profilePath == null) { history = new EditHistory(new Profile { Name = Tr("Neues Profil", "New profile") }); profilePath = store.NewProfilePath(); SaveProfile(); }
             Configure(); ReloadProfiles(); ReloadPresets(); SyncOutputMode(); RefreshKeys(); RefreshBindings(); focusEnabled.Checked = focus.Enabled;
-            Shown += delegate { StartUiSession(); };
+            Shown += delegate { StartUiSession(); OpenSavedLearnedSources(); };
             HandleDestroyed += delegate { ReleaseShortcutRegistrations(); };
             HandleCreated += delegate { if (modeShortcutRegistrationActive) RefreshModeShortcutRegistration(); };
             if (preview)
@@ -163,6 +163,7 @@ namespace Tk75.App
             {
                 keys.Rows.Clear(); var profile = history.Current;
                 var known = new HashSet<int>(profile.Bindings.Select(b => b.KeyIndex).Concat(profile.Inputs.Select(i => i.KeyIndex))); foreach (int index in LayoutIndices()) known.Add(index); if (keymap != null) foreach (var entry in keymap.Entries) known.Add(entry.KeyIndex); if (reader != null) foreach (var entry in reader.GetSnapshot()) known.Add(entry.KeyIndex);
+                if (profile.LearnedInputs != null) foreach (var input in profile.LearnedInputs) known.Add(input.KeyIndex);
                 for (int i = 0; i < 256; i++)
                 {
                     keys.Rows.Add(i, Label(i), "—", CurrentControllerBindings(profile).Count(b => b.KeyIndex == i));
@@ -290,13 +291,14 @@ namespace Tk75.App
         }
         void Configure()
         {
-            CancelMappingDrag(); sharedPressureRange = new KeyboardPressureRange(calibration);
+            CancelMappingDrag(); EnsureLearnedPressureRange(); sharedPressureRange = new KeyboardPressureRange(calibration);
             if (sharedPressureRange.HasIgnoredLegacyValues && !Object.ReferenceEquals(reportedLegacyPressureRange, calibration))
             {
                 reportedLegacyPressureRange = calibration;
                 store.Event("Legacy pressure ranges outside the positive 16-bit sensor domain were left unchanged on disk and excluded from the shared range.");
             }
             keyboardSuppression.UpdateEligibility(new SuppressionKey[0], false, true); runtime.Configure(history.Current, sharedPressureRange.Resolve());
+            ConfigureLearnedInputs(); RefreshKeySources();
             ApplyProfileInputModePreference(); RefreshModeShortcutRegistration(); ApplyKeyboardSuppressionPreference(); SyncOutputMode();
             RefreshKeyBehaviorAnnotations();
         }
@@ -352,11 +354,12 @@ namespace Tk75.App
         }
         void LearnKey()
         {
-            RequireReader(); string label = Ask("Welche Taste anlernen?", "W"); if (label == null) return; runtime.Disable("Tastenlernen – Controller aus");
+            if (reader == null || !reader.IsReading) throw new InvalidOperationException(Tr("Zuerst die analoge Tastatur verbinden.", "Connect the analog keyboard first."));
+            string label = Ask("Welche Taste anlernen?", "W"); if (label == null) return; runtime.Disable("Tastenlernen – Controller aus");
             using (var dialog = new LearnDialog(reader, label)) if (dialog.ShowDialog(this) == DialogResult.OK)
             { var next = KeyMapStore.SetLabel(keymap, dialog.KeyIndex, label); KeyMapStore.Save(store.KeyMapPath(reader.Fingerprint), next); keymap = next; RefreshKeys(); RefreshBindings(); store.Event("Key label learned"); }
         }
-        void RequireReader() { if (reader == null || !reader.IsReading) throw new InvalidOperationException("Zuerst die Tastatur verbinden."); }
+        void RequireReader() { if (!LiveInputReading) throw new InvalidOperationException("Zuerst die Tastatur verbinden."); }
         void UpdateLive()
         {
             UpdatePressureCapture();
@@ -376,14 +379,14 @@ namespace Tk75.App
 
             RefreshInputModeUi();
             UpdateControllerConnectionUi();
-            var snapshot = reader == null ? new KeyStateSnapshot[0] : reader.GetUiSnapshot(MappingSession.MaximumInputAgeMilliseconds);
+            var snapshot = InputUiSnapshot();
             bool refreshMonitor = ticks % 10 == 0 && monitor.Visible;
             var frame = bindings.Visible || controllerPreview.Visible || liveStatus.Visible || refreshMonitor ? runtime.Preview : null;
             var byIndex = refreshMonitor || controllerPreview.Visible && frame.UnavailableKeys.Count > 0 ? snapshot.ToDictionary(s => s.KeyIndex) : null;
             if (keys.Visible)
                 foreach (var entry in snapshot) { if (!keys.Rows[entry.KeyIndex].Visible) keys.Rows[entry.KeyIndex].Visible = true; SetCellValue(keys.Rows[entry.KeyIndex].Cells[2], entry.Known ? entry.RawValue.ToString() + (entry.Stale ? Tr(" · alt", " · stale") : "") : "—"); }
             if (keyboard.Visible) UpdateKeyboardValues(snapshot);
-            bool reading = reader != null && reader.IsReading, sampled = reader != null && reader.HasReceivedSamples;
+            bool reading = LiveInputReading, sampled = LiveInputSamples;
             if (lastCardReading != reading || lastCardSamples != sampled) { UpdateKeyCard(); lastCardReading = reading; lastCardSamples = sampled; }
             if (pressure.Visible || pressureText.Visible) UpdatePressure(snapshot);
             if (bindings.Visible)
@@ -400,7 +403,7 @@ namespace Tk75.App
                         Percent(result, 0), Percent(result, 1), Percent(result, 2), Percent(result, 3), !b.Enabled ? Tr("Inaktiv", "Inactive") : result == null ? Tr("Wartet", "Waiting") : result.Error == null ? "OK" : UiText.Get(result.Error));
                 }
             }
-            deviceStatus.Text = reader == null ? DiscoveryStatus() : UiText.Get(reader.Status) + " · " + snapshot.Length + Tr(" Tasten gesehen", " keys seen");
+            deviceStatus.Text = reader == null ? HasLearnedInputs ? Tr("Gelernte Eingaben · ", "Learned inputs · ") + (reading ? Tr("verbunden", "connected") : Tr("Gerät nicht verfügbar", "device unavailable")) : DiscoveryStatus() : UiText.Get(reader.Status) + " · " + snapshot.Length + Tr(" Tasten gesehen", " keys seen");
             string nextOutputStatus = OutputAvailability == null ? UiText.Get(runtime.Status) : selectedControllerKind == ControllerKind.DualSense ? Tr("PS5-Ausgabe · Einrichtung noch offen", "PS5 output · setup pending") : UiText.Get("Vorschau · Controller noch in Prüfung");
             bool anyEnabled = runtime.AnyEnabled;
             if (anyEnabled && !runtime.Enabled) nextOutputStatus = Tr("Andere Controller verbunden", "Other controllers connected");

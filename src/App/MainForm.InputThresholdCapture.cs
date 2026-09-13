@@ -10,7 +10,7 @@ namespace Tk75.App
     public sealed partial class MainForm
     {
         readonly object inputThresholdCaptureGate = new object();
-        ReaderSession inputThresholdCaptureReader;
+        LearnedInputRouting inputThresholdCaptureReader;
         Action<TravelSample, double> inputThresholdCaptureHandler;
         object inputThresholdCaptureGeneration;
         Dictionary<int, InputThresholdCapture> inputThresholdCandidates;
@@ -26,10 +26,10 @@ namespace Tk75.App
         {
             RequireReader();
             if (field != InputActivationFields.Actuation && field != InputActivationFields.Release) throw new ArgumentOutOfRangeException("field");
-            int[] selected = SelectedKeys(); if (selected.Length == 0 || calibration == null) return;
+            int[] selected = SelectedKeys(); if (!CanCapturePressure(selected)) return;
             if (field != InputActivationFields.Actuation && rapidTrigger.CheckState == CheckState.Unchecked) return;
             CancelInputThresholdCapture(); CancelPressureCapture(); CancelInputThresholdGestures(); FlushInputDraft();
-            var input = reader;
+            var input = InputView;
             var samples = input.GetUiSnapshot(MappingSession.MaximumInputAgeMilliseconds).Where(s => s.Known && !s.Stale).ToDictionary(s => s.KeyIndex);
             var candidates = new Dictionary<int, InputThresholdCapture>();
             foreach (int key in selected)
@@ -69,7 +69,7 @@ namespace Tk75.App
         }
         void CancelInputThresholdCapture()
         {
-            ReaderSession previous; Action<TravelSample, double> handler;
+            LearnedInputRouting previous; Action<TravelSample, double> handler;
             lock (inputThresholdCaptureGate)
             {
                 previous = inputThresholdCaptureReader; inputThresholdCaptureReader = null; inputThresholdCapture = null; inputThresholdCandidates = null;
@@ -98,7 +98,7 @@ namespace Tk75.App
                 buttons[i].Text = active ? Tr("Abbrechen", "Cancel") : Tr("Kalibrieren", "Calibrate");
                 buttons[i].MinimumSize = System.Drawing.Size.Empty;
                 buttons[i].Padding = new Padding(2, 0, 2, 0); buttons[i].Margin = new Padding(0, 0, 0, 2);
-                buttons[i].Enabled = active || !capturing && editingInputKeys.Length != 0 && calibration != null && reader != null && reader.IsReading &&
+                buttons[i].Enabled = active || !capturing && CanCapturePressure(editingInputKeys) &&
                     (fields[i] == InputActivationFields.Actuation || rapidTrigger.CheckState != CheckState.Unchecked);
                 string help = active ? Tr("Messung abbrechen. Der bisherige Wert bleibt erhalten.", "Cancel the measurement and keep the previous value.") :
                     fields[i] == InputActivationFields.Actuation ? Tr("Eine ausgewählte Taste einmal bis zum gewünschten Auslösepunkt drücken und loslassen. Der größte Druck wird in Prozent ihres gespeicherten Bereichs gemessen; Loslassen übernimmt ihn für alle ausgewählten Tasten in einem Rückgängig-Schritt.",
@@ -113,8 +113,8 @@ namespace Tk75.App
         }
         void UpdateInputThresholdCapture()
         {
-            ReaderSession input = inputThresholdCaptureReader; if (input == null) return;
-            if (!Object.ReferenceEquals(input, reader) || !input.IsReading || closing || deviceDetachInProgress ||
+            LearnedInputRouting input = inputThresholdCaptureReader; if (input == null) return;
+            if (!Object.ReferenceEquals(input, InputView) || !input.IsReading || closing || deviceDetachInProgress ||
                 !SelectedKeys().SequenceEqual(inputThresholdCaptureKeys) || !Object.ReferenceEquals(history, inputThresholdCaptureHistory) ||
                 !Object.ReferenceEquals(history.SnapshotToken, inputThresholdCaptureSnapshot) || !Object.ReferenceEquals(calibration, inputThresholdCaptureCalibration))
             { CancelInputThresholdCapture(); return; }

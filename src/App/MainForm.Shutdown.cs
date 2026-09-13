@@ -156,6 +156,7 @@ namespace Tk75.App
                             systemReaderPhase = ShutdownPhaseState.Running;
                             try
                             {
+                                DisposeLearnedInputs();
                                 if (ownedReader != null) ownedReader.Dispose();
                                 if (detachedReaderCleanup != null)
                                 {
@@ -271,6 +272,8 @@ namespace Tk75.App
             catch (Exception error) { resourceCleanupFailed = true; LogShutdownFailure("Keyboard suppression cleanup", error); }
             try { runtime.Dispose(); }
             catch (Exception error) { resourceCleanupFailed = true; LogShutdownFailure("Controller cleanup", error); }
+            try { DisposeLearnedInputs(); }
+            catch (Exception error) { resourceCleanupFailed = true; LogShutdownFailure("Learned input cleanup", error); }
             try { if (ownedReader != null) ownedReader.Dispose(); }
             catch (Exception error) { resourceCleanupFailed = true; LogShutdownFailure("Reader cleanup", error); }
             return !resourceCleanupFailed;

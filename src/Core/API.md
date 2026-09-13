@@ -180,3 +180,26 @@ preserving each destination's pair. Existing binding clipboard operations retain
 Profile.Inputs; callers can combine ApplyActivation in the same undo transaction
 when copying an entire key. JSON profile cloning, history and ordinary signal
 edits preserve physical input settings; signal-only presets never contain them.
+
+## Learned input sources
+
+Optional `Profile.LearnedInputs` stores at most one `LearnedKeyBinding` per logical
+key. Omitted entries preserve legacy hardware input behavior; older profiles do
+not gain an empty JSON member on save. Device identities are SHA-256 strings, and
+backend/control kind/ranges are validated before runtime configuration. Missing
+or changed devices must leave the destination unavailable, never fall back to a
+different physical input.
+
+`InputLearningCapture` consumes timestamped `InputControlSample` values and
+immutable `InputControlDescriptor` metadata. It observes rest before capturing,
+distinguishes competing controls, and completes after release settles. Known
+keyboard positions can bypass capture. Stage all results outside the profile,
+validate and save the complete batch, then publish one history transaction.
+
+`LearnedInputRoute.Normalize` supports buttons, directed absolute axes, relative
+pulses and discrete hat directions. Absolute output uses the descriptor's full
+range in the learned direction; a shallow demonstration does not shorten it.
+Relative output requires a bounded expiration in the runtime (40 ms in the app).
+`LearnedInputRouting` reads original samples before applying routes, so mappings
+cannot cascade. Native sources are opened once per required device and disposed
+by their owner; routing itself only subscribes to them.
