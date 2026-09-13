@@ -117,6 +117,8 @@ namespace Tk75.App
 
     public class SleekComboBox : ComboBox
     {
+        readonly NativeSurfaceTheme.ComboListSurface listSurface = new NativeSurfaceTheme.ComboListSurface();
+        bool hovered;
         // Pressure testing should not run a hidden letter search in the target
         // picker. Other pickers retain the native behavior unless explicitly opted in.
         public bool IgnoreClosedTextInput { get; set; }
@@ -124,6 +126,61 @@ namespace Tk75.App
         {
             FlatStyle = FlatStyle.Flat; DrawMode = DrawMode.OwnerDrawFixed; DropDownStyle = ComboBoxStyle.DropDownList;
             ItemHeight = 28; IntegralHeight = false; DropDownHeight = 300;
+        }
+        protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); AttachListSurface(); }
+        protected override void OnHandleDestroyed(EventArgs e) { listSurface.Dispose(); base.OnHandleDestroyed(e); }
+        protected override void Dispose(bool disposing) { if (disposing) listSurface.Dispose(); base.Dispose(disposing); }
+        void AttachListSurface()
+        {
+            if (!IsHandleCreated) return;
+            NativeControlPaint.ComboInfo info = new NativeControlPaint.ComboInfo();
+            info.Size = System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeControlPaint.ComboInfo));
+            if (NativeControlPaint.GetComboBoxInfo(Handle, ref info)) listSurface.Attach(info.List);
+        }
+        protected override void OnDropDown(EventArgs e) { AttachListSurface(); base.OnDropDown(e); Invalidate(); }
+        protected override void OnDropDownClosed(EventArgs e) { base.OnDropDownClosed(e); Invalidate(); }
+        protected override void OnSelectedIndexChanged(EventArgs e) { base.OnSelectedIndexChanged(e); Invalidate(); }
+        protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Invalidate(); }
+        protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+        protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
+        protected override void OnMouseEnter(EventArgs e) { hovered = true; base.OnMouseEnter(e); Invalidate(); }
+        protected override void OnMouseLeave(EventArgs e) { hovered = false; base.OnMouseLeave(e); Invalidate(); }
+        protected override void OnEnabledChanged(EventArgs e) { base.OnEnabledChanged(e); Invalidate(); }
+        protected override void WndProc(ref Message message)
+        {
+            // One complete buffered face replaces WM_PAINT. The native combo
+            // procedure continues to own its real arrow hit target, drop-down,
+            // editable child, keyboard navigation and accessibility tree.
+            if (DropDownStyle != ComboBoxStyle.Simple && NativeControlPaint.TryClientPaint(ref message, ClientSize, PaintFace)) return;
+            base.WndProc(ref message);
+        }
+        void PaintFace(Graphics graphics)
+        {
+            graphics.Clear(Parent == null ? ModernTheme.Surface : Parent.BackColor);
+            if (Width < 3 || Height < 3) return;
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Color border = Enabled && (Focused || DroppedDown) ? ModernTheme.Accent : hovered && Enabled ? ModernTheme.Muted : ModernTheme.Border;
+            using (GraphicsPath path = SurfaceDrawing.Round(new RectangleF(.5f, .5f, Width - 1.5f, Height - 1.5f), 7))
+            using (Brush fill = new SolidBrush(ModernTheme.SurfaceAlt))
+            using (Pen pen = new Pen(border)) { graphics.FillPath(fill, path); graphics.DrawPath(pen, path); }
+            NativeControlPaint.ComboInfo info = new NativeControlPaint.ComboInfo();
+            info.Size = System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeControlPaint.ComboInfo));
+            bool nativeBounds = NativeControlPaint.GetComboBoxInfo(Handle, ref info);
+            Rectangle button = nativeBounds ? info.Button.Bounds : new Rectangle(Width - SystemInformation.VerticalScrollBarWidth - 2, 2, SystemInformation.VerticalScrollBarWidth, Height - 4);
+            NativeControlPaint.Chevron(graphics, button, true, !DroppedDown, Enabled ? ModernTheme.Accent : ModernTheme.Muted);
+            if (DropDownStyle == ComboBoxStyle.DropDownList)
+            {
+                Rectangle area = nativeBounds ? info.Item.Bounds : new Rectangle(3, 2, Math.Max(1, button.Left - 5), Height - 4);
+                area.Inflate(-7, 0);
+                string label = SelectedIndex >= 0 ? GetItemText(SelectedItem) : Text;
+                if (SelectedItem is string) label = UiText.Get(label);
+                if (String.IsNullOrEmpty(label)) label = UiText.Get("Auswählen");
+                TextRenderer.DrawText(graphics, label, Font, area, Enabled ? ModernTheme.Foreground : ModernTheme.Muted,
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine |
+                    (RightToLeft == RightToLeft.Yes ? TextFormatFlags.RightToLeft | TextFormatFlags.Right : TextFormatFlags.Left));
+                if (Focused && ShowFocusCues && !DroppedDown)
+                    ControlPaint.DrawFocusRectangle(graphics, Rectangle.Inflate(area, -1, -5), ModernTheme.Accent, ModernTheme.SurfaceAlt);
+            }
         }
         protected override void OnKeyPress(KeyPressEventArgs e)
         {
@@ -141,10 +198,8 @@ namespace Tk75.App
             string label = e.Index >= 0 && e.Index < Items.Count ? GetItemText(Items[e.Index]) : Text;
             if (e.Index >= 0 && e.Index < Items.Count && Items[e.Index] is string) label = UiText.Get(label);
             if (String.IsNullOrEmpty(label)) label = UiText.Get("Auswählen");
-            // Draw the complete item once into the native owner's supplied area.
-            // A second Graphics.FromHwnd pass after WM_PAINT used to expose the
-            // native arrow/frame and then cover it, causing competing paint passes.
-            // The native ComboBox now owns its arrow, border, focus and hit testing.
+            // Popup rows use the native owner's supplied area and preserve native
+            // selection. The closed face is painted by its single WM_PAINT pass.
             using (BufferedGraphics buffer = BufferedGraphicsManager.Current.Allocate(e.Graphics, e.Bounds))
             {
                 using (var brush = new SolidBrush(fill)) buffer.Graphics.FillRectangle(brush, e.Bounds);

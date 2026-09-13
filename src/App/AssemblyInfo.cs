@@ -3,8 +3,8 @@ using System.Reflection;
 [assembly: AssemblyDescription("Analog keyboard input to independent Xbox and DualSense controllers")]
 [assembly: AssemblyProduct("Analog Key Mapper")]
 [assembly: AssemblyVersion("0.1.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.5")]
-[assembly: AssemblyInformationalVersion("1.0.0-rc.5")]
+[assembly: AssemblyFileVersion("1.0.0.6")]
+[assembly: AssemblyInformationalVersion("1.0.0-rc.6")]
 #if ALLOW_UNSIGNED_MONITOR
 [assembly: AssemblyConfiguration("UnsignedMonitorLocal")]
 #else

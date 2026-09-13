@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Tk75.Mapping;
@@ -8,23 +10,54 @@ namespace Tk75.App
 {
     public sealed partial class MainForm
     {
-        const int SystemShutdownTimeoutMilliseconds = 3000;
+        // Windows is told why the final session response is pending. The wait
+        // covers the existing 17s lighting restore and cancelled helper cleanup.
+        const int SystemShutdownTimeoutMilliseconds = NormalCloseTimeoutMilliseconds;
+        int systemShutdownWaitMilliseconds = SystemShutdownTimeoutMilliseconds;
         ShutdownWork systemShutdownWork;
         bool closeProfileSaved, systemShutdownTimedOut, systemShutdownStarted;
-        bool applicationResourcesDisposed, resourceCleanupFailed;
+        bool applicationResourcesDisposed, resourceCleanupFailed, shutdownReasonRegistered;
+        CloseProgressForm closeProgress;
+        volatile ShutdownPhaseState systemLightingPhase, systemReaderPhase;
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool ShutdownBlockReasonCreate(IntPtr window, string reason);
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool ShutdownBlockReasonDestroy(IntPtr window);
+
+        void ShowCloseProgress()
+        {
+            if (IsDisposed || closeProgress != null && !closeProgress.IsDisposed) return;
+            closeProgress = new CloseProgressForm();
+            if (previewMode || Left < -10000)
+            { closeProgress.StartPosition = FormStartPosition.Manual; closeProgress.Location = new System.Drawing.Point(-30000, -30000); }
+            closeProgress.Show(this); closeProgress.PaintProgress();
+        }
+        void SetClosePhase(int phase, ShutdownPhaseState state)
+        {
+            if (IsDisposed || closeProgress == null || closeProgress.IsDisposed) return;
+            if (InvokeRequired)
+            {
+                try { BeginInvoke((Action)delegate { SetClosePhase(phase, state); }); } catch (InvalidOperationException) { }
+                return;
+            }
+            closeProgress.SetPhase(phase, state); closeProgress.PaintProgress();
+        }
+        void HideCloseProgress()
+        { var progress = closeProgress; closeProgress = null; if (progress != null) progress.Dispose(); }
 
         void OnApplicationClosing(object sender, FormClosingEventArgs args)
         {
-            // This must precede the ordinary pending-restore/detach checks:
-            // Windows logoff cannot depend on a later UI callback or prompt.
+            // The real native query is intercepted before WinForms raises this
+            // event. This branch also handles an explicit committed system close.
             if (args.CloseReason == CloseReason.WindowsShutDown)
             {
                 args.Cancel = false;
                 try { BeginSystemShutdown(); }
                 catch (Exception error)
                 {
-                    // Never turn an OS shutdown failure into a UI prompt or a
-                    // second synchronous Dispose attempt on this same thread.
                     systemShutdownStarted = true; closing = true;
                     System.Threading.ThreadPool.QueueUserWorkItem(delegate { LogShutdownFailure("Windows shutdown preparation", error); });
                 }
@@ -33,31 +66,42 @@ namespace Tk75.App
             if (closing) return;
             if (TryMinimizeToTrayOnClosing(args)) return;
             CancelPressureCapture();
+            ShowCloseProgress();
             if (rgbClosePending) { args.Cancel = true; return; }
-            if (deviceDetachInProgress) { closeAfterDeviceDetach = true; args.Cancel = true; return; }
+            if (deviceDetachInProgress)
+            {
+                SetClosePhase(3, ShutdownPhaseState.Running);
+                closeAfterDeviceDetach = true; args.Cancel = true; return;
+            }
             if (!rgbCloseFinished)
             {
                 CancelMappingDrag();
                 SaveControllerReconnectState();
-                try { runtime.Disable("Anwendung wird geschlossen"); }
-                catch (Exception error) { resourceCleanupFailed = true; LogShutdownFailure("Controller shutdown", error); }
+                SetClosePhase(1, ShutdownPhaseState.Running);
+                try { runtime.Disable("Anwendung wird geschlossen"); SetClosePhase(1, ShutdownPhaseState.Completed); }
+                catch (Exception error) { resourceCleanupFailed = true; SetClosePhase(1, ShutdownPhaseState.Failed); LogShutdownFailure("Controller shutdown", error); }
                 keyboardSuppression.SetEnabled(false);
-                closeProfileSaved = false;
-                try { SaveProfile(); closeProfileSaved = true; }
+                closeProfileSaved = false; SetClosePhase(0, ShutdownPhaseState.Running);
+                try { SaveProfile(); closeProfileSaved = true; SetClosePhase(0, ShutdownPhaseState.Completed); }
                 catch (Exception error)
                 {
+                    SetClosePhase(0, ShutdownPhaseState.Failed); HideCloseProgress();
                     if (MessageBox.Show(this, UiText.Get(error.Message) + Tr("\nOhne Speichern beenden?", "\nExit without saving?"),
                         Tr("Speichern fehlgeschlagen", "Saving failed"), MessageBoxButtons.YesNo) != DialogResult.Yes)
                     { CancelControllerReconnectSave(); trayExitRequested = false; args.Cancel = true; return; }
+                    ShowCloseProgress(); SetClosePhase(0, ShutdownPhaseState.Failed);
                 }
                 PersistControllerReconnectState();
                 if (BeginRgbCloseRestore()) { args.Cancel = true; return; }
+                SetClosePhase(2, ShutdownPhaseState.Completed);
             }
             closing = true; StopDeviceDiscovery(); uiTimer.Stop(); ReleaseShortcutRegistrations();
+            // Render the final phase before potentially slow reader/helper Dispose.
+            SetClosePhase(3, ShutdownPhaseState.Running);
             bool disposedCleanly = DisposeApplicationResources();
-            // An explicit exit without saving, failed output cleanup or failed
-            // lighting restore must never bless an unconfirmed clean exit.
+            SetClosePhase(3, disposedCleanly && rgbCloseSucceeded ? ShutdownPhaseState.Completed : ShutdownPhaseState.Failed);
             if (closeProfileSaved && disposedCleanly && rgbCloseSucceeded) ConfirmControllerReconnectExit();
+            HideCloseProgress();
         }
 
         void BeginSystemShutdown()
@@ -65,75 +109,147 @@ namespace Tk75.App
             if (systemShutdownStarted) return;
             systemShutdownStarted = true;
             var deadline = Stopwatch.StartNew();
+            ShowCloseProgress();
             closing = true; closeAfterDeviceDetach = false; Enabled = false;
             CancelPressureCapture();
             CancelStartupReconnect(); CancelControllerReconnectSave();
             uiTimer.Stop(); StopDeviceDiscovery(); ReleaseShortcutRegistrations();
             CancelMappingDrag(); keyboardSuppression.SetEnabled(false);
 
-            // Copy UI-owned edits without Configure or disk I/O. Pending input
-            // values are merged into this detached copy, never into live output.
             Profile saved = null; Exception snapshotFailure = null;
             try { saved = MergePendingInput(history.Current); }
             catch (Exception error) { snapshotFailure = error; }
             string savedPath = profilePath;
             ReaderSession ownedReader = reader;
-            reader = null; // the cleanup lane, not Form.Dispose, now owns it
+            reader = null; // Only the cleanup lane owns disposal from this point.
             RgbBackupWork lighting = rgbBackupWork;
+            Task detachedReaderCleanup = deviceDetachCleanup;
             systemShutdownWork = new ShutdownWork(
                 delegate
                 {
                     Task pendingConnections = null;
-                    // A previous detach may hold the coordinator lock while
-                    // draining output. Even cancellation therefore belongs off
-                    // the UI thread so it cannot consume an unbounded pre-wait.
-                    try { pendingConnections = runtime.CancelPendingConnections(); }
-                    catch (Exception error) { LogShutdownFailure("Pending controller cancellation", error); }
-                    try { runtime.Dispose(); }
-                    catch (Exception error) { LogShutdownFailure("Controller shutdown", error); }
-                    finally
-                    {
-                        keyboardSuppression.Dispose();
-                        if (pendingConnections != null)
-                            try { pendingConnections.Wait(); }
-                            catch (Exception error) { LogShutdownFailure("Pending controller cleanup", error); }
-                    }
+                    LoggedShutdownCleanup("Controller shutdown", delegate {
+                        RunShutdownCleanup(
+                            delegate { pendingConnections = runtime.CancelPendingConnections(); },
+                            delegate { runtime.Disable("Windows shutdown"); },
+                            delegate { runtime.Dispose(); },
+                            delegate { keyboardSuppression.Dispose(); },
+                            delegate { if (pendingConnections != null) pendingConnections.Wait(); });
+                    });
                 },
                 delegate
                 {
-                    // The short Windows query budget is not the RGB worker's
-                    // lifetime. Keep its source alive until pending color work
-                    // and the original-color restore have drained.
-                    try
-                    {
-                        if (!RestoreRgbWorkBeforeDisconnect(lighting, RgbCloseTimeoutMilliseconds))
-                            LogShutdownFailure("Windows shutdown lighting; helper cleanup requested and original backup retained",
-                                new System.IO.IOException("The primary lighting restore was not confirmed."));
-                    }
-                    catch (Exception error) { LogShutdownFailure("Windows shutdown lighting; original backup retained", error); }
-                    finally { if (ownedReader != null) ownedReader.Dispose(); }
+                    RunShutdownCleanup(
+                        delegate {
+                            systemLightingPhase = ShutdownPhaseState.Running;
+                            try
+                            {
+                                if (!RestoreRgbWorkBeforeDisconnect(lighting, RgbCloseTimeoutMilliseconds))
+                                    throw new System.IO.IOException("The primary lighting restore was not confirmed; original backup retained.");
+                                systemLightingPhase = ShutdownPhaseState.Completed;
+                            }
+                            catch (Exception error) { systemLightingPhase = ShutdownPhaseState.Failed; LogShutdownFailure("Windows shutdown lighting; original backup retained", error); throw; }
+                        },
+                        delegate {
+                            systemReaderPhase = ShutdownPhaseState.Running;
+                            try
+                            {
+                                if (ownedReader != null) ownedReader.Dispose();
+                                if (detachedReaderCleanup != null)
+                                {
+                                    detachedReaderCleanup.Wait();
+                                    if (deviceDetachCleanupFailure != null) throw deviceDetachCleanupFailure;
+                                }
+                                systemReaderPhase = ShutdownPhaseState.Completed;
+                            }
+                            catch (Exception error) { systemReaderPhase = ShutdownPhaseState.Failed; LogShutdownFailure("Windows shutdown reader/helper cleanup", error); throw; }
+                        });
                 },
                 delegate
                 {
-                    if (snapshotFailure != null) LogShutdownFailure("Windows shutdown snapshot", snapshotFailure);
-                    if (saved != null && savedPath != null)
-                        try { WorkspaceStore.WriteAtomic(savedPath, ProfileJson.Serialize(saved)); }
-                        catch (Exception error) { LogShutdownFailure("Windows shutdown profile save", error); }
-                    // Deliberately do not confirm the clean-exit reconnect
-                    // journal: Windows can terminate these background lanes.
+                    LoggedShutdownCleanup("Windows shutdown profile save", delegate {
+                        if (snapshotFailure != null) throw snapshotFailure;
+                        if (saved == null || savedPath == null) throw new System.IO.IOException("No profile snapshot was available for saving.");
+                        WorkspaceStore.WriteAtomic(savedPath, ProfileJson.Serialize(saved)); closeProfileSaved = true;
+                    });
+                    // Keep the reconnect journal unconfirmed during OS shutdown:
+                    // forced termination can still interrupt another cleanup lane.
                 });
             systemShutdownWork.Start();
-            systemShutdownTimedOut = !systemShutdownWork.Wait(Math.Max(0, SystemShutdownTimeoutMilliseconds - (int)deadline.ElapsedMilliseconds));
+            int budget = Math.Max(0, Math.Min(SystemShutdownTimeoutMilliseconds, systemShutdownWaitMilliseconds));
+            bool completed;
+            do
+            {
+                int remaining = Math.Max(0, budget - (int)deadline.ElapsedMilliseconds);
+                completed = systemShutdownWork.Wait(Math.Min(50, remaining));
+                RefreshSystemCloseProgress();
+                if (completed || remaining == 0) break;
+            } while (true);
+            systemShutdownTimedOut = !completed;
+            if (systemShutdownTimedOut && closeProgress != null)
+            {
+                closeProgress.SetDetail(Tr("Zeitlimit erreicht · Sicherung bleibt für die Wiederherstellung erhalten", "Time limit reached · backup retained for recovery"));
+                closeProgress.PaintProgress();
+                System.Threading.ThreadPool.QueueUserWorkItem(delegate { store.Event("Windows shutdown cleanup reached its deadline; recovery remains unconfirmed."); });
+            }
         }
-
-        void OnSystemSessionEnd(Message message)
+        void RefreshSystemCloseProgress()
         {
-            if (message.Msg != 0x0016 || message.WParam != IntPtr.Zero || !systemShutdownStarted || IsDisposed) return;
-            // Another application can cancel Windows logoff after our query was
-            // accepted. Our resources are already stopping: finish this app's
-            // close instead of leaving a dead, disabled editor behind.
-            try { BeginInvoke((Action)delegate { if (!IsDisposed) Close(); }); }
-            catch (InvalidOperationException) { }
+            if (systemShutdownWork == null || closeProgress == null || closeProgress.IsDisposed) return;
+            var phases = systemShutdownWork.States;
+            closeProgress.SetPhase(0, phases[2]); closeProgress.SetPhase(1, phases[0]);
+            closeProgress.SetPhase(2, systemLightingPhase);
+            // Controller candidates may own helper cleanup independently of the
+            // reader. The final phase cannot be complete while either is running.
+            ShutdownPhaseState resources = systemReaderPhase;
+            if (resources == ShutdownPhaseState.Completed && phases[0] != ShutdownPhaseState.Completed)
+                resources = phases[0] == ShutdownPhaseState.Failed ? ShutdownPhaseState.Failed : ShutdownPhaseState.Running;
+            closeProgress.SetPhase(3, resources);
+            closeProgress.PaintProgress();
+        }
+        static void RunShutdownCleanup(params Action[] actions)
+        {
+            var errors = new List<Exception>();
+            foreach (Action action in actions) try { action(); } catch (Exception error) { errors.Add(error); }
+            if (errors.Count != 0) throw new AggregateException(errors);
+        }
+        void LoggedShutdownCleanup(string context, Action action)
+        { try { action(); } catch (Exception error) { LogShutdownFailure(context, error); throw; } }
+
+        bool HandleSystemSessionMessage(ref Message message)
+        {
+            if (message.Msg == 0x0011)
+            {
+                // Register on the window's owning thread, then promptly accept
+                // the query. Time-consuming work belongs to WM_ENDSESSION.
+                // https://learn.microsoft.com/windows/win32/shutdown/wm-queryendsession
+                if (!previewMode && !shutdownReasonRegistered)
+                    try { shutdownReasonRegistered = ShutdownBlockReasonCreate(Handle, Tr("Tastaturbeleuchtung wird wiederhergestellt und Verbindungen werden geschlossen.", "Restoring keyboard lighting and closing connections.")); }
+                    catch (EntryPointNotFoundException) { }
+                message.Result = new IntPtr(1); return true;
+            }
+            if (message.Msg != 0x0016) return false;
+            try
+            {
+                if (message.WParam != IntPtr.Zero)
+                {
+                    // Holding this response, rather than merely registering a
+                    // reason, gives the workers their bounded restore window.
+                    try { BeginSystemShutdown(); }
+                    catch (Exception error) { systemShutdownStarted = true; closing = true; LogShutdownFailure("Windows shutdown preparation", error); }
+                }
+                // FALSE means Windows cancelled logoff. Since the query has not
+                // touched resources, the editor remains fully usable.
+            }
+            finally
+            {
+                if (shutdownReasonRegistered)
+                {
+                    try { ShutdownBlockReasonDestroy(Handle); } catch (EntryPointNotFoundException) { }
+                    shutdownReasonRegistered = false;
+                }
+            }
+            message.Result = IntPtr.Zero; return true;
         }
 
         void LogShutdownFailure(string context, Exception error)
@@ -141,8 +257,7 @@ namespace Tk75.App
 
         bool DisposeApplicationResources()
         {
-            // Rejoining here would silently defeat the system-shutdown budget.
-            if (systemShutdownStarted) return false;
+            if (systemShutdownStarted) { HideCloseProgress(); return false; }
             if (applicationResourcesDisposed) return !resourceCleanupFailed;
             applicationResourcesDisposed = true;
             ReaderSession ownedReader = reader; reader = null;

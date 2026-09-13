@@ -58,6 +58,9 @@ namespace Tk75.App
         int hovered = -1, hoveredPart = -1, selectedPoint = -1, previousSelectedPoint = -1;
         readonly ToolTip tips = new ToolTip { InitialDelay = 350, ReshowDelay = 100, AutoPopDelay = 8000 };
         string lastTip;
+        double? inspectedInput;
+        SignalSettings sampledCurve;
+        double[] responseSamples;
         public SignalSettings Settings { get { return CopySettings(settings); } set { UpdateCurve(value, mixed, contextKey); } }
         public bool Mixed { get { return mixed; } set { UpdateCurve(settings, value, contextKey); } }
         public bool IsEditing { get { return edit != null && edit.Active; } }
@@ -76,6 +79,7 @@ namespace Tk75.App
             bool contextChanged = contextKey != selectionContext;
             bool changed = contextChanged || mixed != isMixed || !SameSettings(settings, next);
             if (changed) { CancelEdit(); hovered = hoveredPart = -1; }
+            if (contextChanged) inspectedInput = null;
             settings = next; mixed = isMixed; contextKey = selectionContext;
             if (!IsEditing && (contextChanged || settings == null || !HasNodes(settings.Curve) || settings.CustomPoints == null || selectedPoint >= settings.CustomPoints.Count)) selectedPoint = -1;
             UpdateTip(); Invalidate();
@@ -115,27 +119,41 @@ namespace Tk75.App
         }
         PointF PlotPoint(CurvePoint point)
         { RectangleF plot = Plot; return new PointF(plot.Left + (float)point.X * plot.Width, plot.Bottom - (float)point.Y * plot.Height); }
+        double[] CurveSamples(SignalSettings shown)
+        {
+            if (responseSamples != null && SameSettings(sampledCurve, shown)) return responseSamples;
+            sampledCurve = CopySettings(shown); responseSamples = new double[101];
+            // Cache the static curve stage: hover and selection paints should not
+            // recompute a hundred processed samples or affect the runtime.
+            var shape = CopySettings(shown);
+            for (int i = 0; i <= 100; i++) responseSamples[i] = SignalProcessor.Process(i / 100.0, new Calibration(0, 1), shape, new SignalState(), 1).Final;
+            return responseSamples;
+        }
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e); var g = e.Graphics; g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias; RectangleF plot = Plot;
             using (var muted = new SolidBrush(ModernTheme.Muted))
             {
-                g.DrawString(UiText.Get(Mixed ? "Gemischt · erste Zuordnung" : "Antwortkurve"), Font, muted, 8, 8);
+                TextRenderer.DrawText(g, UiText.Get(Mixed ? "Gemischt · erste Zuordnung" : "Antwortkurve"), Font,
+                    new Rectangle(8, 5, Math.Max(1, Width - 16), 24), ModernTheme.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
                 g.DrawString("0", Font, muted, 24, plot.Bottom - 8); g.DrawString("100 %", Font, muted, 1, plot.Top - 6); g.DrawString("100 %", Font, muted, plot.Right - 39, plot.Bottom + 7);
+                if (plot.Width >= 110) { g.DrawString("50", Font, muted, plot.Left + plot.Width / 2 - 8, plot.Bottom + 7); g.DrawString("50", Font, muted, plot.Left - 25, plot.Top + plot.Height / 2 - 8); }
                 if (settings == null) g.DrawString(UiText.Get("Zuordnung auswählen"), Font, muted, plot.Left, plot.Top + 20);
             }
             using (var grid = new Pen(ModernTheme.Border)) for (int i = 0; i <= 4; i++) { float t = i / 4f; g.DrawLine(grid, plot.Left + t * plot.Width, plot.Top, plot.Left + t * plot.Width, plot.Bottom); g.DrawLine(grid, plot.Left, plot.Bottom - t * plot.Height, plot.Right, plot.Bottom - t * plot.Height); }
             if (settings == null) return;
             var shown = IsEditing ? new SignalSettings { Curve = editKind, CustomPoints = edit.Preview } : settings;
-            var points = new PointF[101];
+            var points = new PointF[101]; double[] samples = CurveSamples(shown);
             for (int i = 0; i <= 100; i++)
             {
-                // A static response graph intentionally excludes history-dependent filtering.
-                var copy = new SignalSettings { Curve = shown.Curve, Exponent = shown.Exponent, CustomPoints = shown.CustomPoints };
-                var response = SignalProcessor.Process(i / 100.0, new Calibration(0, 1), copy, new SignalState(), 1);
-                points[i] = new PointF(plot.Left + i / 100f * plot.Width, plot.Bottom - (float)response.Final * plot.Height);
+                points[i] = new PointF(plot.Left + i / 100f * plot.Width, plot.Bottom - (float)samples[i] * plot.Height);
             }
             using (var pen = new Pen(ModernTheme.Accent, 2.5f)) g.DrawLines(pen, points);
+            if (!HasNodes(shown.Curve))
+                using (var fill = new SolidBrush(ModernTheme.Surface))
+                using (var edge = new Pen(ModernTheme.AccentHover, 1.5f))
+                    foreach (int index in new[] { 0, 25, 50, 75, 100 })
+                    { PointF point = points[index]; g.FillEllipse(fill, point.X - 4, point.Y - 4, 8, 8); g.DrawEllipse(edge, point.X - 4, point.Y - 4, 8, 8); }
             if (shown.Curve == CurveKind.Bezier) DrawHandles(g, shown);
             if (HasNodes(shown.Curve) && shown.CustomPoints != null)
             {
@@ -151,10 +169,34 @@ namespace Tk75.App
                         g.FillEllipse(active ? selected : endpoint ? fixedPoint : normal, plot.Left + (float)point.X * plot.Width - radius, plot.Bottom - (float)point.Y * plot.Height - radius, radius * 2, radius * 2);
                     }
             }
+            DrawInspectedPoint(g, shown, points);
             string hint = IsEditing ? UiText.Get("Loslassen: übernehmen · Esc: abbrechen", "Release: apply · Esc: cancel") : shown.Curve == CurveKind.Bezier ?
                 UiText.Get("Punkt wählen → Griffe ziehen · Rechtsklick auf Griff: automatisch", "Select a point → drag handles · Right-click handle: automatic") :
                 UiText.Get("Punkt setzen oder ziehen · Rechtsklick: löschen", "Add or drag a point · Right-click: delete");
             TextRenderer.DrawText(g, hint, Font, new Rectangle(8, Height - 24, Math.Max(1, Width - 16), 20), ModernTheme.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        }
+        void DrawInspectedPoint(Graphics graphics, SignalSettings shown, PointF[] points)
+        {
+            CurvePoint selected = null;
+            int index = IsEditing ? selectedPoint : hoveredPart == 0 ? hovered : selectedPoint;
+            if (HasNodes(shown.Curve) && shown.CustomPoints != null && index >= 0 && index < shown.CustomPoints.Count) selected = shown.CustomPoints[index];
+            if (selected == null && !inspectedInput.HasValue) return;
+            int sample = inspectedInput.HasValue ? (int)Math.Round(inspectedInput.Value * 100) : 0;
+            PointF position = selected == null ? points[sample] : PlotPoint(selected); RectangleF plot = Plot;
+            using (var guide = new Pen(ModernTheme.Muted, 1))
+            { guide.DashStyle = System.Drawing.Drawing2D.DashStyle.Dot; graphics.DrawLine(guide, plot.Left, position.Y, position.X, position.Y); graphics.DrawLine(guide, position.X, position.Y, position.X, plot.Bottom); }
+            using (var edge = new Pen(ModernTheme.AccentHover, 1.5f)) graphics.DrawEllipse(edge, position.X - 7, position.Y - 7, 14, 14);
+            double x = selected == null ? sample / 100.0 : selected.X, y = selected == null ? responseSamples[sample] : selected.Y;
+            string label = (x * 100).ToString("0.#") + " % → " + (y * 100).ToString("0.#") + " %";
+            Size size = TextRenderer.MeasureText(label, Font, Size.Empty, TextFormatFlags.NoPadding);
+            int width = Math.Min(Width - 12, size.Width + 10);
+            int left = Math.Max(6, Math.Min(Width - width - 6, (int)position.X - width / 2));
+            int top = (int)position.Y - size.Height - 13;
+            if (top < plot.Top) top = (int)position.Y + 11;
+            var area = new Rectangle(left, Math.Min(Height - 46, top), width, size.Height + 4);
+            using (var fill = new SolidBrush(ModernTheme.SurfaceAlt)) graphics.FillRectangle(fill, area);
+            TextRenderer.DrawText(graphics, label, Font, area, ModernTheme.Foreground,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
         }
         void DrawHandles(Graphics graphics, SignalSettings shown)
         {
@@ -204,14 +246,15 @@ namespace Tk75.App
             if (!IsEditing || location == lastMouse) return;
             lastMouse = location; RectangleF plot = Plot;
             edit.Move(originX + (location.X - dragOrigin.X) / (double)plot.Width, originY - (location.Y - dragOrigin.Y) / (double)plot.Height);
-            Invalidate();
+            UpdateTip(); Invalidate();
         }
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
             if (IsEditing) { MovePreview(e.Location); return; }
             var candidate = NewEditor(); int hit; int part = Hit(candidate, e.Location, out hit);
-            if (hit != hovered || part != hoveredPart) { hovered = hit; hoveredPart = part; UpdateTip(); Invalidate(); }
+            double? inspected = settings != null && Plot.Contains(e.Location) ? (double?)Math.Round((e.X - Plot.Left) / Plot.Width, 2) : null;
+            if (hit != hovered || part != hoveredPart || inspected != inspectedInput) { hovered = hit; hoveredPart = part; inspectedInput = inspected; UpdateTip(); Invalidate(); }
             bool movable = candidate != null && hit > 0 && hit < candidate.Preview.Count - 1;
             Cursor = part > 0 || movable || part == 0 && settings != null && settings.Curve == CurveKind.Bezier ? Cursors.Hand : settings != null && Plot.Contains(e.Location) ? Cursors.Cross : Cursors.Default;
         }
@@ -247,10 +290,12 @@ namespace Tk75.App
                 hovered == 0 || HasNodes(settings.Curve) && settings.CustomPoints != null && hovered == settings.CustomPoints.Count - 1 ?
                     UiText.Get("Die Endpunkte (0 %, 0 %) und (100 %, 100 %) bleiben fest.", "Endpoints (0%, 0%) and (100%, 100%) stay fixed.") :
                     UiText.Get("Klicken: eigenen Punkt setzen. Punkt ziehen: verschieben. Rechtsklick direkt auf einen inneren Punkt: löschen. Die Kurve bleibt ansteigend.", "Click to add a custom point. Drag a point to move it. Right-click directly on an interior point to delete it. The curve stays nondecreasing.");
+            text += "\n\n" + UiText.Get("Horizontal: Eingabe nach den Totbereichen. Vertikal: Ergebnis der Kurvenform, jeweils 0–100 %. Ausgabegrenzen, Ausgabestärke und Filter werden anschließend berechnet. Die Markierungen bei 25/50/75 % helfen beim Vergleichen; darüberfahren zeigt die Werte.",
+                "Horizontal: input after deadzones. Vertical: curve result, both 0–100%. Output range, output strength and filters are applied afterward. The 25/50/75% markers help compare shapes; hover to inspect values.");
             if (text != lastTip) { lastTip = text; tips.SetToolTip(this, text); }
         }
         protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); UpdateTip(); }
-        protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); if (!IsEditing) { hovered = hoveredPart = -1; UpdateTip(); Invalidate(); } }
+        protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); if (!IsEditing) { hovered = hoveredPart = -1; inspectedInput = null; UpdateTip(); Invalidate(); } }
         protected override void OnMouseCaptureChanged(EventArgs e) { base.OnMouseCaptureChanged(e); if (!Capture && !finishing && IsEditing) { CancelEdit(); UpdateTip(); } }
         protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); if (IsEditing) { CancelEdit(); UpdateTip(); } }
         protected override void OnEnabledChanged(EventArgs e) { base.OnEnabledChanged(e); if (!Enabled) CancelEdit(); }

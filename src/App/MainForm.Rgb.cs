@@ -110,7 +110,13 @@ namespace Tk75.App
                 }
                 catch (Exception ex) { lock (work.Gate) { work.Error = BoundedRgbError(ex); work.State = 2; work.Busy = false; work.Stopped = true; } }
             }
-            if (RgbOverrideReady)
+            // The shortcut editor temporarily unregisters its hotkeys. Keep the
+            // applied color plan while editing instead of restoring the original
+            // picture and writing the same marker again when the dialog closes.
+            // Identity/readiness checks above and worker restore requests remain
+            // active; only new ordinary color plans pause in the modal editor.
+            bool rgbReady = RgbOverrideReady;
+            if (rgbReady && !modeShortcutDialogOpen)
             {
                 RgbBackupWork work = rgbBackupWork;
                 Profile profile = UiReadProfile;
@@ -145,7 +151,7 @@ namespace Tk75.App
                     }
                 }
             }
-            else rgbPlanCache = null;
+            else if (!rgbReady) rgbPlanCache = null;
             string status = RgbOverrideStatusText;
             // Render the same captured worker state that is compared here. A
             // no-op transaction can finish between this read and UI refresh.
@@ -661,9 +667,11 @@ namespace Tk75.App
             if (rgbClosePending) return true;
             RgbBackupWork work = rgbBackupWork; ReaderSession source = reader;
             bool restoreLighting = work != null && source != null && Object.ReferenceEquals(work.Reader, source);
+            SetClosePhase(2, restoreLighting ? ShutdownPhaseState.Running : ShutdownPhaseState.Completed);
             System.Threading.Tasks.Task connections = runtime.CancelPendingConnections();
             if (!restoreLighting && connections.IsCompleted) return false;
             rgbClosePending = true; Enabled = false; uiTimer.Stop(); StopDeviceDiscovery();
+            SetClosePhase(3, ShutdownPhaseState.Running);
             ThreadPool.QueueUserWorkItem(delegate
             {
                 bool restored = false;
@@ -677,11 +685,16 @@ namespace Tk75.App
                             if (work.Original != null && (work.Applied || work.RecoveryRequired || !work.Stopped))
                                 restoreFailure = work.Error ?? "Lighting restoration did not finish before closing.";
                     if (restoreFailure != null) store.Event("Lighting restoration incomplete; original backup retained: " + restoreFailure);
+                    SetClosePhase(2, restoreFailure == null ? ShutdownPhaseState.Completed : ShutdownPhaseState.Failed);
                     bool connectionsFinished = connections.Wait(Math.Max(0, NormalCloseTimeoutMilliseconds - (int)elapsed.ElapsedMilliseconds));
-                    if (!connectionsFinished) store.Event("Pending controller cleanup did not finish before closing; startup recovery remains unconfirmed.");
+                    if (!connectionsFinished)
+                    {
+                        SetClosePhase(3, ShutdownPhaseState.Failed);
+                        store.Event("Pending controller cleanup did not finish before closing; startup recovery remains unconfirmed.");
+                    }
                     restored = restoreFailure == null && connectionsFinished;
                 }
-                catch (Exception error) { LogShutdownFailure("Lighting restoration incomplete; original backup retained", error); }
+                catch (Exception error) { SetClosePhase(2, ShutdownPhaseState.Failed); LogShutdownFailure("Lighting restoration incomplete; original backup retained", error); }
                 finally
                 {
                     try { BeginInvoke((Action)delegate { if (closing || IsDisposed) return; rgbCloseSucceeded = restored; rgbCloseFinished = true; rgbClosePending = false; Enabled = true; Close(); }); }

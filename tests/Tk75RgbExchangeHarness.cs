@@ -13,8 +13,9 @@ public static class Tk75RgbExchangeHarness
     {
         public byte[] Settings = new byte[64], Picture = new byte[384];
         public byte Profile = 2;
-        public int Reads, Writes, FailWriteAt;
+        public int Reads, Writes, FailWriteAt, FailReadAt;
         public bool IgnoreWrites;
+        public Func<int, byte[], byte[]> AlterRead;
         public readonly List<byte> Opcodes = new List<byte>();
         public Device()
         {
@@ -25,12 +26,13 @@ public static class Tk75RgbExchangeHarness
         public Tk75RgbSnapshot Snapshot() { return new Tk75RgbSnapshot(3591, Profile, 4, Settings, Picture); }
         public byte[] Read(byte[] request)
         {
-            Reads++; byte[] reply = new byte[65];
+            Reads++; if (Reads == FailReadAt) throw new IOException("Synthetic read interrupted.");
+            byte[] reply = new byte[65];
             if (request[1] == 0x84) { reply[1] = 0x84; reply[2] = Profile; }
             else if (request[1] == 0x87) Buffer.BlockCopy(Settings, 0, reply, 1, 64);
             else if (request[1] == 0x8c && request[2] == 4 && request[4] < 6) Buffer.BlockCopy(Picture, request[4] * 64, reply, 1, 64);
             else throw new Exception("Unknown fake GET.");
-            return reply;
+            return AlterRead == null ? reply : AlterRead(Reads, reply);
         }
         public void Write(byte[] request)
         {
@@ -104,13 +106,40 @@ public static class Tk75RgbExchangeHarness
         catch (IOException) { identityFailed = true; }
         Check(identityFailed && device.Reads == 0 && device.Writes == 0, "Unavailable identity preserves the backup without RGB traffic.");
     }
+    static void KnownReadFailureChecks()
+    {
+        // The original/expected/desired guard survives any read failure before
+        // or after the write burst. A lost confirmation never fabricates success.
+        for (int failure = 1; failure <= 20; failure++)
+        {
+            Device device = new Device(); Tk75RgbSnapshot original = device.Snapshot(), desired = Paint(original, true);
+            var guard = new Tk75RgbRestoreGuard(); guard.Track(original, original, desired);
+            device.FailReadAt = failure; bool failed = false;
+            try { Tk75RgbExchange.Execute(original, desired, device.Read, device.Write); }
+            catch (IOException) { failed = true; }
+            Check(failed && device.Reads == failure, "The requested pre/post verification failure is reported immediately.");
+            Check(device.Writes == (failure <= 10 ? 0 : 8), "No write occurs before full expected-state confirmation, and failed target confirmation never triggers unjournaled rollback.");
+            device.FailReadAt = 0;
+            Tk75RgbSnapshot restored = guard.Restore(delegate { return 3591; }, device.Read, device.Write);
+            Check(Tk75RgbExchange.Equivalent(restored, original), "The armed original-state guard restores safely after failed verification at GET " + failure + ".");
+        }
+        foreach (int phase in new[] { 1, 2, 3, 8, 9, 10, 11, 12, 13, 18, 19, 20 })
+        {
+            Device device = new Device(); Tk75RgbSnapshot original = device.Snapshot(), desired = Paint(original, true);
+            int changedCall = phase;
+            device.AlterRead = delegate(int call, byte[] reply)
+            { if (call == changedCall) reply[(call == 1 || call == 9 || call == 11 || call == 19) ? 2 : (call == 2 || call == 10 || call == 12 || call == 20) ? 4 : 64] ^= 1; return reply; };
+            Reject(delegate { Tk75RgbExchange.Execute(original, desired, device.Read, device.Write); }, "Profile, settings and picture drift cannot be accepted at either transaction bracket.");
+            Check(device.Writes == (phase <= 10 ? 0 : 8), "State drift cannot bypass comparison or cause an unjournaled restore.");
+        }
+    }
     public static int Run()
     {
         checks = 0;
         Device device = new Device(); Tk75RgbSnapshot original = device.Snapshot(); Tk75RgbSnapshot painted = Paint(original, true);
         Tk75RgbSnapshot actual = Tk75RgbExchange.Execute(original, painted, device.Read, device.Write);
         Check(Tk75RgbExchange.Equivalent(actual, painted), "Full update returns exactly confirmed target.");
-        Check(device.Writes == 8 && device.Reads == 36 && device.Opcodes[7] == 7, "Full update verifies before/after and selects mode after all seven image chunks.");
+        Check(device.Writes == 8 && device.Reads == 20 && device.Opcodes[7] == 7, "Full update verifies every byte before/after in twenty GETs and selects mode after all seven image chunks.");
         for (int i = 0; i < 7; i++) Check(device.Opcodes[i] == 12, "Picture precedes mode.");
         for (int i = 378; i < 384; i++) Check(actual.Picture[i] == original.Picture[i], "Unverified final six bytes never changed.");
         int before = device.Writes; actual = Tk75RgbExchange.Execute(painted, original, device.Read, device.Write);
@@ -118,7 +147,7 @@ public static class Tk75RgbExchangeHarness
 
         device = new Device(); original = device.Snapshot(); device.Settings[63] = 99;
         actual = Tk75RgbExchange.Execute(original, original, device.Read, device.Write);
-        Check(device.Writes == 0 && device.Reads == 18 && actual.RawSettings[63] == 99, "No-op does not write, yet validates current state and returns current reserved bytes.");
+        Check(device.Writes == 0 && device.Reads == 10 && actual.RawSettings[63] == 99, "No-op does not write, yet validates current state and returns current reserved bytes.");
         device = new Device(); original = device.Snapshot(); painted = Paint(original, false);
         actual = Tk75RgbExchange.Execute(original, painted, device.Read, device.Write);
         Check(device.Writes == 7 && device.Opcodes.TrueForAll(delegate(byte opcode) { return opcode == 12; }), "Single-key color change does not rewrite mode.");
@@ -160,9 +189,10 @@ public static class Tk75RgbExchangeHarness
         Check(device.Writes == 8, "Unconfirmed update has no hidden rollback writes.");
         device = new Device(); original = device.Snapshot(); painted = Paint(original, true); device.FailWriteAt = 2;
         bool interrupted = false; try { Tk75RgbExchange.Execute(original, painted, device.Read, device.Write); } catch (IOException) { interrupted = true; }
-        Check(interrupted && device.Writes == 2 && device.Reads == 18, "Interrupted transfer stops immediately without claiming confirmation or automatic rollback.");
+        Check(interrupted && device.Writes == 2 && device.Reads == 10, "Interrupted transfer stops immediately without claiming confirmation or automatic rollback.");
         Check(device.Settings[1] == 4, "Failure during picture transfer does not proceed to mode switch.");
         AutomaticRestoreChecks();
+        KnownReadFailureChecks();
         return checks;
     }
 }

@@ -28,7 +28,7 @@ namespace Tk75.App
         readonly SleekComboBox pasteMode = new SleekComboBox();
         readonly SleekComboBox preset = new SleekComboBox();
         readonly Label deviceStatus = new Label(), outputStatus = new Label(), selectionStatus = new Label(), liveStatus = new Label();
-        readonly DataGridView keys = Grid(), bindings = Grid(true), settings = Grid(), monitor = Grid();
+        readonly DataGridView keys = Grid(), bindings = Grid(true), settings = CreateCurveSettingsGrid(), monitor = Grid();
         readonly VisualKeyboard keyboard = new VisualKeyboard();
         readonly CurveCanvas curve = new CurveCanvas();
         readonly Timer uiTimer = new Timer { Interval = 33 };
@@ -172,7 +172,7 @@ namespace Tk75.App
                 for (int i = 0; i < 256; i++) keys.Rows[i].Visible = showAll.Checked || known.Contains(i);
                 foreach (int i in selection) if (keys.Rows[i].Visible) keys.Rows[i].Selected = true;
             }
-            finally { updating = false; } HighlightKeys(); RefreshKeyControllerAssignments();
+            finally { updating = false; } HighlightKeys(); RefreshKeyControllerAssignments(); RefreshKeyBehaviorAnnotations();
         }
         void HighlightKeys()
         {
@@ -197,33 +197,37 @@ namespace Tk75.App
         }
         void RefreshSettings()
         {
-            string[] ids = SelectedSettingsBindings(); var chosen = history.Current.Bindings.Where(b => ids.Contains(b.BindingId)).ToArray(); updating = true;
+            ((CurveSettingsGrid)settings).CancelSlider();
+            string selectedProperty = settings.CurrentRow == null ? null : settings.CurrentRow.Tag as string;
+            int selectedColumn = settings.CurrentCell == null ? 1 : settings.CurrentCell.ColumnIndex;
+            int firstVisible = settings.FirstDisplayedScrollingRowIndex;
+            string[] ids = SelectedSettingsBindings(); var chosen = history.Current.Bindings.Where(b => ids.Contains(b.BindingId)).ToArray(); bool previousUpdating = updating; updating = true;
             try
             {
                 settings.Rows.Clear(); foreach (var property in propertyLabels)
                 {
                     var field = typeof(SignalSettings).GetField(property.Key); string[] values = chosen.Select(b => Convert.ToString(field.GetValue(b.Processing), CultureInfo.InvariantCulture)).Distinct().ToArray();
-                    string caption = UiText.Get(property.Value);
+                    string caption = CurveSettingCaption(property.Key);
                     int index = settings.Rows.Add(caption, values.Length == 0 ? "—" : values.Length == 1 ? values[0] : "Gemischt"); settings.Rows[index].Tag = property.Key;
-                    if (property.Key == "Hysteresis") settings.Rows[index].Cells[0].ToolTipText = UiText.Get("Schaltabstand verhindert Flattern am Auslösepunkt. Für schnelles erneutes Auslösen nutze Verhalten der Taste.", "Switch gap prevents flicker near the actuation point. Use Key behavior for rapid retriggering.");
-                    if (property.Key == "TopDeadzone") settings.Rows[index].Cells[0].ToolTipText = Tr("Kleine Bewegungen nahe der losgelassenen Position bleiben ohne Ausgabe. 0,05 entspricht 5 % des kalibrierten Weges.", "Small movements near the released position produce no output. 0.05 means 5% of calibrated travel.");
-                    if (property.Key == "BottomDeadzone") settings.Rows[index].Cells[0].ToolTipText = Tr("Die volle Ausgabe wird schon etwas vor dem Anschlag erreicht. 0,05 entspricht den letzten 5 % des Weges.", "Full output is reached slightly before bottoming out. 0.05 means the last 5% of travel.");
                     if (property.Key == "Curve")
                     {
                         var cell = new DataGridViewComboBoxCell { DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox, FlatStyle = FlatStyle.Flat, ValueMember = "Value", DisplayMember = "Text" };
                         cell.DataSource = new[] { "—", "Gemischt", "Linear", "Exponential", "Logarithmic", "Smoothstep", "Custom", "Bezier" }.Select(v => new SettingOption(v)).ToArray(); cell.Value = values.Length == 0 ? "—" : values.Length == 1 ? values[0] : "Gemischt"; settings.Rows[index].Cells[1] = cell;
-                        settings.Rows[index].Cells[0].ToolTipText = Tr("Glatt (Bézier) rundet die Übergänge ab. Wähle im Diagramm einen Punkt und ziehe seine Griffe für die Krümmung.", "Smooth (Bézier) rounds the transitions. Select a point in the graph and drag its handles to adjust the bend.");
                     }
+                    RefreshCurveSettingRow(settings.Rows[index], property.Key, chosen, values);
                 }
+                settings.Columns[2].HeaderText = Tr("Regler", "Adjust");
+                foreach (DataGridViewRow row in settings.Rows) if ((string)row.Tag == selectedProperty) settings.CurrentCell = row.Cells[selectedColumn];
+                if (firstVisible >= 0 && firstVisible < settings.Rows.Count) settings.FirstDisplayedScrollingRowIndex = firstVisible;
                 curve.UpdateCurve(chosen.Length == 0 ? null : chosen[0].Processing, chosen.Length > 1 && chosen.Skip(1).Any(b => !SameCurve(chosen[0].Processing, b.Processing)),
-                    (profilePath ?? "") + "\n" + runtime.SelectedControllerId + "\n" + string.Join("\n", ids.OrderBy(id => id, StringComparer.Ordinal).ToArray()));
+                    CurveSelectionContext(ids));
             }
-            finally { updating = false; }
+            finally { updating = previousUpdating; }
         }
         static bool SameCurve(SignalSettings a, SignalSettings b) { return a.Curve == b.Curve && a.Exponent == b.Exponent && CurvePointEditing.Same(a.CustomPoints, b.CustomPoints); }
         void EditProperty(int row)
         {
-            if (row < 0) return; string property = (string)settings.Rows[row].Tag; string value = Convert.ToString(settings.Rows[row].Cells[1].Value, CultureInfo.InvariantCulture);
+            if (row < 0 || row >= settings.Rows.Count) return; string property = (string)settings.Rows[row].Tag; string value = Convert.ToString(settings.Rows[row].Cells[1].Value, CultureInfo.InvariantCulture);
             // A formatted placeholder may come back from the text editor when
             // the user leaves a mixed cell without supplying a new value.
             if (value == "—" || value == "Gemischt" || value == UiText.Get("Gemischt")) { RefreshSettings(); return; }
@@ -287,6 +291,7 @@ namespace Tk75.App
             }
             keyboardSuppression.UpdateEligibility(new SuppressionKey[0], false, true); runtime.Configure(history.Current, sharedPressureRange.Resolve());
             ApplyProfileInputModePreference(); RefreshModeShortcutRegistration(); ApplyKeyboardSuppressionPreference(); SyncOutputMode();
+            RefreshKeyBehaviorAnnotations();
         }
         void Commit(Profile profile)
         {
@@ -449,7 +454,7 @@ namespace Tk75.App
         }
         protected override void WndProc(ref Message message)
         {
-            OnSystemSessionEnd(message);
+            if (HandleSystemSessionMessage(ref message)) return;
             if (message.Msg == 0x0312 && message.WParam.ToInt32() == DisableHotkey && !deviceDetachInProgress && IsCurrentShortcutMessage(message, true)) { CancelStartupReconnect(); runtime.Disable("Abschalter – Controller aus"); RefreshKeyboardSuppression(false); }
             if (message.Msg == 0x0312 && message.WParam.ToInt32() == ModeHotkey && !deviceDetachInProgress && IsCurrentShortcutMessage(message, false)) Attempt(ToggleInputMode);
             if (message.Msg == 0x0219) OnDeviceChange(message);

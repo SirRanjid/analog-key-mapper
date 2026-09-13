@@ -217,6 +217,7 @@ namespace Tk75.App
             var pasteButton = new SleekButton { Text = "Einfügen", Dock = DockStyle.Fill }; pasteButton.Click += delegate { Attempt(PasteSettings); }; signalBar.Controls.Add(pasteButton, 2, 1); editorArea.Controls.Add(signalBar, 0, 0);
             var curveHost = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty }; editorArea.Controls.Add(curveHost, 0, 1);
             settings.MultiSelect = false; settings.SelectionMode = DataGridViewSelectionMode.CellSelect; settings.ReadOnly = false; settings.Columns.Add("property", "Parameter"); settings.Columns.Add("value", "Wert"); settings.Columns[0].ReadOnly = true;
+            BuildCurveSettingsSliders();
             settings.CellEndEdit += delegate(object sender, DataGridViewCellEventArgs e) { if (!updating && e.ColumnIndex == 1) Attempt(delegate { EditProperty(e.RowIndex); }); }; editorArea.Controls.Add(settings, 0, 2);
             settings.CellFormatting += delegate(object sender, DataGridViewCellFormattingEventArgs e) { if (e.ColumnIndex == 1 && e.Value as string == "Gemischt") { e.Value = UiText.Get("Gemischt"); e.FormattingApplied = true; } };
             curve.Dock = DockStyle.None; curve.EditCompleted += ApplyCurve; curveHost.Controls.Add(curve);
@@ -268,7 +269,7 @@ namespace Tk75.App
             if (samples.Length == 0) { if (pressureCaptureReader == null) pressureRange.MeasuredValue = null; SetPressureDisplay(0, reader == null ? Tr("Zum Messen oben verbinden", "Connect above to measure") : !reader.IsReading ? Tr("Druckzugriff noch nicht bereit", "Pressure input is not ready") : Tr("Warte auf Druckdaten …", "Waiting for pressure data …")); return; }
             var sample = samples[0];
             if (sample.Stale) { if (pressureCaptureReader == null) pressureRange.MeasuredValue = null; SetPressureDisplay(0, string.Format(Tr("Letzter Wert: {0} · veraltet", "Last value: {0} · stale"), sample.RawValue)); return; }
-            double amount = sharedPressureRange.Depth(sample.RawValue);
+            double amount = sharedPressureRange.Depth(selected[0], sample.RawValue);
             SetPressureDisplay((int)Math.Round(amount * 1000), string.Format(Tr("Druck · {0} · Rohwert {1}", "Pressure · {0} · raw {1}"), amount.ToString("P0"), sample.RawValue));
             if (pressureCaptureReader == null) pressureRange.MeasuredValue = sample.RawValue;
         }
@@ -313,7 +314,7 @@ namespace Tk75.App
             foreach (int index in LayoutIndices())
             {
                 KeyStateSnapshot sample; bool valid = current.TryGetValue(index, out sample) && sample.Known && !sample.Stale;
-                double? depth = valid ? (double?)sharedPressureRange.Depth(sample.RawValue) : null; bool estimated = sharedPressureRange.IsDefault;
+                double? depth = valid ? (double?)sharedPressureRange.Depth(index, sample.RawValue) : null; bool estimated = sharedPressureRange.IsDefaultForKey(index);
                 keyboard.UpdateKeyState(index, mapped.Contains(index), valid && depth.HasValue && depth.Value > 0, depth, estimated);
             }
         }

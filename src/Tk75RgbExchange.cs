@@ -75,7 +75,7 @@ namespace Tk75.Diagnostics
             Validate(expected, desired);
             if (read == null) throw new ArgumentNullException("read");
             if (write == null) throw new ArgumentNullException("write");
-            Tk75RgbSnapshot current = Tk75RgbProtocol.ReadSnapshot(expected.ModelId, expected.Layer, read);
+            Tk75RgbSnapshot current = Tk75RgbProtocol.VerifyKnownSnapshot(expected, read);
             if (!Equivalent(current, expected)) throw new InvalidDataException("Keyboard lighting differs from the expected saved state; nothing was written.");
             bool pictureChanged = !Tk75RgbProtocol.Equal(current.Picture, desired.Picture);
             bool settingsChanged = !SameSettings(current.RawSettings, desired.RawSettings);
@@ -85,7 +85,7 @@ namespace Tk75.Diagnostics
             if (pictureChanged)
                 foreach (byte[] report in Tk75RgbProtocol.BuildPictureWrites(desired.Layer, desired.Picture)) write(report);
             if (settingsChanged) write(Tk75RgbProtocol.BuildSettingsWrite(desired.RawSettings));
-            Tk75RgbSnapshot confirmed = Tk75RgbProtocol.ReadSnapshot(desired.ModelId, desired.Layer, read);
+            Tk75RgbSnapshot confirmed = Tk75RgbProtocol.VerifyKnownSnapshot(desired, read);
             if (!Equivalent(confirmed, desired)) throw new InvalidDataException("RGB update was not confirmed by complete readback; keep the recovery backup.");
             return confirmed;
         }

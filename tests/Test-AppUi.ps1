@@ -5,7 +5,7 @@ MainForm(..., preview:true). Eigenes Fenster offscreen, keine fremde Anwendung,
 keine Hardware und kein Controller. Bei Windows-Blockade kein Umgehungsweg.
 #>
 [CmdletBinding()]
-param([switch] $KeepArtifacts, [ValidateRange(5,120)] [int] $TimeoutSeconds = 80)
+param([switch] $KeepArtifacts, [switch] $CompileOnly, [ValidateRange(5,120)] [int] $TimeoutSeconds = 80)
 if ($env:CI -eq 'true') { $KeepArtifacts = $true }
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -33,8 +33,12 @@ try {
     $arguments += (Join-Path $PSScriptRoot 'MappingSummaryUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'SocdDragUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'PressureRangeSliderUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'ThemeControlsUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'KeyAnnotationUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'CurveSettingsSliderUiHarness.cs')
     & $compiler @arguments
     if ($LASTEXITCODE -ne 0) { throw 'App-UI-Harness konnte nicht kompiliert werden.' }
+    if ($CompileOnly) { $success = $true; Write-Output 'App UI harness compiled; no windows or hardware were opened.'; return }
     $stdout = Join-Path $testFolder 'stdout.txt'; $stderr = Join-Path $testFolder 'stderr.txt'
     # Only this freshly built test executable, never the app/monitor executable.
     $testProcess = Start-Process -FilePath $executable -ArgumentList ('"' + $testFolder + '"') -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr

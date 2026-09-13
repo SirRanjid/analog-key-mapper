@@ -72,6 +72,9 @@ namespace Tk75.Tests
             {
                 Root = root;
                 Form = new MainForm(root, true) { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual, Location = new Point(-30000, -30000) };
+                // Exercise bounded waits without consuming the production 25s
+                // RGB/helper allowance for every intentionally blocked fixture.
+                Set(Form, "systemShutdownWaitMilliseconds", 3000);
                 Form.StartInBackground();
                 Controller = new FakeController();
                 var runtime = new MultiControllerSession(delegate { return Controller; });
@@ -163,7 +166,7 @@ namespace Tk75.Tests
                     var watch = Stopwatch.StartNew();
                     Check(!Closing(fixture.Form, CloseReason.WindowsShutDown).Cancel, "A blocked output cannot veto Windows shutdown.");
                     Check(entered.WaitOne(0), "The test actually blocks inside output neutralization.");
-                    Check(watch.ElapsedMilliseconds >= 2500 && watch.ElapsedMilliseconds < 4500, "The OS handler waits only its single three-second budget.");
+                    Check(watch.ElapsedMilliseconds >= 2500 && watch.ElapsedMilliseconds < 4500, "The OS handler respects the injected three-second test budget.");
                     Check(Field<bool>(fixture.Form, "systemShutdownTimedOut"), "Incomplete work is reported as timed out, never as confirmed cleanup.");
                     work = Field<ShutdownWork>(fixture.Form, "systemShutdownWork");
                     Check(File.Exists(Field<string>(fixture.Form, "profilePath")), "The independent profile lane still writes while output cleanup is blocked.");
@@ -183,10 +186,13 @@ namespace Tk75.Tests
                 int completed = 0;
                 Action complete = delegate { if (Interlocked.Increment(ref completed) == 2) independentDone.Set(); };
                 var work = new ShutdownWork(delegate { release.WaitOne(); }, delegate { complete(); throw new IOException("Synthetic save failure"); }, complete);
+                Check(!work.Wait(0) && work.States.All(state => state == ShutdownPhaseState.Pending), "Unstarted cleanup exposes pending phases rather than invented completion.");
                 work.Start();
                 try { Check(independentDone.WaitOne(2000), "Other cleanup lanes run even when a peer blocks or throws."); Check(!work.Wait(50), "One blocked lane does not report overall success."); }
                 finally { release.Set(); work.Wait(1000); }
                 Check(work.Errors.Length == 1, "Background failure is retained for diagnostics without crossing onto the UI thread.");
+                Check(work.States[0] == ShutdownPhaseState.Completed && work.States[1] == ShutdownPhaseState.Failed && work.States[2] == ShutdownPhaseState.Completed,
+                    "Progress distinguishes actual success from a failed completed lane.");
             }
         }
 
@@ -220,11 +226,21 @@ namespace Tk75.Tests
         {
             using (var fixture = new Fixture(directory))
             {
-                Check(!Closing(fixture.Form, CloseReason.WindowsShutDown).Cancel, "The application's shutdown query is accepted.");
+                object[] query = new object[] { Message.Create(fixture.Form.Handle, 0x0011, IntPtr.Zero, IntPtr.Zero) };
+                var elapsed = Stopwatch.StartNew();
+                typeof(MainForm).GetMethod("WndProc", Private).Invoke(fixture.Form, query);
+                Check(((Message)query[0]).Result == new IntPtr(1) && elapsed.ElapsedMilliseconds < 1000, "A synthetic session query is promptly accepted before any cleanup.");
+                Check(Field<ShutdownWork>(fixture.Form, "systemShutdownWork") == null && fixture.Controller.Active && fixture.Controller.DisposeCalls == 0,
+                    "The query leaves controller resources and the editor usable until Windows commits the session end.");
                 Message message = Message.Create(fixture.Form.Handle, 0x0016, IntPtr.Zero, IntPtr.Zero);
                 typeof(MainForm).GetMethod("WndProc", Private).Invoke(fixture.Form, new object[] { message });
                 Application.DoEvents();
-                Check(fixture.Form.IsDisposed, "If Windows later cancels logoff, the already-stopped app closes instead of leaving an unusable editor.");
+                Check(!fixture.Form.IsDisposed && !Field<bool>(fixture.Form, "closing") && fixture.Controller.Active,
+                    "Cancelling logoff after the query preserves the live application.");
+                message = Message.Create(fixture.Form.Handle, 0x0016, new IntPtr(1), IntPtr.Zero);
+                typeof(MainForm).GetMethod("WndProc", Private).Invoke(fixture.Form, new object[] { message });
+                Check(Field<ShutdownWork>(fixture.Form, "systemShutdownWork") != null && fixture.Controller.DisposeCalls == 1,
+                    "Only a committed synthetic ENDSESSION starts and waits for actual cleanup.");
             }
         }
 
@@ -270,6 +286,9 @@ namespace Tk75.Tests
                     var elapsed = Stopwatch.StartNew(); fixture.Form.Close();
                     Check(elapsed.ElapsedMilliseconds < 1000 && !fixture.Form.IsDisposed && Field<bool>(fixture.Form, "rgbClosePending"),
                         "Normal Close remains responsive and waits asynchronously for a candidate even with no RGB worker.");
+                    var progress = Field<CloseProgressForm>(fixture.Form, "closeProgress");
+                    Check(progress != null && progress.Visible && progress.Left < -10000 && Field<SleekProgressBar>(progress, "progress").Value < 4,
+                        "Pending normal cleanup shows an offscreen progress window and cannot claim all phases are complete.");
                     Check(attempt.IsCanceled && fixture.Controller.DisposeCalls == 0,
                         "Normal close cancels the attempt before disposing the session that owns its cleanup.");
                     fixture.Form.Close();

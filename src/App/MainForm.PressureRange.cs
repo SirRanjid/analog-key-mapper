@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
@@ -10,15 +11,18 @@ namespace Tk75.App
     public sealed partial class MainForm
     {
         readonly PressureRangeSlider pressureRange = new PressureRangeSlider();
-        readonly NumericUpDown pressureScaleMaximum = new NumericUpDown { Minimum = 1, Maximum = 65535, Value = 385, DecimalPlaces = 0, Dock = DockStyle.Fill, Margin = new Padding(3, 0, 3, 0) };
+        readonly NumericUpDown pressureScaleMaximum = new SleekNumericUpDown { Minimum = 1, Maximum = 65535, Value = 385, DecimalPlaces = 0, Dock = DockStyle.Fill, Margin = new Padding(3, 0, 3, 0) };
         readonly Button calibrateRange = new SleekButton { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, AccessibleRole = AccessibleRole.PushButton };
         readonly Label pressureScaleLabel = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
         KeyboardPressureRange sharedPressureRange = new KeyboardPressureRange(null);
         CalibrationDocument reportedLegacyPressureRange;
         CalibrationDocument displayedPressureRange;
+        int[] displayedPressureKeys = new int[0];
         bool updatingPressureRange;
         readonly object pressureCaptureGate = new object();
         PressureRangeCapture pressureCapture;
+        Dictionary<int, PressureRangeCapture> pressureCaptureCandidates;
+        int[] pressureCaptureKeys = new int[0];
         ReaderSession pressureCaptureReader;
         int pressureCaptureKey = -1;
 
@@ -37,10 +41,10 @@ namespace Tk75.App
             pressureScaleMaximum.ValueChanged += delegate {
                 if (updatingPressureRange) return;
                 CancelPressureCapture();
-                double maximum = (double)pressureScaleMaximum.Value;
-                // Adjust the visual scale immediately; persistence happens once
-                // on leaving the editor or pressing Enter, not on each digit.
-                pressureRange.SetRange(0, maximum, Math.Min(pressureRange.SelectedMinimum, Math.Max(0, maximum - 1)), Math.Min(pressureRange.SelectedMaximum, maximum));
+                // The scale is a visual limit. Lowering it never changes a key's
+                // endpoints, including endpoints on currently unselected keys.
+                double maximum = Math.Max(sharedPressureRange.MaximumEndpoint, (double)pressureScaleMaximum.Value);
+                pressureRange.SetRange(0, maximum, pressureRange.SelectedMinimum, pressureRange.SelectedMaximum);
             };
             pressureScaleMaximum.Leave += delegate { CommitPressureScale(); };
             pressureScaleMaximum.KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { CommitPressureScale(); e.Handled = e.SuppressKeyPress = true; } };
@@ -54,55 +58,74 @@ namespace Tk75.App
             if (updatingPressureRange || calibration == null) return;
             Attempt(delegate {
                 double requested = (double)pressureScaleMaximum.Value;
-                pressureRange.SetRange(0, requested, Math.Min(pressureRange.SelectedMinimum, Math.Max(0, requested - 1)), Math.Min(pressureRange.SelectedMaximum, requested));
-                SavePressureRange(pressureRange.SelectedMinimum, pressureRange.SelectedMaximum, requested);
+                double effective = Math.Max(sharedPressureRange.MaximumEndpoint, requested);
+                CancelPressureCapture();
+                if (effective != sharedPressureRange.ScaleMaximum)
+                    PersistPressureRange(sharedPressureRange.ApplyScale(calibration, effective), "Keyboard pressure scale saved: " + effective);
+                else { displayedPressureRange = null; RefreshPressureRangeEditor(); }
+                if (requested < effective)
+                    keyHint.Text = string.Format(Tr("Skala mindestens {0} · gespeicherte Max-Werte bleiben erhalten", "Scale minimum {0} · saved max values are preserved"), effective);
             });
         }
         void SavePressureRange(double minimum, double maximum, double scaleMaximum)
         {
             if (calibration == null) return;
             bool measured = pressureCaptureReader != null;
+            int[] selected = measured ? pressureCaptureKeys : SelectedKeys();
             CancelPressureCapture();
-            if (minimum == sharedPressureRange.Minimum && maximum == sharedPressureRange.Maximum && scaleMaximum == sharedPressureRange.ScaleMaximum && (!measured || calibration.GlobalMinimum.HasValue))
+            if (selected.Length == 0) { RefreshPressureRangeEditor(); return; }
+            if (selected.All(key => sharedPressureRange.ForKey(key).Rest == minimum && sharedPressureRange.ForKey(key).Bottom == maximum) &&
+                scaleMaximum == sharedPressureRange.ScaleMaximum && (!measured || selected.All(key => calibration.KeyRanges.Any(entry => entry.KeyIndex == key))))
             { RefreshPressureRangeEditor(); return; }
-            var next = sharedPressureRange.Apply(calibration, minimum, maximum, scaleMaximum);
+            PersistPressureRange(sharedPressureRange.Apply(calibration, selected, minimum, maximum, scaleMaximum),
+                "Pressure range saved for selected keys [" + string.Join(",", selected) + "]: " + minimum + ".." + maximum);
+        }
+        void PersistPressureRange(CalibrationDocument next, string message)
+        {
             try { store.SaveCalibration(next); }
-            catch { RefreshPressureRangeEditor(); throw; }
-            calibration = next; Configure(); UpdateKeyCard();
-            store.Event("Keyboard pressure range saved for all keys: " + minimum + ".." + maximum);
+            catch { displayedPressureRange = null; RefreshPressureRangeEditor(); throw; }
+            calibration = next; Configure(); RefreshKeyBehaviorAnnotations(); UpdateKeyCard();
+            store.Event(message);
         }
         void RefreshPressureRangeEditor()
         {
             int[] selected = SelectedKeys();
-            if (pressureCaptureReader != null && (selected.Length != 1 || selected[0] != pressureCaptureKey || !Object.ReferenceEquals(reader, pressureCaptureReader))) CancelPressureCapture();
+            if (pressureCaptureReader != null && (!selected.SequenceEqual(pressureCaptureKeys) || !Object.ReferenceEquals(reader, pressureCaptureReader))) CancelPressureCapture();
             updatingPressureRange = true;
             try
             {
                 // Keep the themed button inside the scale editor's 24px header.
-                // The theme's standard 32px minimum and margins belong to larger rows.
                 if (calibrateRange.MinimumSize != Size.Empty) calibrateRange.MinimumSize = Size.Empty;
                 Padding buttonMargin = new Padding(3, 0, 0, 0), buttonPadding = new Padding(4, 0, 4, 0);
                 if (calibrateRange.Margin != buttonMargin) calibrateRange.Margin = buttonMargin;
                 if (calibrateRange.Padding != buttonPadding) calibrateRange.Padding = buttonPadding;
-                if (pressureCaptureReader == null && (!Object.ReferenceEquals(displayedPressureRange, calibration) || !pressureRange.IsDragging && !pressureScaleMaximum.Focused))
+                Calibration range = sharedPressureRange.ForKey(selected.Length == 0 ? 0 : selected[0]);
+                bool mixed = selected.Any(key => sharedPressureRange.ForKey(key).Rest != range.Rest || sharedPressureRange.ForKey(key).Bottom != range.Bottom);
+                if (pressureCaptureReader == null && (!Object.ReferenceEquals(displayedPressureRange, calibration) || !selected.SequenceEqual(displayedPressureKeys) || !pressureRange.IsDragging && !pressureScaleMaximum.Focused))
                 {
-                    pressureRange.SetRange(0, sharedPressureRange.ScaleMaximum, sharedPressureRange.Minimum, sharedPressureRange.Maximum);
+                    pressureRange.SetRange(0, sharedPressureRange.ScaleMaximum, range.Rest, range.Bottom);
                     pressureScaleMaximum.Value = (decimal)sharedPressureRange.ScaleMaximum;
-                    displayedPressureRange = calibration;
+                    displayedPressureRange = calibration; displayedPressureKeys = selected;
                 }
                 pressureScaleLabel.Text = Tr("Skala bis", "Scale max");
-                pressureRange.AccessibleName = Tr("Gemeinsamer Druckbereich", "Shared pressure range");
-                pressureRange.Enabled = pressureScaleMaximum.Enabled = calibration != null && pressureCaptureReader == null;
-                calibrateRange.Enabled = selected.Length == 1 && reader != null && reader.IsReading && calibration != null;
+                pressureRange.AccessibleName = Tr("Druckbereich der ausgewählten Tasten", "Pressure range of selected keys");
+                pressureRange.Enabled = selected.Length != 0 && calibration != null && pressureCaptureReader == null;
+                pressureScaleMaximum.Enabled = calibration != null && pressureCaptureReader == null;
+                calibrateRange.Enabled = selected.Length != 0 && reader != null && reader.IsReading && calibration != null;
                 calibrateRange.Text = pressureCaptureReader != null ? Tr("Abbrechen", "Cancel") : Tr("Kalibrieren", "Calibrate");
                 calibrateRange.AccessibleName = calibrateRange.Text;
                 if (pressureCaptureReader == null && selected.Length != 0)
-                    keyHint.Text = Tr("Druckbereich · alle Tasten", "Pressure range · all keys");
-                keyCardTips.SetToolTip(pressureRange, Tr("Min und Max gelten für jede Taste dieser Tastatur.", "Min and max apply to every key on this keyboard."));
-                keyCardTips.SetToolTip(pressureScaleMaximum, Tr("Gemeinsame Rohwert-Skala. Eine Kalibrierung erweitert sie bei Bedarf automatisch.", "Shared raw-value scale. Calibration expands it automatically when needed."));
+                    keyHint.Text = selected.Length == 1 ? Tr("Druckbereich · ausgewählte Taste", "Pressure range · selected key") :
+                        string.Format(mixed ? Tr("Verschiedene Bereiche · Änderungen für {0} Tasten", "Mixed ranges · edits apply to {0} keys") :
+                        Tr("Druckbereich · {0} ausgewählte Tasten", "Pressure range · {0} selected keys"), selected.Length);
+                keyCardTips.SetToolTip(pressureRange, mixed ?
+                    Tr("Die Griffe zeigen den Bereich der ersten ausgewählten Taste. Eine Änderung setzt Min und Max für alle ausgewählten Tasten.", "The handles show the first selected key's range. An edit sets min and max for all selected keys.") :
+                    Tr("Min und Max gelten nur für die ausgewählten Tasten.", "Min and max apply only to the selected keys."));
+                keyCardTips.SetToolTip(pressureScaleMaximum, string.Format(Tr("Gemeinsame Rohwert-Skala dieser Tastatur. Mindestens {0}, damit alle gespeicherten Max-Werte erhalten bleiben. Kalibrierung erweitert sie bei Bedarf.",
+                    "Shared raw-value scale for this keyboard. At least {0} to preserve every saved max value. Calibration expands it when needed."), sharedPressureRange.MaximumEndpoint));
                 string calibrationHint = pressureCaptureReader != null
-                    ? Tr("Kalibrierung abbrechen. Der gespeicherte Druckbereich bleibt unverändert.", "Cancel calibration. The saved pressure range stays unchanged.")
-                    : Tr("Einmal bis zum Anschlag drücken und loslassen. Der gemessene Bereich gilt anschließend für alle Tasten.", "Press all the way down once, then release. The measured range is then used for all keys.");
+                    ? Tr("Kalibrierung abbrechen. Die gespeicherten Druckbereiche bleiben unverändert.", "Cancel calibration. Saved pressure ranges stay unchanged.")
+                    : Tr("Eine ausgewählte Taste einmal bis zum Anschlag drücken und loslassen. Ihr gemessener Bereich gilt anschließend für alle ausgewählten Tasten.", "Press any selected key all the way down once, then release. Its measured range is applied to all selected keys.");
                 calibrateRange.AccessibleDescription = calibrationHint;
                 keyCardTips.SetToolTip(calibrateRange, calibrationHint);
             }
@@ -111,24 +134,46 @@ namespace Tk75.App
         void BeginPressureCapture()
         {
             RequireReader(); int[] selected = SelectedKeys();
-            if (selected.Length != 1 || calibration == null) return;
+            if (selected.Length == 0 || calibration == null) return;
             CancelPressureCapture();
             ReaderSession input = reader;
-            var initial = input.GetUiSnapshot(MappingSession.MaximumInputAgeMilliseconds).Where(s => s.KeyIndex == selected[0] && s.Known && !s.Stale).Select(s => (double?)s.RawValue).FirstOrDefault();
+            var initial = input.GetUiSnapshot(MappingSession.MaximumInputAgeMilliseconds).Where(s => s.Known && !s.Stale).ToDictionary(s => s.KeyIndex, s => (double)s.RawValue);
+            var candidates = new Dictionary<int, PressureRangeCapture>();
+            foreach (int key in selected)
+            {
+                double raw; Calibration range = sharedPressureRange.ForKey(key);
+                candidates.Add(key, new PressureRangeCapture(key, range.Rest, range.Bottom, initial.TryGetValue(key, out raw) ? (double?)raw : null));
+            }
             lock (pressureCaptureGate)
             {
-                pressureCapture = new PressureRangeCapture(selected[0], sharedPressureRange.Minimum, sharedPressureRange.Maximum, initial);
-                pressureCaptureReader = input; pressureCaptureKey = selected[0];
+                pressureCaptureCandidates = candidates; pressureCaptureKeys = selected;
+                pressureCapture = selected.Length == 1 ? candidates[selected[0]] : null;
+                pressureCaptureReader = input; pressureCaptureKey = selected.Length == 1 ? selected[0] : -1;
             }
             input.Sample += FeedPressureCapture;
             RefreshPressureRangeEditor(); UpdatePressureCapture();
         }
         void FeedPressureCapture(TravelSample sample, double elapsed)
-        { lock (pressureCaptureGate) if (pressureCapture != null) pressureCapture.Feed(sample.KeyIndex, sample.RawValue); }
+        {
+            lock (pressureCaptureGate)
+            {
+                if (pressureCapture != null) { pressureCapture.Feed(sample.KeyIndex, sample.RawValue); return; }
+                PressureRangeCapture candidate;
+                if (pressureCaptureCandidates == null || !pressureCaptureCandidates.TryGetValue(sample.KeyIndex, out candidate)) return;
+                candidate.Feed(sample.KeyIndex, sample.RawValue);
+                // Lock onto the first selected key that starts a press. Other
+                // keys can no longer contaminate this one press/release cycle.
+                if (candidate.Pressing || candidate.Completed) { pressureCapture = candidate; pressureCaptureKey = sample.KeyIndex; }
+            }
+        }
         void CancelPressureCapture()
         {
             ReaderSession previous;
-            lock (pressureCaptureGate) { previous = pressureCaptureReader; pressureCaptureReader = null; pressureCapture = null; pressureCaptureKey = -1; }
+            lock (pressureCaptureGate)
+            {
+                previous = pressureCaptureReader; pressureCaptureReader = null; pressureCapture = null; pressureCaptureCandidates = null;
+                pressureCaptureKeys = new int[0]; pressureCaptureKey = -1;
+            }
             if (previous != null) previous.Sample -= FeedPressureCapture;
             pressureRange.MeasuredValue = null;
         }
@@ -136,19 +181,24 @@ namespace Tk75.App
         {
             ReaderSession input = pressureCaptureReader;
             if (input == null) return;
-            if (!Object.ReferenceEquals(input, reader) || !input.IsReading || closing || deviceDetachInProgress)
+            if (!Object.ReferenceEquals(input, reader) || !input.IsReading || closing || deviceDetachInProgress || !SelectedKeys().SequenceEqual(pressureCaptureKeys))
             { CancelPressureCapture(); RefreshPressureRangeEditor(); return; }
-            double minimum, maximum; double? latest; bool completed, pressing;
+            double minimum, maximum; double? latest; bool completed, pressing; int sourceKey, selectedCount;
             lock (pressureCaptureGate)
             {
-                if (pressureCapture == null) return;
+                if (pressureCapture == null)
+                {
+                    keyHint.Text = Tr("Eine ausgewählte Taste einmal ganz drücken und loslassen", "Press any selected key fully once, then release");
+                    return;
+                }
                 minimum = pressureCapture.Minimum; maximum = pressureCapture.Maximum; latest = pressureCapture.Latest;
-                completed = pressureCapture.Completed; pressing = pressureCapture.Pressing;
+                completed = pressureCapture.Completed; pressing = pressureCapture.Pressing; sourceKey = pressureCaptureKey; selectedCount = pressureCaptureKeys.Length;
             }
             double scale = Math.Max(sharedPressureRange.ScaleMaximum, maximum);
             if (maximum > minimum) pressureRange.SetRange(0, scale, minimum, maximum);
             pressureRange.MeasuredValue = latest;
-            keyHint.Text = string.Format(pressing ? Tr("{0} loslassen · gilt für alle Tasten", "Release {0} · applies to all keys") : Tr("{0} einmal ganz drücken und loslassen", "Press {0} fully once, then release"), Label(pressureCaptureKey));
+            keyHint.Text = string.Format(pressing ? Tr("{0} loslassen · gilt für {1} ausgewählte Tasten", "Release {0} · applies to {1} selected keys") :
+                Tr("{0} einmal ganz drücken und loslassen", "Press {0} fully once, then release"), Label(sourceKey), selectedCount);
             if (completed) Attempt(delegate { SavePressureRange(minimum, maximum, scale); });
         }
     }

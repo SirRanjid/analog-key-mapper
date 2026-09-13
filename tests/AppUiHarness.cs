@@ -1607,6 +1607,7 @@ namespace Tk75.Tests
             CheckControllerSelection(form);
             CheckControllerKeyAssignments(form, artifacts);
             CheckMultiKeySignalScope(form);
+            CheckCurveSettingsSliders(form);
             CheckMultiKeyInputScope(form);
             CheckManyControllerFooter(form, artifacts);
             CheckLayout(form, new Size(1440, 880), artifacts); CheckLayout(form, new Size(1080, 740), artifacts);
@@ -1693,6 +1694,8 @@ namespace Tk75.Tests
                 RunEnglishContexts(form, data, artifacts);
                 RunKeyboardTabClicks(form);
                 RunControllerModifierUi(artifacts);
+                RunNativeThemeControls(artifacts);
+                RunKeyAnnotations(form, artifacts);
                 CheckMappingSummaries(form, artifacts);
                 RunSocdDragUi(form, artifacts);
                 Console.WriteLine("PASS: " + assertions + " assertions; actual MainForm preview, synthetic data, no hardware/controller.");

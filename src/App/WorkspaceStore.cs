@@ -21,15 +21,21 @@ namespace Tk75.App
         [ScriptIgnore] public double SensorOffset { get { return Rest; } }
         public Calibration Value() { return new Calibration(Rest, Bottom) { UsableMin = UsableMin, UsableMax = UsableMax, MeasuredTravel = MeasuredTravel }; }
     }
+    public sealed class KeyPressureRangeEntry
+    {
+        public int KeyIndex;
+        public double Minimum = double.NaN, Maximum = double.NaN;
+    }
     public sealed class CalibrationDocument
     {
         public int SchemaVersion = 1;
         public string DeviceIdentity;
         public string ProtocolFingerprint;
         public List<CalibrationEntry> Entries = new List<CalibrationEntry>();
-        // Optional for compatibility with saved per-key measurements. New edits
-        // explicitly set one keyboard-wide range, keeping old measurements intact.
+        // rc5 shared values remain the fallback for keys without an override.
+        // Legacy measurements remain intact; only the visual scale is shared.
         public double? GlobalMinimum, GlobalMaximum, ScaleMaximum;
+        public List<KeyPressureRangeEntry> KeyRanges = new List<KeyPressureRangeEntry>();
     }
     public sealed class FocusRule { public string Executable; public string ProfileFile; }
     public sealed class FocusSettings
@@ -142,10 +148,23 @@ namespace Tk75.App
             string path = CalibrationPath(identity);
             if (!File.Exists(path)) return new CalibrationDocument { DeviceIdentity = identity, ProtocolFingerprint = fingerprint };
             XmlElement root; string json = ReadDocument(path, out root);
-            Members(root, new[] { "SchemaVersion", "DeviceIdentity", "ProtocolFingerprint", "Entries" }, new[] { "GlobalMinimum", "GlobalMaximum", "ScaleMaximum" });
+            Members(root, new[] { "SchemaVersion", "DeviceIdentity", "ProtocolFingerprint", "Entries" }, new[] { "GlobalMinimum", "GlobalMaximum", "ScaleMaximum", "KeyRanges" });
             if (Number(root["SchemaVersion"], true) != 1) throw new InvalidDataException("Unbekannte Kalibrierungsversion.");
             Type(root["DeviceIdentity"], "string"); Type(root["ProtocolFingerprint"], "string"); Type(root["Entries"], "array");
             OptionalNumber(root["GlobalMinimum"]); OptionalNumber(root["GlobalMaximum"]); OptionalNumber(root["ScaleMaximum"]);
+            if (root["KeyRanges"] != null)
+            {
+                Type(root["KeyRanges"], "array");
+                if (root["KeyRanges"].ChildNodes.Count > 256) throw new InvalidDataException("Zu viele Tastendruckbereiche.");
+                foreach (XmlNode node in root["KeyRanges"].ChildNodes)
+                {
+                    var entry = node as XmlElement;
+                    Members(entry, new[] { "KeyIndex", "Minimum", "Maximum" }, new string[0]);
+                    double index = Number(entry["KeyIndex"], true);
+                    if (index < 0 || index > 255) throw new InvalidDataException("Tastenindex ausserhalb 0..255.");
+                    Number(entry["Minimum"], false); Number(entry["Maximum"], false);
+                }
+            }
             if (root["Entries"].ChildNodes.Count > 256) throw new InvalidDataException("Zu viele Tastenkalibrierungen.");
             foreach (XmlNode node in root["Entries"].ChildNodes)
             {
@@ -170,18 +189,25 @@ namespace Tk75.App
         public static void Validate(CalibrationDocument value, string identity, string fingerprint)
         {
             identity = RequireHash(identity); fingerprint = RequireHash(fingerprint);
-            if (value == null || value.SchemaVersion != 1 || !string.Equals(value.DeviceIdentity, identity, StringComparison.OrdinalIgnoreCase) || !string.Equals(value.ProtocolFingerprint, fingerprint, StringComparison.OrdinalIgnoreCase) || value.Entries == null || value.Entries.Count > 256)
+            if (value == null || value.SchemaVersion != 1 || !string.Equals(value.DeviceIdentity, identity, StringComparison.OrdinalIgnoreCase) || !string.Equals(value.ProtocolFingerprint, fingerprint, StringComparison.OrdinalIgnoreCase) || value.Entries == null || value.Entries.Count > 256 || value.KeyRanges == null || value.KeyRanges.Count > 256)
                 throw new InvalidDataException("Kalibrierung passt nicht zu diesem Geraet und Protokoll.");
             var seen = new HashSet<int>();
             if (value.GlobalMinimum.HasValue != value.GlobalMaximum.HasValue ||
                 value.GlobalMinimum.HasValue && (!MappingValidation.IsFinite(value.GlobalMinimum.Value) || !MappingValidation.IsFinite(value.GlobalMaximum.Value) ||
                     value.GlobalMinimum.Value < 0 || value.GlobalMaximum.Value <= value.GlobalMinimum.Value || value.GlobalMaximum.Value > 65535) ||
                 value.ScaleMaximum.HasValue && (!MappingValidation.IsFinite(value.ScaleMaximum.Value) || value.ScaleMaximum.Value < 1 || value.ScaleMaximum.Value > 65535 ||
-                    !value.GlobalMaximum.HasValue || value.ScaleMaximum.Value < value.GlobalMaximum.Value))
+                    value.KeyRanges.Count < 256 && value.GlobalMaximum.HasValue && value.ScaleMaximum.Value < value.GlobalMaximum.Value))
                 throw new InvalidDataException("Invalid keyboard pressure range.");
             foreach (CalibrationEntry item in value.Entries)
                 if (item == null || item.KeyIndex < 0 || item.KeyIndex > 255 || !seen.Add(item.KeyIndex) || MappingValidation.ValidateCalibration(item.Value()).Count != 0)
                     throw new InvalidDataException("Ungueltige oder doppelte Tastenkalibrierung.");
+            seen.Clear();
+            foreach (KeyPressureRangeEntry item in value.KeyRanges)
+                if (item == null || item.KeyIndex < 0 || item.KeyIndex > 255 || !seen.Add(item.KeyIndex) ||
+                    !MappingValidation.IsFinite(item.Minimum) || !MappingValidation.IsFinite(item.Maximum) ||
+                    item.Minimum < 0 || item.Maximum <= item.Minimum || item.Maximum > 65535 ||
+                    value.ScaleMaximum.HasValue && value.ScaleMaximum.Value < item.Maximum)
+                    throw new InvalidDataException("Ungueltiger oder doppelter Tastendruckbereich.");
         }
         public FocusSettings LoadFocus()
         {

@@ -2,9 +2,9 @@
 
 **Turn GamaKay TK75 TMR key pressure into controller input — with visual mapping, editable response curves and optional key lighting.**
 
-**Free and open source · 1.0.0-rc.4 · Windows x64**
+**Free and open source · 1.0.0-rc.6 · Windows x64**
 
-**[Download Windows rc.4](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.4/AnalogKeyMapper-1.0.0-rc.4-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.4) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
+**[Download Windows rc.6](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.6/AnalogKeyMapper-1.0.0-rc.6-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.6) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
 
 ![Analog Key Mapper showing keyboard mappings, controller selection, lighting and USB connection controls](docs/images/controller.png)
 
@@ -14,13 +14,13 @@
 - **Keep controller setups separate.** Mix Xbox 360 and DualSense slots, each with its own mappings, color and USB connection control. Pending connections stay visible and can be cancelled.
 - **See and tune each output.** Keys, Curve and Controller tabs keep the keyboard in place. A clear selection outline and per-output response summaries lead to deadzones, thresholds and a square linear/custom/Bézier curve editor.
 - **Set key behavior together.** Configure Rapid Trigger and opposite-key handling (SOCD). Use Capture, then click the opposite key to pair it. Use Ctrl+click or a selection rectangle for bulk edits, with undo.
-- **Calibrate once for every key.** Adjust a shared min/max pressure slider or press one key fully and release. A higher reading automatically expands the scale.
+- **Tune one key or a whole selection.** Set individual min/max pressure ranges, or calibrate selected keys with one press and release. The keyboard shares one adjustable scale. Vertical actuation controls and faint keycap values make thresholds visible.
 - **Save your setup and lighting.** Keep JSON profiles, signal presets and named controllers. Optional mapped-key colors include a backup and restore workflow. English and German are included.
 - **Keep the editor out of the way.** Use the tray or opt into Windows startup. Controller reconnection is a separate option that starts off. [Background startup guide](docs/background-startup.md).
 
 ## Quick start
 
-1. [Download the Windows rc.4 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.4/AnalogKeyMapper-1.0.0-rc.4-windows-x64.zip) and extract it into a writable folder.
+1. [Download the Windows rc.6 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.6/AnalogKeyMapper-1.0.0-rc.6-windows-x64.zip) and extract it into a writable folder.
 2. Double-click **`Verify-Checksums.bat`** to check the included files.
 3. Open **`AnalogKeyMapper.exe`** inside the extracted `AnalogKeyMapper` folder, connect your keyboard by USB, and create a mapping.
 
@@ -32,7 +32,7 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 ## Release candidate
 
-**rc.4** adds a shared min/max pressure slider and single-press calibration, SOCD pairing with **Capture** and a key click, a saved **Minimize to tray** option for the window's X, and lighting restoration in the keyboard helper when the app connection ends. Readable modifier labels and output response summaries remain available. See the [user guide](docs/user-guide.md).
+**rc.6** adds individual pressure ranges with selection-wide calibration, vertical actuation controls, sliders beside curve settings, threshold annotations on the keycaps, and consistent dark dropdowns, number fields and scrollbars. A closing status window explains each cleanup phase; Windows shutdown waits for bounded cleanup. Lighting changes use fewer verification requests while preserving the full original backup. See the [user guide](docs/user-guide.md).
 
 The release candidate also includes these connection and lifecycle safeguards:
 

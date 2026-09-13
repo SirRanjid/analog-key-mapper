@@ -108,6 +108,47 @@ public static class WorkspaceStoreHarness
         Reject(delegate { store.LoadCalibration(identity, fingerprint); }, "oversized calibration rejected before parsing");
         store.SaveCalibration(document);
 
+        Write(calibrationPath, Replace(valid, ",\"KeyRanges\":[]", ""));
+        Check(store.LoadCalibration(identity, fingerprint).KeyRanges.Count == 0, "older calibration files without per-key overrides remain readable");
+        var rangeDocument = new CalibrationDocument { DeviceIdentity = identity, ProtocolFingerprint = fingerprint,
+            GlobalMinimum = 20, GlobalMaximum = 700, ScaleMaximum = 900 };
+        rangeDocument.KeyRanges.Add(new KeyPressureRangeEntry { KeyIndex = 14, Minimum = 10, Maximum = 800 });
+        store.SaveCalibration(rangeDocument);
+        string validRanges = File.ReadAllText(calibrationPath);
+        string rangeEntry = new JavaScriptSerializer().Serialize(rangeDocument.KeyRanges[0]);
+        CalibrationDocument readRanges = store.LoadCalibration(identity, fingerprint);
+        Check(readRanges.GlobalMinimum == 20 && readRanges.GlobalMaximum == 700 && readRanges.KeyRanges.Count == 1 &&
+            readRanges.KeyRanges[0].KeyIndex == 14 && readRanges.KeyRanges[0].Minimum == 10 && readRanges.KeyRanges[0].Maximum == 800 && readRanges.ScaleMaximum == 900,
+            "per-key override, untouched shared fallback and visual scale roundtrip together");
+        foreach (string bad in new[] {
+            Replace(validRanges, "[" + rangeEntry + "]", "null"), Replace(validRanges, "[" + rangeEntry + "]", "{}"),
+            Replace(validRanges, "[" + rangeEntry + "]", "[null]"), Replace(validRanges, "[" + rangeEntry + "]", "[" + rangeEntry + "," + rangeEntry + "]"),
+            Replace(validRanges, "\"KeyRanges\":", "\"KeyRanges\":[],\"KeyRanges\":"),
+            Replace(validRanges, "\"KeyIndex\":14,", ""), Replace(validRanges, "\"KeyIndex\":14", "\"KeyIndex\":14.5"),
+            Replace(validRanges, "\"KeyIndex\":14", "\"KeyIndex\":256"), Replace(validRanges, "\"KeyIndex\":14", "\"KeyIndex\":-1"),
+            Replace(validRanges, "\"Minimum\":10,", ""), Replace(validRanges, "\"Maximum\":800", "\"Maximum\":\"800\""),
+            Replace(validRanges, "\"Minimum\":10", "\"Minimum\":null"), Replace(validRanges, "\"Minimum\":10", "\"Minimum\":-1"),
+            Replace(validRanges, "\"Maximum\":800", "\"Maximum\":10"), Replace(validRanges, "\"Maximum\":800", "\"Maximum\":65536"),
+            Replace(validRanges, "\"Maximum\":800", "\"Maximum\":1e400"), Replace(validRanges, "\"Maximum\":800", "\"Maximum\":800,\"Unknown\":0"),
+            Replace(validRanges, "\"Maximum\":800", "\"Maximum\":800,\"Maximum\":800"),
+            Replace(validRanges, "\"ScaleMaximum\":900", "\"ScaleMaximum\":799"),
+            Replace(validRanges, "\"GlobalMaximum\":700", "\"GlobalMaximum\":null"),
+            Replace(validRanges, "\"GlobalMaximum\":700", "\"GlobalMaximum\":\"700\""),
+            Replace(validRanges, "\"GlobalMaximum\":700", "\"GlobalMaximum\":700,\"GlobalMaximum\":700") })
+        {
+            Write(calibrationPath, bad);
+            Reject(delegate { store.LoadCalibration(identity, fingerprint); }, "malformed per-key override or shared fallback is rejected");
+        }
+        string[] excessiveRanges = new string[257]; for (int i = 0; i < excessiveRanges.Length; i++) excessiveRanges[i] = rangeEntry;
+        Write(calibrationPath, Replace(validRanges, "[" + rangeEntry + "]", "[" + string.Join(",", excessiveRanges) + "]"));
+        Reject(delegate { store.LoadCalibration(identity, fingerprint); }, "more than 256 per-key ranges are rejected before decoding");
+        store.SaveCalibration(rangeDocument); rangeDocument.KeyRanges[0].Maximum = Double.NaN;
+        Reject(delegate { store.SaveCalibration(rangeDocument); }, "invalid in-memory override cannot replace valid calibration");
+        Check(File.ReadAllText(calibrationPath) == validRanges, "invalid override preserves the exact saved document");
+        document.ScaleMaximum = 500; store.SaveCalibration(document);
+        Check(store.LoadCalibration(identity, fingerprint).ScaleMaximum == 500, "visual scale can be saved without a shared calibration override");
+        document.ScaleMaximum = null; store.SaveCalibration(document);
+
         FocusSettings focus = new FocusSettings { Enabled = true, DefaultProfileFile = "default.json" };
         focus.Rules.Add(new FocusRule { Executable = "Game.exe", ProfileFile = "default.json" });
         focus.Rules.Add(new FocusRule { Executable = @"C:\Games\Other.exe", ProfileFile = "other.json" });

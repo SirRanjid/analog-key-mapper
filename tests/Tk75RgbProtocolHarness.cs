@@ -94,9 +94,52 @@ public static class Tk75RgbProtocolHarness
         }
         Reject(delegate { Tk75RgbProtocol.OverlayVisibleLighting(null, colors); }, "Visible lighting requires an original snapshot");
     }
+    static void KnownVerification()
+    {
+        var expected = new Tk75RgbSnapshot(3591, 2, 4, Settings(), Picture());
+        ReadFixture fixture = new ReadFixture();
+        Tk75RgbSnapshot actual = Tk75RgbProtocol.VerifyKnownSnapshot(expected, fixture.Exchange);
+        Check(fixture.Calls == 10 && Tk75RgbProtocol.Equal(Tk75RgbProtocol.EncodeSnapshot(actual), Tk75RgbProtocol.EncodeSnapshot(expected)),
+            "Known-state verification reads all six picture pages with profile/settings brackets in ten GETs.");
+        foreach (int position in new[] { 0, 42, 63, 64, 127, 128, 191, 192, 255, 256, 319, 320, 377, 378, 383 })
+        {
+            int byteIndex = position;
+            fixture = new ReadFixture { Alter = delegate(int call, byte[] reply)
+            { if (call == 3 + byteIndex / 64) reply[1 + byteIndex % 64] ^= 1; return reply; } };
+            Reject(delegate { Tk75RgbProtocol.VerifyKnownSnapshot(expected, fixture.Exchange); },
+                "Known-state verification rejects changed picture bytes including untouched slots, page boundaries and reserved trailing bytes: " + position);
+        }
+        foreach (int phase in new[] { 1, 9 })
+        {
+            int changedCall = phase;
+            fixture = new ReadFixture { Alter = delegate(int call, byte[] reply) { if (call == changedCall) reply[2]++; return reply; } };
+            Reject(delegate { Tk75RgbProtocol.VerifyKnownSnapshot(expected, fixture.Exchange); }, "Either profile bracket rejects a changed onboard profile.");
+        }
+        foreach (int phase in new[] { 2, 10 })
+            for (int field = 1; field <= 7; field++)
+            {
+                int changedCall = phase, changedField = field;
+                fixture = new ReadFixture { Alter = delegate(int call, byte[] reply) { if (call == changedCall) reply[1 + changedField] ^= 1; return reply; } };
+                Reject(delegate { Tk75RgbProtocol.VerifyKnownSnapshot(expected, fixture.Exchange); }, "Both settings brackets reject every changed writable setting.");
+            }
+        fixture = new ReadFixture { Alter = delegate(int call, byte[] reply) { if (call == 2 || call == 10) reply[64] = 99; return reply; } };
+        actual = Tk75RgbProtocol.VerifyKnownSnapshot(expected, fixture.Exchange);
+        Check(actual.RawSettings[63] == 99 && fixture.Calls == 10, "Stable current read-only metadata is returned without treating it as a setter field.");
+        fixture = new ReadFixture { Alter = delegate(int call, byte[] reply) { if (call == 10) reply[64] ^= 1; return reply; } };
+        Reject(delegate { Tk75RgbProtocol.VerifyKnownSnapshot(expected, fixture.Exchange); }, "Read-only settings metadata must also remain stable inside the bracket.");
+        for (int phase = 1; phase <= 10; phase++)
+        {
+            int failedCall = phase;
+            fixture = new ReadFixture { Alter = delegate(int call, byte[] reply) { return call == failedCall ? new byte[64] : reply; } };
+            Reject(delegate { Tk75RgbProtocol.VerifyKnownSnapshot(expected, fixture.Exchange); }, "Every malformed known-state reply aborts verification.");
+            Check(fixture.Calls == phase, "Known-state verification stops at the failed read.");
+        }
+        Reject(delegate { Tk75RgbProtocol.VerifyKnownSnapshot(null, fixture.Exchange); }, "Known-state verification requires an established expected snapshot.");
+    }
     public static int Run()
     {
         checks = 0;
+        KnownVerification();
         VisibleLighting();
         byte[] request = Tk75RgbProtocol.ReadProfileRequest(); Check(request[1] == 0x84 && request[8] == 0x7b, "Profile read golden checksum.");
         request = Tk75RgbProtocol.ReadSettingsRequest(); Check(request[1] == 0x87 && request[8] == 0x78, "Settings read golden checksum.");

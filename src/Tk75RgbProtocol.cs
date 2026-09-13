@@ -174,6 +174,28 @@ namespace Tk75.Diagnostics
                 throw new InvalidDataException("Keyboard lighting/profile changed during backup.");
             return new Tk75RgbSnapshot(model, profile, layer, settings, picture);
         }
+        // Transaction verification has an already-journaled byte-exact target.
+        // Read every picture byte once and require that exact target, bracketed
+        // by profile/settings reads. Discovering an unknown original (above)
+        // still requires two complete identical pictures before it is trusted.
+        public static Tk75RgbSnapshot VerifyKnownSnapshot(Tk75RgbSnapshot expected, Func<byte[], byte[]> exchange)
+        {
+            if (expected == null) throw new ArgumentNullException("expected");
+            if (exchange == null) throw new ArgumentNullException("exchange");
+            byte profile = ParseProfile(exchange(ReadProfileRequest()));
+            if (profile != expected.Profile) throw new InvalidDataException("Keyboard profile differs from the expected lighting state.");
+            byte[] settings = ParseSettings(exchange(ReadSettingsRequest())), expectedSettings = expected.RawSettings;
+            // The other response bytes are read-only metadata, not setter fields.
+            // They may differ from a previous snapshot, but must stay stable for
+            // this complete verification, just as for initial backup discovery.
+            for (int i = 1; i <= 7; i++)
+                if (settings[i] != expectedSettings[i]) throw new InvalidDataException("Keyboard settings differ from the expected lighting state.");
+            byte[] picture = ReadPicture(expected.Layer, exchange);
+            if (!Equal(picture, expected.Picture)) throw new InvalidDataException("Keyboard picture differs from the expected lighting state.");
+            if (profile != ParseProfile(exchange(ReadProfileRequest())) || !Equal(settings, ParseSettings(exchange(ReadSettingsRequest()))))
+                throw new InvalidDataException("Keyboard lighting/profile changed during verification.");
+            return new Tk75RgbSnapshot(expected.ModelId, profile, expected.Layer, settings, picture);
+        }
         static byte[] ReadPicture(int layer, Func<byte[], byte[]> exchange)
         {
             byte[] result = new byte[PictureLength];

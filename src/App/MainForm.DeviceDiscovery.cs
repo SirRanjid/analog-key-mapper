@@ -13,6 +13,8 @@ namespace Tk75.App
         readonly KeyboardAutoConnect autoConnect = new KeyboardAutoConnect();
         DeviceDiscoveryMetadata[] lastInventory;
         bool discoveryEnabled, discoveryRunning, discoveryPending, discoveryFailed, deviceDetachInProgress, closeAfterDeviceDetach;
+        System.Threading.Tasks.Task deviceDetachCleanup;
+        Exception deviceDetachCleanupFailure;
         int discoveryGeneration;
         IntPtr deviceNotification;
         System.Threading.SynchronizationContext discoveryContext;
@@ -179,12 +181,15 @@ namespace Tk75.App
             // suspended while the worker disarms and drains the detached reader.
             var interactive = Controls.Cast<Control>().Where(c => c.Enabled).ToArray();
             foreach (Control control in interactive) control.Enabled = false;
+            var cleanup = new System.Threading.Tasks.TaskCompletionSource<object>();
+            deviceDetachCleanupFailure = null; deviceDetachCleanup = cleanup.Task;
             System.Threading.ThreadPool.QueueUserWorkItem(delegate {
                 try { runtime.SetReader(null); }
-                catch (Exception ex) { store.Event("Disconnect runtime: " + ex.Message); }
+                catch (Exception ex) { deviceDetachCleanupFailure = ex; store.Event("Disconnect runtime: " + ex.Message); }
                 finally {
-                    try { RestoreRgbBeforeDisconnect(removed, RgbCloseTimeoutMilliseconds); } catch (Exception ex) { store.Event("Disconnect lighting: " + ex.Message); }
-                    try { removed.Dispose(); } catch (Exception ex) { store.Event("Disconnect reader: " + ex.Message); }
+                    try { RestoreRgbBeforeDisconnect(removed, RgbCloseTimeoutMilliseconds); } catch (Exception ex) { deviceDetachCleanupFailure = ex; store.Event("Disconnect lighting: " + ex.Message); }
+                    try { removed.Dispose(); } catch (Exception ex) { deviceDetachCleanupFailure = ex; store.Event("Disconnect reader: " + ex.Message); }
+                    finally { cleanup.TrySetResult(null); }
                 }
                 PostDiscovery(delegate {
                     deviceDetachInProgress = false;

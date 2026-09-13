@@ -16,6 +16,7 @@ public static class KeyboardPressureRangeHarness
             var standard = new KeyboardPressureRange(original);
             Check(standard.Minimum == 0 && standard.Maximum == 385 && standard.IsDefault, "Default range stays 0..385");
             Check(standard.Resolve().Count == 256 && standard.Resolve().Values.All(c => c.Rest == 0 && c.Bottom == 385), "Every key shares the default range");
+            Check(Object.ReferenceEquals(standard.Resolve(), standard.Resolve()) && Object.ReferenceEquals(standard.ForKey(14), standard.Resolve()[14]), "Resolution and key reads reuse one cached snapshot");
             original.Entries.Add(new CalibrationEntry { KeyIndex = 14, Rest = 5, Bottom = 390 });
             original.Entries.Add(new CalibrationEntry { KeyIndex = 9, Rest = 0, Bottom = 410 });
             var migrated = new KeyboardPressureRange(original);
@@ -27,27 +28,47 @@ public static class KeyboardPressureRangeHarness
             var compatible = new KeyboardPressureRange(unsupported);
             Check(compatible.IsDefault && compatible.HasIgnoredLegacyValues && compatible.Maximum == 385 && unsupported.Entries.Count == 2,
                 "Unsupported legacy endpoints remain on disk without breaking the editor or inverting output");
-            var changed = migrated.Apply(original, 10, 600, 385);
+            var changed = migrated.Apply(original, new[] { 14 }, 10, 600, 385);
             var range = new KeyboardPressureRange(changed);
-            Check(range.ScaleMaximum == 600 && range.Resolve().Values.All(c => c.Rest == 10 && c.Bottom == 600), "Higher measurement expands every key and the scale");
+            Check(range.ScaleMaximum == 600 && range.ForKey(14).Rest == 10 && range.ForKey(14).Bottom == 600, "Higher measurement expands the selected key and shared scale");
+            Check(range.Resolve().Where(item => item.Key != 14).All(item => item.Value.Rest == 0 && item.Value.Bottom == 410), "Single-key edit preserves every untouched legacy fallback");
             Check(changed.Entries.Count == 2 && original.Entries[0].Bottom == 390, "Original measurements remain available");
-            Check(range.Depth(10) == 0 && range.Depth(305) == .5 && range.Depth(600) == 1 && range.Depth(900) == 1, "UI and controller normalization use shared bounds");
+            Check(range.Depth(14, 10) == 0 && range.Depth(14, 305) == .5 && range.Depth(14, 600) == 1 && range.Depth(14, 900) == 1 && range.Depth(9, 205) == .5, "UI and controller normalization use the requested key's bounds");
+            var rc5 = new CalibrationDocument { DeviceIdentity = original.DeviceIdentity, ProtocolFingerprint = original.ProtocolFingerprint,
+                GlobalMinimum = 20, GlobalMaximum = 700, ScaleMaximum = 800, Entries = original.Entries.ToList() };
+            var rc5Range = new KeyboardPressureRange(rc5);
+            var grouped = rc5Range.Apply(rc5, new[] { 9, 14, 14 }, 5, 500, 800);
+            var groupedRange = new KeyboardPressureRange(grouped);
+            Check(grouped.KeyRanges.Count == 2 && groupedRange.ForKey(9).Rest == 5 && groupedRange.ForKey(14).Bottom == 500,
+                "A group edit changes every selected key once");
+            Check(grouped.GlobalMinimum == 20 && grouped.GlobalMaximum == 700 && groupedRange.Resolve().Where(item => item.Key != 9 && item.Key != 14).All(item => item.Value.Rest == 20 && item.Value.Bottom == 700),
+                "rc5 shared settings and every unselected key retain their exact effective calibration");
+            var reduced = groupedRange.ApplyScale(grouped, 100);
+            var reducedRange = new KeyboardPressureRange(reduced);
+            Check(reduced.ScaleMaximum == 700 && reducedRange.ForKey(9).Bottom == 500 && reducedRange.ForKey(1).Bottom == 700,
+                "Lowering shared scale stops at the largest endpoint without changing any key");
+            var secondEdit = new KeyboardPressureRange(reduced).Apply(reduced, new[] { 9 }, 2, 900, 700);
+            var secondRange = new KeyboardPressureRange(secondEdit);
+            Check(secondRange.ScaleMaximum == 900 && secondRange.ForKey(9).Bottom == 900 && secondRange.ForKey(14).Bottom == 500 && secondRange.ForKey(1).Bottom == 700,
+                "A later measurement expands the scale while preserving previously edited and fallback keys");
+            var defaultEdited = new KeyboardPressureRange(standard.Apply(original, new[] { 1 }, 0, 385, 385));
+            Check(!defaultEdited.IsDefaultForKey(1), "Explicit key calibration carries its own measured/default state");
             var store = new WorkspaceStore(args[0]); store.SaveCalibration(changed);
             var loaded = store.LoadCalibration(original.DeviceIdentity, original.ProtocolFingerprint);
-            Check(loaded.GlobalMinimum == 10 && loaded.GlobalMaximum == 600 && loaded.ScaleMaximum == 600, "Shared range survives restart");
+            Check(!loaded.GlobalMinimum.HasValue && loaded.KeyRanges.Count == 1 && loaded.KeyRanges[0].Minimum == 10 && loaded.KeyRanges[0].Maximum == 600 && loaded.ScaleMaximum == 600, "Key override and shared scale survive restart");
             string file = store.CalibrationPath(original.DeviceIdentity), preserved = File.ReadAllText(file);
             foreach (var invalid in new[] {
-                migrated.Apply(original, 100, 100, 385), migrated.Apply(original, -1, 385, 385),
-                migrated.Apply(original, 0, 65536, 65536), migrated.Apply(original, Double.NaN, 385, 385) })
+                migrated.Apply(original, new[] { 14 }, 100, 100, 385), migrated.Apply(original, new[] { 14 }, -1, 385, 385),
+                migrated.Apply(original, new[] { 14 }, 0, 65536, 65536), migrated.Apply(original, new[] { 14 }, Double.NaN, 385, 385) })
             {
                 bool rejected = false; try { store.SaveCalibration(invalid); } catch (InvalidDataException) { rejected = true; }
                 Check(rejected && File.ReadAllText(file) == preserved, "Invalid range leaves saved values intact");
             }
-            foreach (string replacement in new[] { "\"GlobalMaximum\":null", "\"GlobalMaximum\":\"600\"", "\"GlobalMaximum\":600,\"GlobalMaximum\":700", "\"GlobalMaximum\":1e400" })
+            foreach (string replacement in new[] { "\"Maximum\":null", "\"Maximum\":\"600\"", "\"Maximum\":600,\"Maximum\":700", "\"Maximum\":1e400" })
             {
-                File.WriteAllText(file, preserved.Replace("\"GlobalMaximum\":600", replacement));
+                File.WriteAllText(file, preserved.Replace("\"Maximum\":600", replacement));
                 bool rejected = false; try { store.LoadCalibration(original.DeviceIdentity, original.ProtocolFingerprint); } catch (InvalidDataException) { rejected = true; }
-                Check(rejected, "Malformed shared range JSON rejected");
+                Check(rejected, "Malformed per-key range JSON rejected");
             }
             File.WriteAllText(file, preserved);
             var capture = new PressureRangeCapture(14, 0, 385, 0);
@@ -69,7 +90,7 @@ public static class KeyboardPressureRangeHarness
             Check(lower.Completed && lower.Minimum == 0, "Calibration also repairs a minimum set above the actual rest value");
             var noise = new PressureRangeCapture(14, 0, 385, 0); noise.Feed(14, 1); noise.Feed(14, 0);
             Check(!noise.Completed, "A raw-unit idle fluctuation is not a calibration");
-            Console.WriteLine("PASS: " + checks + " shared pressure-range checks; no windows or hardware."); return 0;
+            Console.WriteLine("PASS: " + checks + " per-key pressure/shared-scale checks; no windows or hardware."); return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }

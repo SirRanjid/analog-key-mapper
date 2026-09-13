@@ -121,14 +121,16 @@ namespace Tk75.App
             TextBoxBase text = control as TextBoxBase;
             if (text != null)
             {
-                text.BorderStyle = BorderStyle.FixedSingle;
+                // UpDownBase supplies the frame around its native edit child.
+                // Adding a second border here also steals room from its text.
+                text.BorderStyle = text.Parent is UpDownBase ? BorderStyle.None : BorderStyle.FixedSingle;
                 text.BackColor = text.ReadOnly ? SurfaceAlt : Surface;
                 text.ForeColor = Foreground;
             }
             ComboBox combo = control as ComboBox;
             if (combo != null) { combo.FlatStyle = FlatStyle.Flat; combo.BackColor = SurfaceAlt; combo.ForeColor = Foreground; }
             NumericUpDown number = control as NumericUpDown;
-            if (number != null) { number.BorderStyle = BorderStyle.FixedSingle; number.BackColor = Surface; number.ForeColor = Foreground; }
+            if (number != null) { number.BorderStyle = BorderStyle.FixedSingle; number.BackColor = Surface; number.ForeColor = Foreground; NativeSurfaceTheme.AttachNumber(number); }
             ListBox list = control as ListBox;
             if (list != null) { list.BorderStyle = BorderStyle.FixedSingle; list.BackColor = Surface; list.ForeColor = Foreground; }
             CheckBox check = control as CheckBox;
@@ -138,6 +140,7 @@ namespace Tk75.App
 
             DataGridView grid = control as DataGridView;
             if (grid != null) StyleGrid(grid, fonts);
+            NativeSurfaceTheme.AttachScrollbars(control);
             TabControl tabs = control as TabControl;
             if (tabs != null)
             {

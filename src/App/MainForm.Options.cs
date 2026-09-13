@@ -45,7 +45,7 @@ namespace Tk75.App
         {
             settings.EndEdit(); FlushInputDraft();
             UiPreferences.SaveLanguage(store.Root, language); UiText.SetLanguage(language);
-            RefreshSettings(); RefreshBindings(); UpdateDetailsButtons();
+            RefreshSettings(); RefreshBindings(); RefreshKeyBehaviorAnnotations(); UpdateDetailsButtons();
             SetInputTooltips();
             UiText.Apply(this); foreach (var menu in languageMenus) UiText.Apply(menu);
             UpdateDetailsTitle();

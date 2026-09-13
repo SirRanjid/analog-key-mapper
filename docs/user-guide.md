@@ -16,9 +16,9 @@ Press a key and look for changing fill inside its keycap. Detecting a device is 
 
 Choose the physical **ANSI/ISO** layout and **QWERTY/QWERTZ** legends separately if needed. English is the default UI language; German is available in the menu.
 
-All keys use one shared pressure range, initially **0–385**. In **Keys**, drag the **Min** and **Max** handles to set that range for the entire keyboard. **Scale max** changes the slider's raw-value scale when a keyboard needs a different limit; press Enter or leave the field to save it.
+Each key can have its own pressure range, initially **0–385**. In **Keys**, drag the **Min** and **Max** handles to adjust every selected key together. Unselected keys keep their ranges. **Scale max** is shared by the physical keyboard; press Enter or leave the field to save it. The scale cannot be reduced below an existing key's maximum, so changing it never silently clips another key's range.
 
-To measure the range, select one key and choose **Calibrate** beside the slider. Press that key fully once, then release. The measured minimum and maximum are saved automatically for every key. A reading above the previous limit expands the scale. **Cancel** or selecting another key discards an unfinished measurement. There is no second cycle or confirmation checkbox. The shared range is saved separately for each physical keyboard, and the default range is not a factory measurement of your individual keyboard.
+To measure the range, select one or more keys and choose **Calibrate** beside the slider. Fully press one selected key once, then release it. Its measured minimum and maximum are saved automatically for the selected keys. A reading above the previous limit expands **Scale max** for the keyboard. **Cancel**, changing the selection or disconnecting discards an unfinished measurement. There is no second cycle or confirmation checkbox. Ranges are saved separately for each physical keyboard; existing saved ranges remain the fallback until you edit a key. The default range is not a factory measurement of your individual keyboard.
 
 ## Select and map keys
 
@@ -71,6 +71,10 @@ The output list in **Keys** outlines its selected row even when the list has onl
 
 **Behavior** under Keys controls Rapid Trigger and opposite-key handling (SOCD). These belong to physical keys and are shared by their mappings. Mixed values are marked; editing one field preserves the others. With two selected keys, you can pair them explicitly and choose neutral, first-pressed or last-pressed resolution. Larger selections retain existing pairs and do not offer pair editing.
 
+The vertical controls beside the numeric fields adjust initial actuation, release movement and repress movement. Their scale is a percentage of each key's pressure range, not a measured distance in millimeters. Faint keycap annotations show the configured actuation point; wider keys also show release and repress values. Hover a key for the complete explanation. A key with no additional actuation setting continues to follow its pressure range.
+
+In **Curve**, sliders accompany the editable numbers for deadzones, output range, scale, smoothing and the other response options. A drag previews the curve and becomes one undoable edit when released. Hover a setting or curve point for its explanation or coordinates. Edits apply to all selected keys for the current controller.
+
 To capture an opposite key, select the first key and open **Behavior**, then click **Capture**. Click the desired opposite key on the keyboard illustration. This pairs both keys, keeps the original key's SOCD policy and preserves their actuation settings. Existing partners are unpaired; **Undo** restores the previous pairings. **Cancel** or **Escape** cancels capture. Dragging a key continues to open **Controller** for normal output mapping.
 
 ## Profiles and saved data
@@ -87,7 +91,7 @@ When a key belongs to several connected controllers, the first controller in pro
 
 The app saves the keyboard's current lighting before changing it and keeps restoration records under `data/lighting/`. Supported static backgrounds are preserved on other keys. Animated effects that cannot be preserved reliably are rejected before writing.
 
-**Restore lighting** returns to the saved normal state and turns off both controller colors and the shortcut marker for the profile. On exit, the app restores the lighting captured from the keyboard at startup, including its colors, brightness and effect. The keyboard helper also attempts restoration if the app connection is interrupted. During Windows shutdown, restoration runs independently of the interface. Original backups remain available if the keyboard becomes unavailable. Closing may take several seconds.
+**Restore lighting** returns to the saved normal state and turns off both controller colors and the shortcut marker for the profile. On exit, the app restores the lighting captured from the keyboard at startup, including its colors, brightness and effect. The keyboard helper also attempts restoration if the app connection is interrupted. A closing window shows progress through saving, controller cleanup, lighting restoration and helper shutdown. During Windows shutdown, the app registers a reason and waits for its cleanup work, with a 25-second total budget. Original backups remain available if the keyboard becomes unavailable or cleanup fails. Forced termination, disconnected hardware or power loss can still prevent restoration.
 
 If recovery pauses, keep the backups and follow the displayed reason. An onboard keyboard-profile change may require returning to the previous onboard profile before restoration. Onboard keyboard profiles and the mapper's JSON profiles are different settings.
 

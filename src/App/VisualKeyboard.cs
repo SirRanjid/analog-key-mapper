@@ -14,6 +14,11 @@ namespace Tk75.App
         public string Name, Targets;
         public bool Selected;
     }
+    public sealed class KeyboardBehaviorAnnotation
+    {
+        // Presentation only: no sensor units or input policy are inferred here.
+        public string Compact, Full, Description;
+    }
     // Own-window rendering only. This component never reads, writes or hooks a device.
     public class VisualKeyboard : Control
     {
@@ -32,6 +37,7 @@ namespace Tk75.App
         readonly Dictionary<int, KeyState> states = new Dictionary<int, KeyState>();
         readonly Dictionary<int, string> labels = new Dictionary<int, string>();
         readonly Dictionary<int, KeyboardControllerBadge[]> controllerAssignments = new Dictionary<int, KeyboardControllerBadge[]>();
+        readonly Dictionary<int, KeyboardBehaviorAnnotation> behaviorAnnotations = new Dictionary<int, KeyboardBehaviorAnnotation>();
         readonly HashSet<int> selected = new HashSet<int>();
         readonly HashSet<int> dropKeys = new HashSet<int>();
         readonly HashSet<int> availableKeys = new HashSet<int>();
@@ -72,7 +78,7 @@ namespace Tk75.App
             {
                 if (ReferenceEquals(layout, value)) return;
                 CancelDragGesture(); dropKeys.Clear(); availableKeys.Clear();
-                layout = value; states.Clear(); labels.Clear(); controllerAssignments.Clear(); focusCode = hoverCode = null; tooltip.SetToolTip(this, null);
+                layout = value; states.Clear(); labels.Clear(); controllerAssignments.Clear(); behaviorAnnotations.Clear(); focusCode = hoverCode = null; tooltip.SetToolTip(this, null);
                 RefreshPointerCursor();
                 bool changed = selected.Count != 0; selected.Clear(); Invalidate();
                 if (changed) OnSelectionChanged();
@@ -157,6 +163,21 @@ namespace Tk75.App
             if (same) return;
             if (next.Count == 0) controllerAssignments.Remove(keyIndex); else controllerAssignments[keyIndex] = next.ToArray();
             InvalidateKey(keyIndex); RefreshHoverTooltip();
+        }
+        public void SetBehaviorAnnotation(int keyIndex, KeyboardBehaviorAnnotation value)
+        {
+            ValidateIndex(keyIndex);
+            KeyboardBehaviorAnnotation previous; behaviorAnnotations.TryGetValue(keyIndex, out previous);
+            if (value == null)
+            { if (previous == null) return; behaviorAnnotations.Remove(keyIndex); }
+            else
+            {
+                string compact = value.Compact ?? "", full = value.Full ?? compact, description = value.Description ?? "";
+                if (previous != null && previous.Compact == compact && previous.Full == full && previous.Description == description) return;
+                behaviorAnnotations[keyIndex] = new KeyboardBehaviorAnnotation { Compact = compact, Full = full, Description = description };
+            }
+            InvalidateKey(keyIndex); RefreshHoverTooltip();
+            AccessibilityNotifyClients(AccessibleEvents.DescriptionChange, -1);
         }
         public void UpdateKeyState(int keyIndex, bool mapped, bool active, double? depth)
         {
@@ -527,7 +548,9 @@ namespace Tk75.App
                     mappings += "\n" + badge.Number + " · " + badge.Name + (badge.Selected ? UiText.Get(" (ausgewählt)", " (selected)") : "") + ": " + badge.Targets;
             }
             else mappings = "\n\n" + UiText.Get("Noch keinem Controller zugeordnet.", "Not assigned to a controller yet.");
-            return GetKeyLabel(key) + " · " + identity + "\n" + depth + action + mappings + "\n\n" + UiText.Get("Klicken: auswählen · Strg+Klicken: mehrere Tasten", "Click to select · Ctrl+click to select multiple keys") + dragHelp;
+            KeyboardBehaviorAnnotation annotation;
+            string behavior = key.KeyIndex.HasValue && behaviorAnnotations.TryGetValue(key.KeyIndex.Value, out annotation) && annotation.Description.Length != 0 ? "\n\n" + annotation.Description : "";
+            return GetKeyLabel(key) + " · " + identity + "\n" + depth + action + behavior + mappings + "\n\n" + UiText.Get("Klicken: auswählen · Strg+Klicken: mehrere Tasten", "Click to select · Ctrl+click to select multiple keys") + dragHelp;
         }
         protected override void OnMouseLeave(EventArgs e)
         { base.OnMouseLeave(e); pointerInside = false; hoverCode = null; RefreshPointerCursor(); Invalidate(); }
@@ -721,12 +744,14 @@ namespace Tk75.App
             float badgeHeight = DrawControllerBadges(graphics, key, bounds);
             if (badgeHeight > 0)
             { int inset = Math.Min(textBounds.Height / 2, (int)Math.Ceiling(badgeHeight)); legendBounds.Y += inset; legendBounds.Height = Math.Max(1, legendBounds.Height - inset); }
+            int annotationHeight = DrawBehaviorAnnotation(graphics, key, bounds, legendBounds, keyFont, chosen);
+            if (annotationHeight > 0) legendBounds.Height = Math.Max(1, legendBounds.Height - annotationHeight);
             bool showPercent = active && state.Depth.HasValue && !state.Estimated && textBounds.Width >= 22 &&
                 legendBounds.Height >= (int)Math.Ceiling(keyFont.GetHeight(graphics) + valueFont.GetHeight(graphics)) + 4;
             if (showPercent)
             {
                 int valueHeight = Math.Min(textBounds.Height / 2, (int)Math.Ceiling(valueFont.GetHeight(graphics)) + 1);
-                Rectangle valueBounds = new Rectangle(textBounds.Left, textBounds.Bottom - valueHeight - 3, textBounds.Width, valueHeight);
+                Rectangle valueBounds = new Rectangle(textBounds.Left, legendBounds.Bottom - valueHeight - 3, textBounds.Width, valueHeight);
                 legendBounds.Height = Math.Max(1, valueBounds.Top - legendBounds.Top - 1);
                 TextRenderer.DrawText(graphics, PercentText(state.Depth.Value), valueFont, valueBounds,
                     chosen ? Color.FromArgb(223, 215, 255) : Color.FromArgb(175, 230, 211),
@@ -750,6 +775,27 @@ namespace Tk75.App
                 using (GraphicsPath target = KeyPath(key, RectangleF.Inflate(bounds, 1.5f, 1.5f)))
                 using (Pen marker = new Pen(DropColor, 2.5f) { DashStyle = DashStyle.Dash })
                     graphics.DrawPath(marker, target);
+            }
+        }
+        int DrawBehaviorAnnotation(Graphics graphics, KeyboardKeyDefinition key, RectangleF bounds, Rectangle available, Font legendFont, bool chosen)
+        {
+            KeyboardBehaviorAnnotation annotation;
+            if (key.IsKnob || !key.KeyIndex.HasValue || !behaviorAnnotations.TryGetValue(key.KeyIndex.Value, out annotation) || String.IsNullOrEmpty(annotation.Compact)) return 0;
+            float fontSize = Math.Max(6f, Math.Min(8.5f, bounds.Height * .18f));
+            using (Font font = new Font("Segoe UI", fontSize, FontStyle.Regular, GraphicsUnit.Pixel))
+            {
+                int height = (int)Math.Ceiling(font.GetHeight(graphics)) + 2;
+                if (available.Height < height + legendFont.GetHeight(graphics) || bounds.Width < 24) return 0;
+                var area = new Rectangle((int)Math.Ceiling(bounds.Left) + 4, available.Bottom - height, Math.Max(1, (int)bounds.Width - 8), height);
+                const TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+                string text = annotation.Full;
+                if (TextRenderer.MeasureText(graphics, text, font, Size.Empty, flags).Width > area.Width) text = annotation.Compact;
+                if (TextRenderer.MeasureText(graphics, text, font, Size.Empty, flags).Width > area.Width) return 0;
+                GraphicsState saved = graphics.Save();
+                using (GraphicsPath path = KeyPath(key, bounds)) graphics.SetClip(path, CombineMode.Intersect);
+                TextRenderer.DrawText(graphics, text, font, area, chosen ? Color.FromArgb(161, 151, 192) : Color.FromArgb(125, 134, 151),
+                    flags | TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.PreserveGraphicsClipping);
+                graphics.Restore(saved); return height;
             }
         }
         float DrawControllerBadges(Graphics graphics, KeyboardKeyDefinition key, RectangleF bounds)

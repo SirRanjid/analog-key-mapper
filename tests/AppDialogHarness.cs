@@ -138,18 +138,19 @@ namespace Tk75.Tests
         {
             var slider = Field<PressureRangeSlider>(form, "pressureRange");
             var shared = Field<KeyboardPressureRange>(form, "sharedPressureRange");
-            Check(shared.Minimum == minimum && shared.Maximum == maximum && shared.ScaleMaximum == scale,
-                "The keyboard-wide range matches the completed edit: " + minimum + ".." + maximum + " on " + scale + ".");
+            int[] selected = (int[])Call(form, "SelectedKeys");
+            Check(selected.All(key => shared.ForKey(key).Rest == minimum && shared.ForKey(key).Bottom == maximum) && shared.ScaleMaximum == scale,
+                "Every selected key matches the completed edit: " + minimum + ".." + maximum + " on shared scale " + scale + ".");
             Check(slider.SelectedMinimum == minimum && slider.SelectedMaximum == maximum && slider.RangeMaximum == scale,
-                "The slider and global pressure range display the same values.");
+                "The slider displays the selected keys' range on the shared scale.");
             var runtime = Field<MultiControllerSession>(form, "runtime");
             foreach (DictionaryEntry entry in Field<IDictionary>(runtime, "slots"))
             {
                 object session = entry.Value.GetType().GetField("Session").GetValue(entry.Value);
                 var mapping = Field<MappingSession>(session, "inner");
                 var values = Field<Dictionary<int, Calibration>>(mapping, "calibrations");
-                Check(values.Count == 256 && Enumerable.Range(0, 256).All(key => values[key].Rest == minimum && values[key].Bottom == maximum),
-                    "The real controller session applies exactly the same range to all 256 physical key IDs.");
+                Check(values.Count == 256 && Enumerable.Range(0, 256).All(key => values[key].Rest == shared.ForKey(key).Rest && values[key].Bottom == shared.ForKey(key).Bottom),
+                    "The real controller session applies each key's own resolved range across all 256 physical key IDs.");
                 Check(Field<object>(mapping, "output") == null, "Calibration never creates a controller output in this synthetic test.");
             }
         }
@@ -157,7 +158,7 @@ namespace Tk75.Tests
         {
             var runtime = Field<MultiControllerSession>(form, "runtime");
             string binding = Current(form).Bindings.First(item => item.KeyIndex == 14).BindingId;
-            double expected = Field<KeyboardPressureRange>(form, "sharedPressureRange").Depth(raw);
+            double expected = Field<KeyboardPressureRange>(form, "sharedPressureRange").Depth(14, raw);
             AwaitDialog(delegate {
                 SignalResult result;
                 return runtime.Preview.BindingResults.TryGetValue(binding, out result) && result.IsValid &&
@@ -319,10 +320,12 @@ namespace Tk75.Tests
                     PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
                     CheckPressureRange(form, 0, 550, 550);
                     Check(Field<ReaderSession>(form, "pressureCaptureReader") == null && slider.Enabled && File.Exists(path),
-                        "One release automatically commits the global calibration without another click or second press.");
+                        "One release automatically commits the selected key calibration without another click or second press.");
                     CalibrationDocument saved = store.LoadCalibration(new string('c', 64), input.Reader.Fingerprint);
-                    Check(saved.GlobalMinimum == 0 && saved.GlobalMaximum == 550 && saved.ScaleMaximum == 550 && saved.Entries.Count == 0,
-                        "The saved document records one shared range without manufacturing per-key measurements.");
+                    Check(!saved.GlobalMinimum.HasValue && saved.KeyRanges.Count == 1 && saved.KeyRanges[0].KeyIndex == 14 &&
+                        saved.KeyRanges[0].Minimum == 0 && saved.KeyRanges[0].Maximum == 550 && saved.ScaleMaximum == 550 && saved.Entries.Count == 0,
+                        "The saved document records exactly the selected key range and a shared visual scale.");
+                    SelectKeys(form, 9); CheckPressureRange(form, 0, 385, 550); SelectKeys(form, 14); CheckPressureRange(form, 0, 550, 550);
                     string committed = File.ReadAllText(path);
                     PushDialog(input, 14, 700, 0); Call(form, "UpdatePressureCapture");
                     Check(File.ReadAllText(path) == committed, "Later normal presses cannot recalibrate after capture has completed.");
@@ -369,14 +372,39 @@ namespace Tk75.Tests
                     slider.AccessibilityObject.GetChild(1).Value = "600";
                     CheckPressureRange(form, 10, 600, 700);
                     saved = store.LoadCalibration(new string('c', 64), input.Reader.Fingerprint);
-                    Check(saved.GlobalMinimum == 10 && saved.GlobalMaximum == 600 && saved.ScaleMaximum == 700,
-                        "Editing either real slider handle persists the range for every key.");
+                    Check(!saved.GlobalMinimum.HasValue && saved.KeyRanges.Count == 1 && saved.KeyRanges[0].Minimum == 10 && saved.KeyRanges[0].Maximum == 600 && saved.ScaleMaximum == 700,
+                        "Editing either real slider handle persists only the selected key's range.");
                     SelectKeys(form, 9, 14);
-                    Check(slider.Enabled && !Field<Button>(form, "calibrateRange").Enabled,
-                        "The shared range stays editable for multiple keys; measurement names one selected source key.");
+                    Check(slider.Enabled && Field<Button>(form, "calibrateRange").Enabled && slider.SelectedMaximum == 385,
+                        "Multiple selected keys can be edited or calibrated; mixed ranges display the first selected key.");
+                    slider.AccessibilityObject.GetChild(0).Value = "10";
+                    slider.AccessibilityObject.GetChild(1).Value = "600";
+                    CheckPressureRange(form, 10, 600, 700);
+                    Check(Field<KeyboardPressureRange>(form, "sharedPressureRange").ForKey(1).Bottom == 385, "A group edit preserves every unselected key.");
+                    SelectKeys(form, 9); slider.AccessibilityObject.GetChild(1).Value = "450";
+                    CheckPressureRange(form, 10, 450, 700);
+                    SelectKeys(form, 14); CheckPressureRange(form, 10, 600, 700);
+                    SelectKeys(form, 9); scale.Value = 100;
+                    Check(slider.RangeMaximum == 600 && slider.SelectedMaximum == 450, "A lower scale previews the unselected key's largest endpoint without moving either range.");
+                    typeof(NumericUpDown).GetMethod("OnKeyDown", Private).Invoke(scale, new object[] { new KeyEventArgs(Keys.Enter) });
+                    CheckPressureRange(form, 10, 450, 600);
+                    Check(scale.Value == 600 && Field<KeyboardPressureRange>(form, "sharedPressureRange").ForKey(14).Bottom == 600,
+                        "Committing too small a scale corrects the editor value and preserves the unselected range.");
+                    scale.Value = 700;
+                    typeof(NumericUpDown).GetMethod("OnKeyDown", Private).Invoke(scale, new object[] { new KeyEventArgs(Keys.Enter) });
+                    SelectKeys(form, 9, 14); PushDialog(input, 9, 0); PushDialog(input, 14, 0); ClickPressureCalibration(form);
+                    PushDialog(input, 1, 900, 0); Call(form, "UpdatePressureCapture");
+                    Check(Field<int>(form, "pressureCaptureKey") == -1, "An unselected key cannot become a group calibration source.");
+                    PushDialog(input, 14, 80, 650); PushDialog(input, 9, 900, 0); Call(form, "UpdatePressureCapture");
+                    Check(Field<int>(form, "pressureCaptureKey") == 14 && slider.SelectedMaximum == 650, "The first pressed selected key owns the group capture, independent of selection order.");
+                    PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
+                    CheckPressureRange(form, 0, 650, 700);
+                    Check(Field<KeyboardPressureRange>(form, "sharedPressureRange").ForKey(1).Bottom == 385, "Group calibration leaves unselected keys untouched.");
+                    slider.AccessibilityObject.GetChild(0).Value = "10";
+                    slider.AccessibilityObject.GetChild(1).Value = "600";
                     CheckPressureRange(form, 10, 600, 700);
                     SelectKeys(form, 14);
-                    CapturePreview(form, artifacts, "global-pressure-range");
+                    CapturePreview(form, artifacts, "per-key-pressure-range");
 
                     committed = File.ReadAllText(path); PushDialog(input, 14, 0); ClickPressureCalibration(form);
                     PushDialog(input, 14, 80, 740, 0); input.Reader.Stop(); Call(form, "UpdatePressureCapture");
@@ -384,6 +412,7 @@ namespace Tk75.Tests
                         "Disconnect before the UI commits a completed measurement cannot change the saved range.");
                     Check(!Field<Button>(form, "calibrateRange").Enabled, "A stopped reader disables calibration without silently reconnecting it.");
                     CheckPressureRange(form, 10, 600, 700);
+                    SelectKeys(form, 9); CheckPressureRange(form, 10, 600, 700); SelectKeys(form, 14);
                 }
                 using (var input = new DialogInput())
                 using (var form = PressurePreview(data, input))
@@ -400,6 +429,21 @@ namespace Tk75.Tests
         {
             int started = assertions;
             RunInlinePressureRange(artifacts);
+            using (var progress = new CloseProgressForm())
+            {
+                progress.StartPosition = FormStartPosition.Manual; progress.Location = new Point(-30000, -30000);
+                progress.Show(); progress.SetPhase(0, ShutdownPhaseState.Completed); progress.SetPhase(1, ShutdownPhaseState.Completed);
+                progress.SetPhase(2, ShutdownPhaseState.Running); progress.SetPhase(3, ShutdownPhaseState.Pending);
+                progress.PaintProgress();
+                Check(Field<SleekProgressBar>(progress, "progress").Value == 2, "Close progress counts only genuinely completed phases.");
+                using (var bitmap = new Bitmap(progress.Width, progress.Height))
+                { progress.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(artifacts, "close-progress-lighting.png"), System.Drawing.Imaging.ImageFormat.Png); }
+                progress.SetPhase(2, ShutdownPhaseState.Failed); progress.SetPhase(3, ShutdownPhaseState.Running);
+                Check(Field<SleekProgressBar>(progress, "progress").Value == 2, "A failed restore never advances the completion bar.");
+                progress.SetDetail(UiText.Get("Sicherung bleibt für die Wiederherstellung erhalten", "Backup retained for recovery")); progress.PaintProgress();
+                using (var bitmap = new Bitmap(progress.Width, progress.Height))
+                { progress.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(artifacts, "close-progress-recovery.png"), System.Drawing.Imaging.ImageFormat.Png); }
+            }
 
             using (var input = new DialogInput())
             using (var dialog = new LearnDialog(input.Reader, "W"))
