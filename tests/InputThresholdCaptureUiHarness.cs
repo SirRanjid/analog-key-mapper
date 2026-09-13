@@ -77,6 +77,24 @@ namespace Tk75.Tests
                 }
                 SetPreviewClientSize(form, DefaultClientSize); DetailMode(form, "advanced"); RevealCurveSetting(form, Field<Control>(form, "keyBehaviorPanel"));
 
+                int[] presentationKeys = (int[])Call(form, "SelectedKeys");
+                string[] presentationBindings = (string[])Call(form, "SelectedBindings");
+                Control presentationFocus = form.ActiveControl;
+                try
+                {
+                    SelectKeys(form, 14); DetailMode(form, "advanced");
+                    Field<InputThresholdSlider>(form, "actuationSlider").Focus(); Pump(form);
+                    Call(form, "PreviewCurveInputOption", InputActivationFields.Actuation, null);
+                    CapturePreview(form, artifacts, "threshold-calibrate-ready");
+                }
+                finally
+                {
+                    SelectKeys(form, presentationKeys); SelectBindings(form, presentationBindings);
+                    if (presentationFocus != null && !presentationFocus.IsDisposed && presentationFocus.CanFocus) presentationFocus.Focus();
+                    Pump(form); Call(form, "RefreshCurveInputPreview");
+                    DetailMode(form, "advanced"); RevealCurveSetting(form, Field<Control>(form, "keyBehaviorPanel"));
+                }
+
                 ClickInputCalibration(form, "calibrateActuation");
                 Call(form, "UpdateLive");
                 Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") != null, "Waiting without initial samples keeps recording armed.");

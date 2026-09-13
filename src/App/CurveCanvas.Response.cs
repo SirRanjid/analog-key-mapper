@@ -18,7 +18,13 @@ namespace Tk75.App
             inputRangeRail = input; outputRangeRail = output;
             if (input != null && input.Parent != this) Controls.Add(input);
             if (output != null && output.Parent != this) Controls.Add(output);
-            PositionRangeRails(); Invalidate();
+            PositionRangeRails(); UpdateRangeRailVisibility(); Invalidate();
+        }
+        void UpdateRangeRailVisibility()
+        {
+            bool visible = !DynamicPreviewVisible;
+            if (inputRangeRail != null) inputRangeRail.Visible = visible;
+            if (outputRangeRail != null) outputRangeRail.Visible = visible;
         }
         void PositionRangeRails()
         {
@@ -29,6 +35,7 @@ namespace Tk75.App
         }
         void DrawRangeRailLabels(Graphics graphics)
         {
+            if (DynamicPreviewVisible) return;
             RectangleF plot = Plot;
             if (inputRangeRail != null) TextRenderer.DrawText(graphics, "IN", Font, new Rectangle(3, (int)plot.Bottom + 7, 28, 18), ModernTheme.Muted,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
@@ -68,9 +75,10 @@ namespace Tk75.App
         }
         void UpdateViewButton()
         {
+            UpdateRangeRailVisibility();
             if (viewButton == null) return;
             viewButton.SetBounds(Math.Max(58, Width - 104), 4, Math.Min(98, Math.Max(70, Width - 64)), 25);
-            viewButton.Text = shapeEditing || DynamicPreviewVisible ? UiText.Get("Antwort", "Response") : UiText.Get("Form ändern", "Edit shape");
+            viewButton.Text = shapeEditing || DynamicPreviewVisible ? UiText.Get("Antwort", "Response") : UiText.Get("Bearbeiten", "Edit shape");
             viewButton.Enabled = settings != null || DynamicPreviewVisible;
             viewButton.AccessibleName = viewButton.Text;
             tips.SetToolTip(viewButton, shapeEditing || DynamicPreviewVisible ? UiText.Get("Die tatsächliche Ausgabe mit Totbereichen, Stärke und Ausgabegrenzen anzeigen.",
@@ -149,7 +157,7 @@ namespace Tk75.App
         }
         string ResponseHelp(SignalSettings shown)
         {
-            string text = UiText.Get("Horizontal: kalibrierter Druck vor den Totbereichen. Vertikal: berechnete Ausgabe nach Kurve, Ausgabestärke, Ausgabesperre und Ausgabegrenzen. Durchgezogen = Drücken; gestrichelt = Loslassen. Schattierte Bereiche und gepunktete Linien sind Orientierungshilfen, keine Ziehpunkte. Werte mit den Reglern darunter ändern; eigene Kurvenpunkte über „Form ändern“ bearbeiten.",
+            string text = UiText.Get("Horizontal: kalibrierter Druck vor den Totbereichen. Vertikal: berechnete Ausgabe nach Kurve, Ausgabestärke, Ausgabesperre und Ausgabegrenzen. Durchgezogen = Drücken; gestrichelt = Loslassen. Schattierte Bereiche und gepunktete Linien sind Orientierungshilfen, keine Ziehpunkte. Werte mit den Reglern darunter ändern; eigene Kurvenpunkte über „Bearbeiten“ ändern.",
                 "Horizontal: calibrated pressure before deadzones. Vertical: output after the curve, output strength, output deadzone and output limits. Solid = pressing; dashed = releasing. Shaded bands and dotted lines are guides, not drag handles. Change values with the sliders below; use Edit shape to work with custom curve points.");
             if (shown == null) return text;
             text += "\n\n" + UiText.Get("Drücken oberhalb ", "Press above ") + Percent(shown.TopDeadzone + shown.Hysteresis) + UiText.Get("; Loslassen bei ", "; release at ") + Percent(shown.TopDeadzone) + ".";

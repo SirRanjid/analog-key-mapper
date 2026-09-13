@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
 using Tk75.Mapping;
@@ -9,7 +10,7 @@ namespace Tk75.App
     public sealed partial class MainForm
     {
         readonly Label socdDropTarget = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter,
-            AutoEllipsis = true, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(3, 2, 3, 2), AllowDrop = true };
+            AutoEllipsis = true, BorderStyle = BorderStyle.None, Margin = new Padding(3, 2, 3, 2), AllowDrop = true };
         bool socdDropHighlighted;
         SocdDragContext pendingSocdDrag;
         sealed class SocdDragContext
@@ -60,6 +61,13 @@ namespace Tk75.App
         {
             UiText.PreserveText(socdDropTarget);
             UiText.PreserveText(captureOpposite);
+            socdDropTarget.Paint += delegate(object sender, PaintEventArgs e) {
+                if (socdDropTarget.Width < 3 || socdDropTarget.Height < 3) return;
+                SmoothingMode previous = e.Graphics.SmoothingMode; e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var path = SurfaceDrawing.Round(new RectangleF(.5f, .5f, socdDropTarget.Width - 1.5f, socdDropTarget.Height - 1.5f), 6))
+                using (var pen = new Pen(ModernTheme.Border)) e.Graphics.DrawPath(pen, path);
+                e.Graphics.SmoothingMode = previous;
+            };
             var captureRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
             captureRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); captureRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94));
             captureRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
