@@ -71,11 +71,7 @@ The output list in **Keys** outlines its selected row even when the list has onl
 
 **Behavior** under Keys controls Rapid Trigger and opposite-key handling (SOCD). These belong to physical keys and are shared by their mappings. Mixed values are marked; editing one field preserves the others. With two selected keys, you can pair them explicitly and choose neutral, first-pressed or last-pressed resolution. Larger selections retain existing pairs and do not offer pair editing.
 
-To pair by dragging, select the first key and open **Behavior**. Drag the opposite key from the keyboard, hover **Keys** to reopen the original key's behavior, and drop onto **Drop the opposite key for … here**. The field names the original key and lights up for a valid drop. This pairs both keys, keeps the original key's SOCD policy and preserves their actuation settings. Existing partners are unpaired; **Undo** restores the previous pairings. Dropping on a tab alone does not create a pair, and **Escape** cancels the drag.
-
-![Behavior editor with the valid opposite-key drop area highlighted](images/socd-opposite-drop.png)
-
-*Synthetic preview: the amber field identifies W as the original key and accepts its dragged opposite. No hardware is connected in these guide images.*
+To capture an opposite key, select the first key and open **Behavior**, then click **Capture**. Click the desired opposite key on the keyboard illustration. This pairs both keys, keeps the original key's SOCD policy and preserves their actuation settings. Existing partners are unpaired; **Undo** restores the previous pairings. **Cancel** or **Escape** cancels capture. Dragging a key continues to open **Controller** for normal output mapping.
 
 ## Profiles and saved data
 

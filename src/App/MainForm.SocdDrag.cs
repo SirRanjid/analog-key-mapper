@@ -24,6 +24,7 @@ namespace Tk75.App
         }
         void CaptureSocdDragContext(KeyboardKeyDefinition source)
         {
+            TrackSocdCapturePress(source);
             pendingSocdDrag = null;
             if (source == null || !source.KeyIndex.HasValue || activeMappingDrag != null || closing) return;
             int[] selection = SelectedKeys();
@@ -58,7 +59,15 @@ namespace Tk75.App
         void BuildSocdDragUi(TableLayoutPanel form, int row)
         {
             UiText.PreserveText(socdDropTarget);
-            form.Controls.Add(socdDropTarget, 0, row); form.SetColumnSpan(socdDropTarget, 3);
+            UiText.PreserveText(captureOpposite);
+            var captureRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+            captureRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); captureRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94));
+            captureRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            captureRow.Controls.Add(socdDropTarget, 0, 0); captureRow.Controls.Add(captureOpposite, 1, 0);
+            form.Controls.Add(captureRow, 0, row); form.SetColumnSpan(captureRow, 3);
+            captureOpposite.Click += delegate { if (socdCapture == null) Attempt(BeginSocdCapture); else CancelSocdCapture(true); };
+            keyboard.MouseCaptureChanged += delegate { FinishSocdCapturePointer(); };
+            VisibleChanged += delegate { if (!Visible && socdCapture != null) CancelSocdCapture(false); };
             socdDropTarget.DragEnter += UpdateSocdDrag; socdDropTarget.DragOver += UpdateSocdDrag;
             socdDropTarget.DragLeave += delegate { SetSocdDropHighlight(false); SetDefaultDragHint(); };
             socdDropTarget.DragDrop += DropOnSocd;
@@ -101,13 +110,17 @@ namespace Tk75.App
         }
         void RefreshSocdDropTarget()
         {
+            RefreshSocdCaptureUi();
             int[] selected = SelectedKeys();
             int? target = activeMappingDrag != null && SocdContextCurrent(activeMappingDrag.Socd) ? activeMappingDrag.Socd.Target : selected.Length == 1 ? (int?)selected[0] : null;
-            socdDropTarget.Text = target.HasValue ? string.Format(Tr("Gegentaste für {0} hier ablegen", "Drop the opposite key for {0} here"), Label(target.Value)) :
-                Tr("Eine Taste auswählen, dann die Gegentaste hierher ziehen.", "Select one key, then drag its opposite here.");
-            socdDropTarget.Text += "\n" + Tr("Beim Ziehen über den Reiter Tasten fahren", "While dragging, hover the Keys tab");
+            if (socdCapture != null)
+                socdDropTarget.Text = (socdCaptureNotice ?? string.Format(Tr("Gegentaste für {0} anklicken", "Click the opposite key for {0}"), Label(socdCapture.Target.Value))) + "\n" + Tr("Esc bricht ab", "Esc cancels");
+            else if (activeMappingDrag != null && target.HasValue)
+                socdDropTarget.Text = string.Format(Tr("Gegentaste für {0} hier ablegen", "Drop the opposite key for {0} here"), Label(target.Value));
+            else socdDropTarget.Text = socdCaptureNotice ?? (target.HasValue ? string.Format(Tr("Gegentaste für {0} erfassen", "Capture the opposite key for {0}"), Label(target.Value)) :
+                Tr("Eine Taste zum Erfassen auswählen.", "Select one key to capture its opposite."));
             socdDropTarget.AccessibleName = socdDropTarget.Text;
-            socdDropTarget.AccessibleDescription = Tr("Beim Ziehen öffnet der Reiter Tasten dieses Feld. Alternativ den Gegenpart oben auswählen.", "While dragging, hover the Keys tab to reveal this area. Alternatively choose the opposite key above.");
+            socdDropTarget.AccessibleDescription = Tr("Erfassen wählen, dann die Gegentaste auf der Tastaturabbildung anklicken. Alternativ den Gegenpart oben auswählen.", "Choose Capture, then click the opposite key on the keyboard. Alternatively choose its name above.");
             keyCardTips.SetToolTip(socdDropTarget, socdDropTarget.AccessibleDescription);
         }
         void SetSocdDropHighlight(bool value)

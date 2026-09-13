@@ -455,6 +455,7 @@ namespace Tk75.App
         }
         protected override bool ProcessCmdKey(ref Message message, Keys keyData)
         {
+            if (keyData == Keys.Escape && TryCancelSocdCapture()) return true;
             if (deviceDetachInProgress && (keyData == (Keys.Control | Keys.S) || keyData == (Keys.Control | Keys.C) ||
                 keyData == (Keys.Control | Keys.V) || keyData == (Keys.Control | Keys.Z) || keyData == (Keys.Control | Keys.Y) ||
                 keyData == (Keys.Control | Keys.Shift | Keys.Z))) return true;

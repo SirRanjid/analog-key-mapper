@@ -74,7 +74,7 @@ namespace Tk75.App
             player.Controls.Add(mainControllerSlotPicker, 0, 1); introductionRow.Controls.Add(player, 1, 0); keyboardArea.Controls.Add(introductionRow, 0, 0);
             keyboard.Dock = DockStyle.Fill; keyboard.LayoutModel = KeyboardLayout.Tk75Iso(); keyboard.LegendStyle = KeyboardLegendStyle.Qwertz;
             keyboard.SelectionChanged += delegate { if (!updating) SelectKeyboardKeys(); }; keyboardArea.Controls.Add(keyboard, 0, 1);
-            keyboard.KeyClicked += delegate { if (!updating && activeMappingDrag == null) SetDetailMode(null, true, false); };
+            keyboard.KeyClicked += delegate(KeyboardKeyDefinition key) { if (!updating && activeMappingDrag == null && !TryCompleteSocdCapture(key)) SetDetailMode(null, true, false); };
             var legend = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty, Padding = new Padding(0, 4, 0, 0) };
             var mappingHint = new Label { Text = Tr("Drag & Drop: Taste ↔ Controller", "Drag & drop: key ↔ controller"), Width = 270, Height = 29, TextAlign = ContentAlignment.MiddleLeft, Tag = "muted" };
             keyCardTips.SetToolTip(mappingHint, Tr("Taste auf einen Controller-Button ziehen – oder den Controller-Button auf eine Taste. Strg + Klick wählt mehrere Tasten aus.", "Drag a key onto a controller button, or drag the controller button onto a key. Ctrl + click selects multiple keys."));

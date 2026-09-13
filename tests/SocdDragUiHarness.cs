@@ -118,6 +118,7 @@ namespace Tk75.Tests
                 fixture = KeyInputEditing.ApplyActivation(fixture, new[] { 14 }, new KeyInputSettings { ActuationPoint = .24 }, InputActivationFields.Actuation);
                 fixture = KeyInputEditing.ApplyActivation(fixture, new[] { 9 }, new KeyInputSettings { ActuationPoint = .36 }, InputActivationFields.Actuation);
                 Call(form, "Commit", fixture); Pump(form);
+                RunSocdCaptureUi(form, artifacts);
                 Console.WriteLine("SOCD STAGE: fixture ready " + elapsed.ElapsedMilliseconds + " ms");
                 string before = Json(Current(form));
                 object drag = BeginSocdTestDrag(form, new[] { 14 }, new[] { 9 });
@@ -204,6 +205,104 @@ namespace Tk75.Tests
                 typeof(MainForm).GetField("pendingSocdDrag", Private).SetValue(form, null);
             }
             Console.WriteLine("SOCD DRAG UI PASS: " + (assertions - started) + " assertions; internal-only pairing, original selection, symmetric undo, cancellation and stale-data rejection; no OLE or hardware.");
+        }
+
+        static void ArmSocdCapture(MainForm form)
+        {
+            var capture = Field<Button>(form, "captureOpposite");
+            Check(capture.Visible && capture.Enabled, "Capture is directly available inside Keys / Behavior.");
+            capture.PerformClick();
+            Check(Field<object>(form, "socdCapture") != null && capture.Text == UiText.Get("Abbrechen", "Cancel"),
+                "The Capture button arms an explicit opposite-key selection and becomes Cancel.");
+        }
+        static void RunSocdCaptureUi(MainForm form, string artifacts)
+        {
+            int started = assertions;
+            Profile original = Current(form);
+            var keyboard = Field<VisualKeyboard>(form, "keyboard");
+            try
+            {
+                SelectKeys(form, 14); DetailMode(form, "input");
+                string before = Json(Current(form));
+                ArmSocdCapture(form);
+                CapturePreview(form, artifacts, "socd-capture");
+                keyboard.Focus(); Point point = KeyGesturePoint(keyboard, 9);
+                SendKeyboardMouse(keyboard, "OnMouseDown", point);
+                Equal(before, Json(Current(form)), "Mouse-down never commits an opposite-key pairing before the drag threshold is known.");
+                Check(Field<object>(form, "socdCapture") != null && Field<string>(form, "detailsMode") == "input",
+                    "The original capture target survives the opposite key's mouse-down selection change.");
+                SendKeyboardMouse(keyboard, "OnMouseUp", point); Pump(form);
+                var expected = KeyInputEditing.SetPairing(original, new[] { 14 }, 9, KeyInputEditing.GetOrDefault(original, 14).OppositePolicy);
+                Equal(Json(expected), Json(Current(form)), "One opposite-key click pairs both directions, removes former partners and preserves the original target's policy and activation settings.");
+                Check(Field<object>(form, "socdCapture") == null && Field<string>(form, "detailsMode") == "input" &&
+                    ((int[])Call(form, "SelectedKeys")).SequenceEqual(new[] { 14 }),
+                    "Capture completes in Behavior with the originally edited key selected.");
+                Check(form.OwnedForms.Length == 0, "Opposite-key capture opens no dialog.");
+                Check(Field<string>(form, "socdCaptureNotice") != null, "A completed capture reports its result inline.");
+                Call(form, "Undo"); Equal(before, Json(Current(form)), "One Undo reverses the complete captured pairing.");
+                Check(Field<string>(form, "socdCaptureNotice") == null, "Undo clears the old pairing-success notice even when the same target remains selected.");
+                Call(form, "Redo"); Equal(Json(expected), Json(Current(form)), "One Redo restores both captured opposite keys.");
+                Call(form, "Undo"); SelectKeys(form, 14); DetailMode(form, "input");
+
+                ArmSocdCapture(form); ShortKeyboardClick(keyboard, 14); Pump(form);
+                Check(Field<object>(form, "socdCapture") != null && Field<string>(form, "detailsMode") == "input",
+                    "Clicking the same key keeps capture armed in Behavior.");
+                Check(Field<Label>(form, "socdDropTarget").Text.Contains(UiText.Get("Eine andere Taste anklicken.", "Click a different key.")),
+                    "A same-key click explains the correction inline.");
+                Equal(before, Json(Current(form)), "A key can never be paired with itself.");
+                Check((bool)Call(form, "ProcessCmdKey", new Message(), Keys.Escape), "The main-window Escape route cancels armed capture.");
+                Check(Field<object>(form, "socdCapture") == null && Field<string>(form, "detailsMode") == "input",
+                    "Escape returns to ordinary Behavior without leaving capture active.");
+                ArmSocdCapture(form); Field<Button>(form, "captureOpposite").PerformClick();
+                Check(Field<object>(form, "socdCapture") == null, "The Cancel button also disarms capture.");
+                Equal(before, Json(Current(form)), "Both cancellation routes leave the profile unchanged.");
+
+                ArmSocdCapture(form); SelectKeys(form, 9);
+                Check(Field<object>(form, "socdCapture") == null, "Changing selection outside a captured key click cancels the old target.");
+                SelectKeys(form, 14); DetailMode(form, "input"); ArmSocdCapture(form); DetailMode(form, "controller");
+                Check(Field<object>(form, "socdCapture") == null, "Changing tabs disarms capture instead of leaving a hidden input mode.");
+                DetailMode(form, "input"); ArmSocdCapture(form); form.Hide();
+                Check(Field<object>(form, "socdCapture") == null, "Hiding the editor disarms capture before a later tray restore.");
+                form.Show(); Pump(form);
+                DetailMode(form, "input"); ArmSocdCapture(form);
+                Call(form, "CaptureSocdDragContext", keyboard.LayoutModel.FindByIndex(9)); SelectKeys(form, 9);
+                object drag = Call(form, "PrepareKeyMappingDrag", (object)new[] { 9 });
+                Check(drag != null && Field<object>(form, "socdCapture") == null && Field<string>(form, "detailsMode") == "controller",
+                    "Crossing into actual drag preparation cancels capture and prioritizes the Controller tab.");
+                Equal(before, Json(Current(form)), "Dragging an opposite candidate does not accidentally create a pairing.");
+
+                SelectKeys(form, 14); DetailMode(form, "input"); ArmSocdCapture(form);
+                typeof(MainForm).GetField("history", Private).SetValue(form, new EditHistory(Current(form)));
+                ShortKeyboardClick(keyboard, 9); Pump(form);
+                Check(Field<object>(form, "socdCapture") == null && Field<string>(form, "detailsMode") == null,
+                    "A replaced editing history invalidates capture and the click returns to normal Keys navigation.");
+                Equal(before, Json(Current(form)), "A stale capture cannot modify the replacement profile history.");
+
+                SelectKeys(form, 14); DetailMode(form, "input");
+                Field<NumericUpDown>(form, "actuationPoint").Value = 31;
+                Check(Field<bool>(form, "inputDirty"), "The capture fixture contains a pending activation edit.");
+                ArmSocdCapture(form);
+                Profile flushed = Current(form);
+                Check(Math.Abs(KeyInputEditing.GetOrDefault(flushed, 14).ActuationPoint - .31) < .000001,
+                    "Arming capture first applies the original key's pending edit.");
+                ShortKeyboardClick(keyboard, 9); Pump(form);
+                expected = KeyInputEditing.SetPairing(flushed, new[] { 14 }, 9, KeyInputEditing.GetOrDefault(flushed, 14).OppositePolicy);
+                Equal(Json(expected), Json(Current(form)), "Captured pairing keeps the activation draft on the original key.");
+                SelectKeys(form, 15);
+                Check(Field<string>(form, "socdCaptureNotice") == null, "Selecting another key removes the prior target's pairing-result notice.");
+                SelectKeys(form, 14);
+                Call(form, "Undo"); Equal(Json(flushed), Json(Current(form)), "Undoing the capture retains the earlier activation edit.");
+                SelectKeys(form, 9, 14); DetailMode(form, "input");
+                Check(!Field<Button>(form, "captureOpposite").Enabled && Field<ComboBox>(form, "oppositeKey").Enabled,
+                    "Capture names one source key; the existing selector still supports pairing two selected keys.");
+                AssertPassive(form);
+            }
+            finally
+            {
+                Call(form, "CancelSocdCapture", false); Call(form, "Commit", original); SelectKeys(form, 14); DetailMode(form, "input");
+                typeof(MainForm).GetField("pendingSocdDrag", Private).SetValue(form, null);
+            }
+            Console.WriteLine("SOCD CAPTURE UI PASS: " + (assertions - started) + " assertions; click/release pairing, original context, drag priority, inline validation, cancellation and undo.");
         }
     }
 }

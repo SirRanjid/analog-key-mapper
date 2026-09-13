@@ -307,6 +307,7 @@ namespace Tk75.App
         }
         MappingDrag PrepareKeyMappingDrag(int[] keysToMap)
         {
+            if (socdCapture != null) CancelSocdCapture(false);
             FlushInputDraft();
             var drag = new MappingDrag { Keys = (int[])keysToMap.Clone(), Socd = TakeSocdDragContext(keysToMap) };
             SetDetailMode("controller", true, false); controllerPanel.PerformLayout();

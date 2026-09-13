@@ -13,7 +13,7 @@
 - **Map in both directions.** Drag a key onto a controller output, or an output onto a key. The grabbed shape follows your pointer; readable left/right labels and numbered key badges identify assignments.
 - **Keep controller setups separate.** Mix Xbox 360 and DualSense slots, each with its own mappings, color and USB connection control. Pending connections stay visible and can be cancelled.
 - **See and tune each output.** Keys, Curve and Controller tabs keep the keyboard in place. A clear selection outline and per-output response summaries lead to deadzones, thresholds and a square linear/custom/Bézier curve editor.
-- **Set key behavior together.** Configure Rapid Trigger and opposite-key handling (SOCD), including pairing by drag. Use Ctrl+click or a selection rectangle for bulk edits, with undo.
+- **Set key behavior together.** Configure Rapid Trigger and opposite-key handling (SOCD). Use Capture, then click the opposite key to pair it. Use Ctrl+click or a selection rectangle for bulk edits, with undo.
 - **Calibrate once for every key.** Adjust a shared min/max pressure slider or press one key fully and release. A higher reading automatically expands the scale.
 - **Save your setup and lighting.** Keep JSON profiles, signal presets and named controllers. Optional mapped-key colors include a backup and restore workflow. English and German are included.
 - **Keep the editor out of the way.** Use the tray or opt into Windows startup. Controller reconnection is a separate option that starts off. [Background startup guide](docs/background-startup.md).
@@ -32,7 +32,7 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 ## Release candidate
 
-**rc.4** adds a shared min/max pressure slider and single-press calibration, a saved **Minimize to tray** option for the window's X, and lighting restoration in the keyboard helper when the app connection ends. Readable modifier labels, output response summaries and SOCD pairing by drag remain available. See the [user guide](docs/user-guide.md).
+**rc.4** adds a shared min/max pressure slider and single-press calibration, SOCD pairing with **Capture** and a key click, a saved **Minimize to tray** option for the window's X, and lighting restoration in the keyboard helper when the app connection ends. Readable modifier labels and output response summaries remain available. See the [user guide](docs/user-guide.md).
 
 The release candidate also includes these connection and lifecycle safeguards:
 

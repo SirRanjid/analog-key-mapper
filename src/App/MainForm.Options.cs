@@ -84,6 +84,7 @@ namespace Tk75.App
         void SetDetailMode(string mode, bool chosen, bool activate = true)
         {
             if (deviceDetachInProgress || closing) return;
+            if (mode != "input" && socdCapture != null) CancelSocdCapture(false);
             if (mode != detailsMode) { settings.EndEdit(); FlushInputDraft(); }
             detailsMode = mode; advancedVisible = mode == "advanced";
             controllerHeading.Visible = mode == "controller"; detailsTitle.Visible = mode != "controller";
@@ -170,6 +171,7 @@ namespace Tk75.App
         }
         void SetInputTooltips()
         {
+            RefreshSocdCaptureUi();
             keyCardTips.SetToolTip(rapidTrigger, Tr("Nach dem ersten Auslösen reicht ein kurzes Loslassen und erneutes Drücken. Es entstehen keine automatischen Wiederholungen.", "After the first actuation, a small release and renewed press can retrigger. This never generates automatic repeats."));
             keyCardTips.SetToolTip(actuationPoint, Tr("So weit drückst du zuerst, bevor Druckwerte weitergegeben werden. Zugewiesene Controllerknöpfe behalten ihre eigene Schwelle unter Feinabstimmung.", "How far you first press before pressure values pass through. Assigned controller buttons retain their own threshold under Fine tuning."));
             keyCardTips.SetToolTip(releaseMovement, Tr("Wie weit du nach einem Druck loslassen musst, damit die Taste wieder frei ist.", "How far you release from the deepest press before the key becomes inactive."));

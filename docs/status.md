@@ -31,7 +31,7 @@ Profiles offer **32 output-capable slots in total**, each freely assigned to Xbo
 
 ## Recorded automated checks
 
-The rc.4 tests add shared range persistence, automatic calibration after one press and release, editable min/max handles, saved close-to-tray behavior, transient restore retries and helper cleanup with fresh device identification. The release notes link the complete workflow run for the downloadable build. These checks use synthetic sources; physical shutdown and game acceptance for rc.4 remain open.
+The rc.4 tests add shared range persistence, automatic calibration after one press and release, editable min/max handles, opposite-key capture by click, saved close-to-tray behavior, transient restore retries and helper cleanup with fresh device identification. The release notes link the complete workflow run for the downloadable build. These checks use synthetic sources; physical shutdown and game acceptance for rc.4 remain open.
 
 Earlier targeted runs recorded during rc.3 development passed:
 
