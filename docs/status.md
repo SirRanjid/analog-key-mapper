@@ -1,6 +1,6 @@
 # Compatibility and validation
 
-Release-candidate validation, updated **12 September 2026**. [Downloads and release versions](https://github.com/SirRanjid/analog-key-mapper/releases) · [User guide](user-guide.md) · [Build instructions](building.md)
+Release-candidate validation, updated **13 September 2026**. [Downloads and release versions](https://github.com/SirRanjid/analog-key-mapper/releases) · [User guide](user-guide.md) · [Build instructions](building.md)
 
 This page describes implemented features and recorded validation. Release assets identify their own version; the observations below apply only to the builds and test setups stated here. A release candidate is not a stable 1.0 acceptance claim.
 
@@ -31,7 +31,9 @@ Profiles offer **32 output-capable slots in total**, each freely assigned to Xbo
 
 ## Recorded automated checks
 
-The latest recorded targeted development runs passed:
+The rc.4 tests add shared range persistence, automatic calibration after one press and release, editable min/max handles, saved close-to-tray behavior, transient restore retries and helper cleanup with fresh device identification. The release notes link the complete workflow run for the downloadable build. These checks use synthetic sources; physical shutdown and game acceptance for rc.4 remain open.
+
+Earlier targeted runs recorded during rc.3 development passed:
 
 | Suite | Assertions | What it exercises |
 | --- | ---: | --- |
@@ -51,7 +53,7 @@ The UI checks include original-size key and controller pixels, transparent conto
 
 The recorded UI revision includes 136 modifier-label checks, 66 output-summary checks and 147 SOCD-drag checks. Output summaries and selection outlines were also inspected in German and at minimum window size. A separate deterministic layout check covered 200 mixtures of all 24 controller targets in both styles, including 2,396 broad modifier labels, without creating a window or touching hardware. The background UI and visual-keyboard suites above also passed on this UI revision.
 
-The full offline command discovers 47 suites. The initial finalization run exposed an RGB journal path-length failure; compact filenames fixed the underlying issue, with successful follow-up checks for ordinary download paths and legacy recovery. Packaging checks separately reject stale versions, changed executables, source/receipt mismatches and unlisted source files. The [GitHub workflow](https://github.com/SirRanjid/analog-key-mapper/actions/workflows/build.yml) builds both components, runs all offline suites and the Go protocol tests, then creates verified packages.
+The full offline command now discovers 48 suites. The initial finalization run exposed an RGB journal path-length failure; compact filenames fixed the underlying issue, with successful follow-up checks for ordinary download paths and legacy recovery. Packaging checks separately reject stale versions, changed executables, source/receipt mismatches and unlisted source files. The [GitHub workflow](https://github.com/SirRanjid/analog-key-mapper/actions/workflows/build.yml) builds both components, runs all offline suites and the Go protocol tests, then creates verified packages.
 
 These targeted runs use no real keyboard/controller and do not perform a complete native OLE drag. They do not establish that every suite in `Test-All.ps1` passed on every machine. A blocked or failed test must be reported as such.
 

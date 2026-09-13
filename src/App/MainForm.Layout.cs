@@ -155,7 +155,7 @@ namespace Tk75.App
             var card = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 12, Padding = Padding.Empty, Margin = Padding.Empty };
             surface.Controls.Add(card);
             card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            foreach (int height in new[] { 38, 28, 24, 0, 80, 0, 24, 34, 34 }) card.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+            foreach (int height in new[] { 38, 28, 24, 0, 80, 0, 24, 34, 40 }) card.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
             card.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
             keyTitle.Text = "Taste auswählen"; keyTitle.Font = new Font("Segoe UI", 20, FontStyle.Bold); keyTitle.AutoSize = false; keyTitle.AutoEllipsis = true; keyTitle.Dock = DockStyle.Fill; card.Controls.Add(keyTitle, 0, 0);
             keyHint.AutoSize = false; keyHint.AutoEllipsis = true; keyHint.UseMnemonic = false; keyHint.TextAlign = ContentAlignment.TopLeft; keyHint.Margin = new Padding(3, 0, 3, 3); keyHint.Dock = DockStyle.Fill; keyHint.Tag = "muted"; keyHint.Text = "Klicke auf eine Taste in der Abbildung."; card.Controls.Add(keyHint, 0, 1);
@@ -181,7 +181,12 @@ namespace Tk75.App
             keyBehaviorToggle = Add(actions, Tr("Verhalten", "Behavior"), delegate { SetDetailMode("input", true); }); card.Controls.Add(actions, 0, 10);
             actions.WrapContents = false;
             actions.Layout += delegate {
-                foreach (Control action in actions.Controls) { action.AutoSize = false; action.Width = Math.Max(1, actions.ClientSize.Width / 3 - action.Margin.Horizontal); }
+                foreach (Control action in actions.Controls)
+                {
+                    action.AutoSize = false;
+                    action.Width = Math.Max(1, actions.ClientSize.Width / 3 - action.Margin.Horizontal);
+                    action.Height = Math.Max(action.MinimumSize.Height, actions.ClientSize.Height - action.Margin.Vertical);
+                }
             };
             selectionStatus.Dock = DockStyle.Fill; selectionStatus.Tag = "muted"; selectionStatus.TextAlign = ContentAlignment.MiddleLeft; selectionStatus.AutoEllipsis = true; UiText.PreserveText(selectionStatus); card.Controls.Add(selectionStatus, 0, 11); return surface;
         }
