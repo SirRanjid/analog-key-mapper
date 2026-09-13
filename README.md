@@ -46,15 +46,27 @@ Profiles support **up to 32 controller slots**, subject to Windows' limit of **f
 The earlier hardware test covered **two Xbox plus two DualSense devices** and wired TK75 TMR model 3591 input. It does not validate the current release candidate or 32 connected devices. Final hardware and game acceptance remains open. [Compatibility and test status](docs/status.md) · [Hardware record](docs/multi-controller-acceptance.md) · [Synthetic performance measurements](docs/performance.md).
 
 <details>
-<summary>Key settings and response-curve views</summary>
+<summary>Key settings, calibration and response curves</summary>
 
-![Keyboard assignments and the Keys tab](docs/images/mapping.png)
+Individual pressure ranges and output assignments:
 
-![Square response-curve editor beside the unchanged keyboard layout](docs/images/response-curve.png)
+![Keys tab with individual pressure ranges and output assignments](docs/images/mapping.png)
+
+Actuation and Rapid Trigger controls, each with its own Calibrate button:
+
+![Vertical actuation, release and repress controls with per-option calibration](docs/images/key-behavior.png)
+
+Response settings with sliders and a square curve editor:
+
+![Response sliders and square curve editor beside the keyboard](docs/images/response-curve.png)
+
+Capture an opposite key directly on the keyboard:
+
+![Opposite-key capture in the Keys behavior panel](docs/images/socd-opposite-drop.png)
 
 </details>
 
-Screenshots use example data; no hardware is connected in these images.
+Screenshots use synthetic example data and show English and German interfaces. English is the default language.
 
 ## Contributing and license
 
@@ -62,4 +74,4 @@ Bug reports, reproducible tests and focused improvements are welcome. See [Contr
 
 The application is free to use. The original mapper code is available under the [MIT License](LICENSE). The VIIPER-derived output helper and other third-party components retain their own licenses; see [the helper notice](src/ViiperOutputHost/NOTICE.md) and [cursor license](src/App/Assets/Cursors/LICENSE).
 
-Developed with **ChatGPT**, with iterative testing and user feedback.
+Created with assistance from ChatGPT and refined through testing and user feedback.

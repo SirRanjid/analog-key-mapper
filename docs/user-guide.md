@@ -67,7 +67,7 @@ With several keys selected, signal settings, curves and presets apply to all the
 
 The output list in **Keys** outlines its selected row even when the list has only one entry. Its **Response** column summarizes each output's curve and changed signal settings; hover the summary for the complete values. The line below the buttons separately summarizes behavior shared by all outputs of the physical key.
 
-![Keys tab with outlined output rows and separate response summaries](images/mapping.png)
+![Keys tab with individual pressure ranges, outlined output rows and response summaries](images/mapping.png)
 
 **Behavior** under Keys controls Rapid Trigger and opposite-key handling (SOCD). These belong to physical keys and are shared by their mappings. Mixed values are marked; editing one field preserves the others. With two selected keys, you can pair them explicitly and choose neutral, first-pressed or last-pressed resolution. Larger selections retain existing pairs and do not offer pair editing.
 
@@ -75,9 +75,13 @@ The vertical controls beside the numeric fields adjust initial actuation, releas
 
 Each threshold also has **Calibrate**: press one selected key as far as desired, then release it completely to accept the measured value for the selection. For Rapid Trigger, the measured distance becomes the release or repress movement amount. This changes only that behavior setting; it does not recalibrate the key's Min/Max range or the keyboard scale.
 
+![Actuation, release and repress controls with a Calibrate button for each option](images/key-behavior.png)
+
 In **Curve**, sliders accompany the editable numbers for deadzones, output range, scale, smoothing and the other response options. A drag previews the curve and becomes one undoable edit when released. Hover a setting or curve point for its explanation or coordinates. Edits apply to all selected keys for the current controller.
 
 To capture an opposite key, select the first key and open **Behavior**, then click **Capture**. Click the desired opposite key on the keyboard illustration. This pairs both keys, keeps the original key's SOCD policy and preserves their actuation settings. Existing partners are unpaired; **Undo** restores the previous pairings. **Cancel** or **Escape** cancels capture. Dragging a key continues to open **Controller** for normal output mapping.
+
+![Opposite-key capture waiting for a keyboard selection, with Cancel available](images/socd-opposite-drop.png)
 
 ## Profiles and saved data
 
