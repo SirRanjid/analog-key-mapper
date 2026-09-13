@@ -356,24 +356,40 @@ namespace Tk75.Tests
         static void CheckManyControllerFooter(MainForm form, string artifacts)
         {
             Profile original = Current(form); Profile many = original;
+            Control originalFocus = form.ActiveControl;
             var originalConnectors = Field<Dictionary<string, ControllerConnector>>(form, "footerConnectors").ToDictionary(pair => pair.Key, pair => pair.Value);
             for (int i = 1; i < ControllerRouting.MaximumControllers; i++)
                 many = ControllerRouting.Add(many, "ui-footer-" + i, "Synthetic controller " + (i + 1), ControllerKind.Xbox360);
             Call(form, "Commit", many); Pump(form);
             var runtime = Field<MultiControllerSession>(form, "runtime"); string selected = runtime.SelectedControllerId;
             var footer = Field<FlowLayoutPanel>(form, "controllerFooterSlots");
+            Point originalScroll = footer.AutoScrollPosition;
             var connectors = Field<Dictionary<string, ControllerConnector>>(form, "footerConnectors");
             var definitions = ControllerRouting.EffectiveControllers(Current(form));
             var instances = connectors.ToDictionary(pair => pair.Key, pair => pair.Value);
             Check(definitions.Count == 32 && connectors.Count == 32, "The footer supports all 32 configured controller slots.");
             Check(footer.HorizontalScroll.Visible && !footer.VerticalScroll.Visible, "Many footer connectors use one horizontal scrollbar without a second vertical scrollbar.");
             foreach (var previous in originalConnectors) Check(Object.ReferenceEquals(previous.Value, connectors[previous.Key]), "Adding more footer slots retains existing connector controls.");
+            // Test real scrollbar input with ordinary message dispatch only.
+            // A forced layout must not be required to make native scrolling work.
+            CheckNativeFooterScroll(form, footer, connectors[definitions[definitions.Count - 1].Id], 7, "right end");
+            CheckNativeFooterScroll(form, footer, connectors[definitions[0].Id], 6, "left end");
             for (int i = 0; i < definitions.Count; i++)
             {
                 ControllerDefinition definition = definitions[i]; ControllerConnector connector = connectors[definition.Id];
                 Check(footer.Controls.GetChildIndex(connector) == i && connector.ControllerLabel == (i + 1).ToString() && connector.ControllerName == definition.Name, "Footer slot " + (i + 1) + " preserves profile identity, order and label.");
-                footer.ScrollControlIntoView(connector); Pump(form);
+                RevealFooterConnector(form, footer, connector);
                 VisibleInside(form, connector, "32-controller footer / slot " + (i + 1));
+                Point pickup = ConnectorPoint(ConnectorProperty<RectangleF>(connector, "PlugBounds"));
+                Point footerPickup = footer.PointToClient(connector.PointToScreen(pickup));
+                Check(footer.ClientRectangle.Contains(footerPickup) && Object.ReferenceEquals(footer.GetChildAtPoint(footerPickup), connector),
+                    "Footer slot " + (i + 1) + " exposes its real plug hit area inside the scrolled viewport.");
+                // Exercise pickup without releasing a connection request to the
+                // app: this suite must never create a hardware/output backend.
+                ConnectorMouse(connector, "OnMouseDown", pickup, MouseButtons.Left);
+                try { Check(Field<bool>(connector, "armed"), "Footer slot " + (i + 1) + " accepts a plug pickup after scrolling."); }
+                finally { ConnectorEscape(connector); }
+                Check(!Field<bool>(connector, "armed") && !connector.Capture, "Canceling the footer pickup releases its gesture without connecting.");
                 Check(Object.ReferenceEquals(instances[definition.Id], connectors[definition.Id]), "Scrolling retains footer slot " + (i + 1) + " and any pending gesture.");
                 if (i == 0 || i == definitions.Count - 1) CapturePreview(form, artifacts, "footer-32-" + (i == 0 ? "first" : "last"));
             }
@@ -382,12 +398,52 @@ namespace Tk75.Tests
             Check(runtime.SelectedControllerId == selected, "Refreshing 32 footer connection states retains the current editing controller.");
             foreach (var instance in instances) Check(Object.ReferenceEquals(instance.Value, connectors[instance.Key]), "Refreshing statuses retains the existing footer connector instance.");
             AssertPassive(form);
+            if (originalFocus != null && !originalFocus.IsDisposed && originalFocus.CanFocus) originalFocus.Focus();
+            footer.AutoScrollPosition = new Point(-originalScroll.X, -originalScroll.Y);
+            footer.PerformLayout(); Application.DoEvents();
+            Check(footer.AutoScrollPosition == originalScroll, "Footer checks restore their initial scroll position before later layout captures.");
             Call(form, "Commit", original); Pump(form);
             Check(connectors.Count == originalConnectors.Count && !footer.HorizontalScroll.Visible, "Returning to the original profile removes the extra footer slots and its scrollbar.");
             foreach (var instance in instances)
                 if (!originalConnectors.ContainsKey(instance.Key)) Check(instance.Value.IsDisposed, "A removed footer controller releases its control and gestures.");
             foreach (var previous in originalConnectors) Check(Object.ReferenceEquals(previous.Value, connectors[previous.Key]), "Returning to the original profile retains its existing footer connector.");
             Equal(Json(original), Json(Current(form)), "The 32-controller footer regression restores the original synthetic profile.");
+        }
+        static void RevealFooterConnector(MainForm form, FlowLayoutPanel footer, ControllerConnector connector)
+        {
+            Application.DoEvents();
+            footer.ScrollControlIntoView(connector);
+            // Finish the scroll container's own child layout before inspecting
+            // native bounds. Relaying only the outer form layout is insufficient
+            // for offscreen ScrollWindowEx children in the preview harness.
+            footer.PerformLayout(); Application.DoEvents();
+            Rectangle visible = footer.ClientRectangle;
+            Rectangle bounds = footer.RectangleToClient(connector.RectangleToScreen(connector.ClientRectangle));
+            if (!visible.Contains(bounds))
+            {
+                int contentLeft = footer.Padding.Left;
+                foreach (Control child in footer.Controls)
+                {
+                    if (Object.ReferenceEquals(child, connector)) break;
+                    if (child.Visible) contentLeft += child.Margin.Horizontal + child.Width;
+                }
+                int maximum = Math.Max(0, footer.HorizontalScroll.Maximum - footer.HorizontalScroll.LargeChange + 1);
+                footer.AutoScrollPosition = new Point(Math.Min(contentLeft, maximum), 0);
+                footer.PerformLayout(); Application.DoEvents();
+            }
+            Check(footer.ClientRectangle.Contains(footer.RectangleToClient(connector.RectangleToScreen(connector.ClientRectangle))),
+                "The actual scrolled footer fully exposes " + connector.ControllerName + "; position=" + footer.AutoScrollPosition + "; bounds=" + connector.Bounds + ".");
+        }
+        static void CheckNativeFooterScroll(MainForm form, FlowLayoutPanel footer, ControllerConnector connector, int command, string label)
+        {
+            ThemeSend(footer.Handle, 0x0114, (IntPtr)command, IntPtr.Zero); // WM_HSCROLL; SB_RIGHT / SB_LEFT
+            Application.DoEvents(); Application.DoEvents();
+            Rectangle native = footer.RectangleToClient(connector.RectangleToScreen(connector.ClientRectangle));
+            Check(footer.ClientRectangle.Contains(native), "Native footer scroll to " + label + " exposes " + connector.ControllerName +
+                " after ordinary message dispatch; position=" + footer.AutoScrollPosition + "; managed=" + connector.Bounds + "; native=" + native + ".");
+            VisibleInside(form, connector, "native footer / " + label);
+            Point pickup = footer.PointToClient(connector.PointToScreen(ConnectorPoint(ConnectorProperty<RectangleF>(connector, "PlugBounds"))));
+            Check(Object.ReferenceEquals(footer.GetChildAtPoint(pickup), connector), "Native footer scroll to " + label + " exposes the actual plug hit target.");
         }
         static T ConnectorProperty<T>(ControllerConnector connector, string name)
         {
