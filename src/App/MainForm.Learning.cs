@@ -143,7 +143,7 @@ namespace Tk75.App
             if (reader != null) { learnedPressureIdentity = null; return; }
             if (!HasLearnedInputs)
             {
-                if (calibration != null && calibration.DeviceIdentity == learnedPressureIdentity) calibration = null;
+                if (learnedPressureIdentity != null && calibration != null && calibration.DeviceIdentity == learnedPressureIdentity) calibration = null;
                 learnedPressureIdentity = null; return;
             }
             string identity, fingerprint;

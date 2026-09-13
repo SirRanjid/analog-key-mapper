@@ -52,11 +52,33 @@ namespace Tk75.Tests
             while (!condition() && elapsed.ElapsedMilliseconds < 3000) { Application.DoEvents(); Thread.Sleep(2); }
             Check(condition(), message);
         }
-        static void OpenLearningUi(LearnInputsDialog dialog)
+        static DialogResult RunLearningModal(LearnInputsDialog dialog, Action exercise, bool awaitSource = true)
         {
-            ShowDialogOffline(dialog);
-            AwaitLearning(delegate { return Field<ILearnedInputDeviceSource>(dialog, "source") != null; }, "The wizard asynchronously opens only its synthetic selected device.");
-            Check(dialog.Left < -10000 && !dialog.ShowInTaskbar, "The learning fixture never owns a foreground or hardware window.");
+            Exception failure = null;
+            dialog.ShowInTaskbar = false; dialog.StartPosition = FormStartPosition.Manual; dialog.Location = new Point(-30000, -30000);
+            dialog.Shown += delegate {
+                dialog.BeginInvoke(new MethodInvoker(delegate {
+                    try
+                    {
+                        Check(dialog.Modal && dialog.Left < -10000 && !dialog.ShowInTaskbar,
+                            "Ownership is tested through the actual offscreen modal wizard lifecycle.");
+                        var timer = Field<System.Windows.Forms.Timer>(dialog, "timer");
+                        Check(timer.Enabled, "The modal wizard starts its real capture timer."); timer.Stop();
+                        if (awaitSource) AwaitLearning(delegate { return Field<ILearnedInputDeviceSource>(dialog, "source") != null; },
+                            "The modal wizard asynchronously opens the selected synthetic source.");
+                        exercise();
+                    }
+                    catch (Exception error)
+                    {
+                        failure = error;
+                        if (!dialog.IsDisposed) { dialog.DialogResult = DialogResult.Cancel; dialog.Close(); }
+                    }
+                }));
+            };
+            DialogResult result = dialog.ShowDialog();
+            if (failure != null) throw new InvalidOperationException("The modal learning exercise failed.", failure);
+            Check(!dialog.Visible && !dialog.IsDisposed, "A completed modal wizard hides without prematurely disposing its transferable source.");
+            return result;
         }
         static void AdvanceLearningUi(LearnInputsDialog dialog, long milliseconds)
         {
@@ -88,7 +110,7 @@ namespace Tk75.Tests
             var choices = new[] { LearningChoice(source, "hid") };
             using (var dialog = new LearnInputsDialog(new[] { 14, 9 }, new[] { "W", "A" }, 3, delegate { return choices; }, delegate { return true; }))
             {
-                OpenLearningUi(dialog);
+                DialogResult outcome = RunLearningModal(dialog, delegate {
                 Check(!Field<Button>(dialog, "apply").Enabled && Field<int>(dialog, "current") == 0, "Learning begins at the first selected key with Apply unavailable.");
                 Check(Field<DataGridView>(dialog, "queue").Rows.Count == 2, "Only unresolved selected keys enter the queue.");
                 Check((bool)typeof(LearnInputsDialog).GetMethod("ProcessDialogKey", Private).Invoke(dialog, new object[] { Keys.Enter }), "A physical Enter cannot activate the focused wizard button.");
@@ -109,7 +131,8 @@ namespace Tk75.Tests
                 Check(dialog.Bindings.Length == 2 && !((string)Field<DataGridView>(dialog, "queue").Rows[1].Cells[1].Value).Contains("Skipped"), "Relearning the skipped key restores its result.");
                 CaptureLearningUi(dialog, artifacts, "preview-input-learning-review-en");
                 Field<Button>(dialog, "apply").PerformClick();
-                Check(dialog.DialogResult == DialogResult.OK && !source.Disposed, "Apply closes the review while preserving its source for atomic profile integration.");
+                });
+                Check(outcome == DialogResult.OK && dialog.DialogResult == DialogResult.OK && !source.Disposed, "Apply returns from the modal review while preserving its source for atomic profile integration.");
                 Check(object.ReferenceEquals(dialog.TakeSource(), source) && dialog.TakeSource() == null, "Source ownership transfers exactly once after OK.");
             }
             Check(!source.Disposed, "Disposing an applied dialog does not close the transferred source."); source.Dispose();
@@ -120,13 +143,14 @@ namespace Tk75.Tests
             using (var dialog = new LearnInputsDialog(new[] { 14, 9 }, new[] { "W", "A" }, 0,
                 delegate { return new[] { LearningChoice(automatic, "keyboard") }; }, delegate { return true; }))
             {
-                OpenLearningUi(dialog);
+                DialogResult outcome = RunLearningModal(dialog, delegate {
                 Check(Field<int>(dialog, "current") == 1 && dialog.Bindings.Length == 1 && dialog.Bindings[0].KeyIndex == 14, "A standard keyboard usage identifies and skips its known key automatically.");
                 Check(((string)Field<DataGridView>(dialog, "queue").Rows[0].Cells[1].Value).Contains("automatic"), "Automatically identified keys remain explicit in the review queue.");
                 automatic.IsReading = false; DialogCall(dialog, "RefreshCapture");
                 Check(!Field<Button>(dialog, "apply").Enabled && !Field<Button>(dialog, "skip").Enabled && Field<Button>(dialog, "retry").Enabled, "Device removal pauses the transaction and exposes retry without allowing partial application.");
                 Field<Button>(dialog, "cancel").PerformClick();
-                Check(dialog.DialogResult == DialogResult.Cancel && dialog.TakeSource() == null, "Cancel never transfers a device or implies successful application.");
+                });
+                Check(outcome == DialogResult.Cancel && dialog.DialogResult == DialogResult.Cancel && dialog.TakeSource() == null, "Cancel returns from the modal wizard without transferring a device or implying successful application.");
             }
             AwaitLearning(delegate { return automatic.Disposed; }, "Canceled device cleanup completes off the UI thread.");
             bool valid = true;
@@ -134,9 +158,11 @@ namespace Tk75.Tests
             using (var dialog = new LearnInputsDialog(new[] { 14 }, new[] { "W" }, 0,
                 delegate { return new[] { LearningChoice(guarded, "travel") }; }, delegate { return valid; }))
             {
-                OpenLearningUi(dialog); valid = false; DialogCall(dialog, "RefreshCapture");
+                RunLearningModal(dialog, delegate {
+                valid = false; DialogCall(dialog, "RefreshCapture");
                 Check(!Field<Button>(dialog, "retry").Enabled && !Field<Button>(dialog, "apply").Enabled, "Changing the profile context cannot be bypassed through retry.");
                 Field<Button>(dialog, "cancel").PerformClick();
+                });
             }
             AwaitLearning(delegate { return guarded.Disposed; }, "A stale profile context still releases its selected device.");
             var late = new LearningUiSource('d', LearningButton("button-1", null));
@@ -147,8 +173,10 @@ namespace Tk75.Tests
                     Open = delegate { entered.Set(); release.WaitOne(2000); return late; } } };
             }, delegate { return true; }))
             {
-                ShowDialogOffline(dialog); AwaitLearning(delegate { return entered.WaitOne(0); }, "The synthetic connection is pending independently of the UI.");
+                RunLearningModal(dialog, delegate {
+                AwaitLearning(delegate { return entered.WaitOne(0); }, "The synthetic connection is pending independently of the UI.");
                 Field<Button>(dialog, "cancel").PerformClick(); release.Set();
+                }, false);
                 AwaitLearning(delegate { return late.Disposed; }, "A connection completing after Cancel cannot orphan a source.");
             }
             string language = UiText.Language; UiText.SetLanguage("de");
@@ -158,12 +186,14 @@ namespace Tk75.Tests
                 using (var dialog = new LearnInputsDialog(new[] { 14 }, new[] { "W" }, 1,
                     delegate { return new[] { LearningChoice(german, "hid") }; }, delegate { return true; }))
                 {
-                    OpenLearningUi(dialog); Equal("Unbekannte Eingaben lernen", dialog.Text, "The wizard consistently follows German UI selection.");
+                    RunLearningModal(dialog, delegate {
+                    Equal("Unbekannte Eingaben lernen", dialog.Text, "The wizard consistently follows German UI selection.");
                     CaptureLearningUi(dialog, artifacts, "preview-input-learning-de");
                     dialog.Size = dialog.MinimumSize; dialog.PerformLayout(); Application.DoEvents();
                     foreach (string field in new[] { "back", "skip", "retry", "finish", "apply", "cancel" })
                     { var button = Field<Button>(dialog, field); if (button.Visible) Check(button.Right <= button.Parent.ClientSize.Width, "Wizard actions fit the minimum supported dialog width."); }
                     Field<Button>(dialog, "cancel").PerformClick();
+                    });
                 }
             }
             finally { UiText.SetLanguage(language); }
