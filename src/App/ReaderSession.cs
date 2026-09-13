@@ -95,6 +95,17 @@ namespace Tk75.App
             }
         }
         public Tk75RgbSnapshot CompareExchangeRgb(Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, int timeoutMs)
+        { return CompareExchangeRgb(expected, desired, null, timeoutMs); }
+        public bool RgbAutomaticRestoreAvailable
+        {
+            get
+            {
+                IRgbAutomaticRestoreSource source;
+                lock (gate) source = !disposed && !stopRequested && isReading ? rgbSource as IRgbAutomaticRestoreSource : null;
+                return source != null && source.RgbAutomaticRestoreAvailable;
+            }
+        }
+        public Tk75RgbSnapshot CompareExchangeRgb(Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, Tk75RgbSnapshot original, int timeoutMs)
         {
             IRgbCompareExchangeSource source;
             lock (gate)
@@ -102,7 +113,10 @@ namespace Tk75.App
                 source = rgbSource as IRgbCompareExchangeSource;
                 if (disposed || stopRequested || !isReading || source == null) throw new InvalidOperationException("Die verbundene Tastatur bietet noch keinen RGB-Schreibzugriff.");
             }
-            Tk75RgbSnapshot snapshot = source.CompareExchangeRgb(expected, desired, timeoutMs);
+            IRgbAutomaticRestoreSource automatic = source as IRgbAutomaticRestoreSource;
+            Tk75RgbSnapshot snapshot = original != null && automatic != null && automatic.RgbAutomaticRestoreAvailable
+                ? automatic.CompareExchangeRgb(expected, desired, original, timeoutMs)
+                : source.CompareExchangeRgb(expected, desired, timeoutMs);
             lock (gate)
                 if (disposed || stopRequested || !isReading || !Object.ReferenceEquals(source, rgbSource)) throw new OperationCanceledException("Die Tastaturverbindung hat sich während der RGB-Änderung geändert; Sicherung behalten.");
             return snapshot;

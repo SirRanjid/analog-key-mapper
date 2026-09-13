@@ -6,6 +6,7 @@ keine Hardware und kein Controller. Bei Windows-Blockade kein Umgehungsweg.
 #>
 [CmdletBinding()]
 param([switch] $KeepArtifacts, [ValidateRange(5,120)] [int] $TimeoutSeconds = 80)
+if ($env:CI -eq 'true') { $KeepArtifacts = $true }
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'Der App-UI-Test benoetigt Windows.' }
@@ -31,6 +32,7 @@ try {
     $arguments += (Join-Path $PSScriptRoot 'ControllerModifierUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'MappingSummaryUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'SocdDragUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'PressureRangeSliderUiHarness.cs')
     & $compiler @arguments
     if ($LASTEXITCODE -ne 0) { throw 'App-UI-Harness konnte nicht kompiliert werden.' }
     $stdout = Join-Path $testFolder 'stdout.txt'; $stderr = Join-Path $testFolder 'stderr.txt'
@@ -48,6 +50,16 @@ try {
     if ($KeepArtifacts) { Write-Output ('Artefakte: ' + $testFolder) }
 }
 finally {
+    # The existing CI artifact step collects release/*/*.zip. Keep synthetic
+    # screenshots in a separate diagnostic archive, outside release assets.
+    if ($env:CI -eq 'true') {
+        $previewFiles = @(Get-ChildItem -LiteralPath $testFolder -Filter '*.png' -File)
+        if ($previewFiles.Count) {
+            $previewFolder = Join-Path $workspace 'release\ui-previews'
+            [void][IO.Directory]::CreateDirectory($previewFolder)
+            Compress-Archive -LiteralPath @($previewFiles.FullName) -DestinationPath (Join-Path $previewFolder 'AnalogKeyMapper-ui-previews.zip') -Force
+        }
+    }
     if ($null -ne $testProcess) {
         if (-not $testProcess.HasExited) { $testProcess.Kill(); $testProcess.WaitForExit() }
         $testProcess.Dispose()

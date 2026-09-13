@@ -219,7 +219,7 @@ namespace Tk75.Tests
             Call(form, "ShowPage", "mapping"); DetailMode(form, null);
             SetPreviewClientSize(form, size); string label = size.Width + "x" + size.Height;
             Check(form.ClientSize == size, "Requested client size applied: " + label);
-            foreach (string name in new[] { "devices", "profiles", "keyboard", "layoutMode", "mainControllerSlotPicker", "targets", "bindings", "keyTitle", "keyHint", "pressure", "calibrateButton", "addTargetButton", "controllerToggle", "keyBehaviorToggle", "advancedToggle", "deviceStatus", "outputStatus" })
+            foreach (string name in new[] { "devices", "profiles", "keyboard", "layoutMode", "mainControllerSlotPicker", "targets", "bindings", "keyTitle", "keyHint", "pressure", "pressureRange", "addTargetButton", "controllerToggle", "keyBehaviorToggle", "advancedToggle", "deviceStatus", "outputStatus" })
                 VisibleInside(form, Field<Control>(form, name), label + "/" + name);
             foreach (string name in new[] { "preset", "pasteMode", "keys", "settings", "curve", "monitor", "controllerPreview", "keyBehaviorPanel" })
                 LayoutCheck(!Field<Control>(form, name).Visible, label + "/" + name + " is hidden in the simple default view.");
@@ -1544,7 +1544,7 @@ namespace Tk75.Tests
             Equal("Taste A", Field<Label>(form, "keyTitle").Text, "Key card follows direct physical selection.");
             keyboard.SelectKey(keyboard.LayoutModel.FindByIndex(14), true); Pump(form);
             Check(((int[])Call(form, "SelectedKeys")).SequenceEqual(new[] { 9, 14 }), "Ctrl-selection preserves multiple keyboard indices.");
-            Check(!Field<Button>(form, "calibrateButton").Enabled, "No calibration dialog without active input transport.");
+            Check(!Field<LinkLabel>(form, "calibrateRange").Enabled, "Calibration needs active pressure input.");
             SelectKeys(form, 14);
             Binding[] w = Current(form).Bindings.Where(b => b.KeyIndex == 14).ToArray(); Check(w.Length == 2, "Preview includes two independent W bindings.");
             SelectBindings(form, w.Select(b => b.BindingId).ToArray());
@@ -1689,7 +1689,7 @@ namespace Tk75.Tests
                 CapturePreview(form, artifacts, "initial-english");
                 Call(form, "SwitchLanguage", "de");
                 Equal("de", UiPreferences.LoadLanguage(data), "Explicit German selection remains supported and persists.");
-                RunConnectorGestures(artifacts); RunMarqueeSelection(artifacts); RunKeyDragVisuals(artifacts); RunControllerDragVisuals(artifacts); Run(form, data, artifacts); RunDialogs(artifacts);
+                CheckPressureRangeSliderContract(); RunConnectorGestures(artifacts); RunMarqueeSelection(artifacts); RunKeyDragVisuals(artifacts); RunControllerDragVisuals(artifacts); Run(form, data, artifacts); RunDialogs(artifacts);
                 RunEnglishContexts(form, data, artifacts);
                 RunKeyboardTabClicks(form);
                 RunControllerModifierUi(artifacts);

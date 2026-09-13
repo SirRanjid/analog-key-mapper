@@ -17,7 +17,7 @@ namespace Tk75.App
     // Parent-side transport only. All HID feature calls remain in the separately
     // bundled helper. An explicit local build can accept an unsigned helper;
     // rejected signatures and Windows process-start refusals have no fallback.
-    public sealed class ManagedMonitorSource : IReportSource, IIdentifiedReportSource, IRgbCompareExchangeSource, IEventStateReportSource
+    public sealed class ManagedMonitorSource : IReportSource, IIdentifiedReportSource, IRgbAutomaticRestoreSource, IEventStateReportSource
     {
 #if ALLOW_UNSIGNED_MONITOR
         const bool AllowUnsignedMonitor = true;
@@ -37,13 +37,14 @@ namespace Tk75.App
             public int Id, Layer;
             public bool Sent, Complete;
             public Tk75RgbSnapshot Snapshot;
-            public Tk75RgbSnapshot Expected, Desired;
+            public Tk75RgbSnapshot Expected, Desired, Original;
             public string Error;
         }
         RgbReadOperation rgbRead;
         int rgbSequence;
         bool rgbReadSupported;
         bool rgbWriteSupported;
+        bool rgbAutomaticRestoreSupported;
         bool eventStateSupported;
         readonly Stopwatch evidenceClock = Stopwatch.StartNew();
         readonly MonitorDeviceLease deviceLease = new MonitorDeviceLease();
@@ -63,6 +64,7 @@ namespace Tk75.App
         public uint? DeviceModelId { get { lock (gate) { return modelId; } } }
         public bool RgbReadAvailable { get { lock (gate) { return ready && rgbReadSupported && !stopping && !disposed && failure == null; } } }
         public bool RgbWriteAvailable { get { lock (gate) { return ready && rgbReadSupported && rgbWriteSupported && !stopping && !disposed && failure == null; } } }
+        public bool RgbAutomaticRestoreAvailable { get { lock (gate) { return rgbAutomaticRestoreSupported && RgbWriteAvailable; } } }
 
         public ManagedMonitorSource(CollectionInfo device) : this(device, delegate { return false; }) { }
         public ManagedMonitorSource(CollectionInfo device, Func<bool> cancelled)
@@ -132,6 +134,7 @@ namespace Tk75.App
                             rgbCommand = rgbRead.Expected == null
                                 ? "RGBREAD " + rgbRead.Id.ToString(CultureInfo.InvariantCulture) + " " + rgbRead.Layer.ToString(CultureInfo.InvariantCulture)
                                 : "RGBWRITE " + rgbRead.Id.ToString(CultureInfo.InvariantCulture) + " " + Convert.ToBase64String(Tk75RgbProtocol.EncodeSnapshot(rgbRead.Expected)) + " " + Convert.ToBase64String(Tk75RgbProtocol.EncodeSnapshot(rgbRead.Desired));
+                            if (rgbRead.Original != null) rgbCommand += " " + Convert.ToBase64String(Tk75RgbProtocol.EncodeSnapshot(rgbRead.Original));
                         }
                     }
                     // Keep one writer for heartbeat, RGB requests and STOP. RGB
@@ -191,6 +194,11 @@ namespace Tk75.App
                         {
                             if (!rgbReadSupported || rgbWriteSupported) throw new InvalidDataException("Unbekannte RGB-Funktionsreihenfolge.");
                             rgbWriteSupported = true; Monitor.PulseAll(gate); continue;
+                        }
+                        if (line == "CAPS RGBRESTORE1")
+                        {
+                            if (!rgbWriteSupported || rgbAutomaticRestoreSupported) throw new InvalidDataException("Unbekannte RGB-Wiederherstellungsbestätigung.");
+                            rgbAutomaticRestoreSupported = true; Monitor.PulseAll(gate); continue;
                         }
                         if (line.StartsWith("RGBSNAPSHOT ", StringComparison.Ordinal) || line.StartsWith("RGBERROR ", StringComparison.Ordinal))
                         {
@@ -258,7 +266,12 @@ namespace Tk75.App
             Tk75RgbExchange.Validate(expected, desired);
             return RequestRgb(expected.Layer, timeoutMs, expected, desired);
         }
-        Tk75RgbSnapshot RequestRgb(int layer, int timeoutMs, Tk75RgbSnapshot expected, Tk75RgbSnapshot desired)
+        public Tk75RgbSnapshot CompareExchangeRgb(Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, Tk75RgbSnapshot original, int timeoutMs)
+        {
+            Tk75RgbExchange.Validate(expected, desired); Tk75RgbExchange.Validate(desired, original);
+            return RequestRgb(expected.Layer, timeoutMs, expected, desired, original);
+        }
+        Tk75RgbSnapshot RequestRgb(int layer, int timeoutMs, Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, Tk75RgbSnapshot original = null)
         {
             if (layer < 0 || layer > 4) throw new ArgumentOutOfRangeException("layer");
             if (timeoutMs < 1 || timeoutMs > 15000) throw new ArgumentOutOfRangeException("timeoutMs");
@@ -270,7 +283,8 @@ namespace Tk75.App
                 if (failure != null) throw new IOException(failure);
                 if (rgbRead != null && !rgbRead.Complete) throw new InvalidOperationException("Die Beleuchtung wird bereits gelesen.");
                 if (rgbSequence == Int32.MaxValue) throw new InvalidOperationException("Bitte die Tastatur neu verbinden.");
-                RgbReadOperation operation = new RgbReadOperation { Id = ++rgbSequence, Layer = layer, Expected = expected, Desired = desired };
+                if (original != null && !rgbAutomaticRestoreSupported) throw new InvalidOperationException("Der Tastatur-Helfer unterstützt die automatische Wiederherstellung noch nicht.");
+                RgbReadOperation operation = new RgbReadOperation { Id = ++rgbSequence, Layer = layer, Expected = expected, Desired = desired, Original = original };
                 rgbRead = operation; Monitor.PulseAll(gate); Stopwatch deadline = Stopwatch.StartNew();
                 while (!operation.Complete && failure == null && !stopping && deadline.ElapsedMilliseconds < timeoutMs)
                     Monitor.Wait(gate, Math.Max(1, timeoutMs - (int)deadline.ElapsedMilliseconds));
@@ -294,7 +308,7 @@ namespace Tk75.App
                 {
                     // Give the helper time to send OFF and exit. Only our own child
                     // may be terminated if a synchronous Windows HID call hangs.
-                    if (!process.WaitForExit(1500)) { terminated = true; try { process.Kill(); } catch (InvalidOperationException) { } process.WaitForExit(500); }
+                    if (!process.WaitForExit(rgbAutomaticRestoreSupported ? 6500 : 1500)) { terminated = true; try { process.Kill(); } catch (InvalidOperationException) { } process.WaitForExit(500); }
                     if (outputReader != null) outputReader.Join(300);
                     if (heartbeat != null) heartbeat.Join(300);
                     if (process.HasExited) exitCode = process.ExitCode;

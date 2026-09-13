@@ -52,6 +52,50 @@ public static class Tk75RgbExchangeHarness
         byte[] settings = changeMode ? Tk75RgbProtocol.PictureModeSettings(baseline.RawSettings, baseline.Layer) : baseline.RawSettings;
         return new Tk75RgbSnapshot(baseline.ModelId, baseline.Profile, baseline.Layer, settings, picture);
     }
+    static void AutomaticRestoreChecks()
+    {
+        Device device = new Device(); var guard = new Tk75RgbRestoreGuard();
+        Check(!guard.Armed && guard.Restore(device.Read, device.Write) == null && device.Reads == 0 && device.Writes == 0,
+            "A reader without authorized temporary lighting performs no cleanup RGB traffic.");
+        for (int failure = 0; failure <= 8; failure++)
+        {
+            device = new Device(); Tk75RgbSnapshot original = device.Snapshot();
+            var colors = new Dictionary<int, int>();
+            foreach (int key in Tk75RgbProtocol.GetSupportedKeyIndices(original.ModelId)) colors[key] = 0x123456 + key;
+            Tk75RgbSnapshot desired = new Tk75RgbSnapshot(original.ModelId, original.Profile, original.Layer,
+                Tk75RgbProtocol.PictureModeSettings(original.RawSettings, original.Layer), Tk75RgbProtocol.Overlay(original.ModelId, original.Picture, colors));
+            guard = new Tk75RgbRestoreGuard(); guard.Track(original, original, desired);
+            device.FailWriteAt = failure;
+            try { Tk75RgbExchange.Execute(original, desired, device.Read, device.Write); }
+            catch (IOException) { Check(failure > 0, "Only the requested synthetic write interruption is swallowed."); }
+            device.FailWriteAt = 0;
+            Tk75RgbSnapshot restored = guard.Restore(device.Read, device.Write);
+            Check(Tk75RgbProtocol.Equal(Tk75RgbProtocol.EncodeSnapshot(restored), Tk75RgbProtocol.EncodeSnapshot(original)),
+                "Helper cleanup restores every original LED, effect, brightness and reserved byte after write boundary " + failure + ".");
+            int writes = device.Writes; guard.Restore(device.Read, device.Write);
+            Check(device.Writes == writes, "Repeated cleanup never repaints an already restored keyboard.");
+        }
+        device = new Device(); Tk75RgbSnapshot baseline = device.Snapshot(), painted = Paint(baseline, true);
+        guard = new Tk75RgbRestoreGuard(); guard.Track(baseline, baseline, painted);
+        Tk75RgbExchange.Execute(baseline, painted, device.Read, device.Write);
+        device.Picture[42] ^= 0x80; int before = device.Writes;
+        Reject(delegate { guard.Restore(device.Read, device.Write); }, "Automatic cleanup rejects an unrelated LED color change.");
+        Check(device.Writes == before, "Unrelated changes receive no cleanup writes.");
+        device = new Device(); baseline = device.Snapshot(); painted = Paint(baseline, true);
+        guard = new Tk75RgbRestoreGuard(); guard.Track(baseline, baseline, painted);
+        Tk75RgbExchange.Execute(baseline, painted, device.Read, device.Write); device.Profile++;
+        before = device.Writes;
+        Reject(delegate { guard.Restore(device.Read, device.Write); }, "Automatic cleanup cannot write an original into another onboard profile.");
+        Check(device.Writes == before, "Profile mismatch receives no cleanup writes.");
+        Reject(delegate { guard.Track(painted, painted, baseline); }, "The startup-original snapshot cannot be replaced by temporary colors.");
+        device = new Device(); baseline = device.Snapshot(); painted = Paint(baseline, true);
+        guard = new Tk75RgbRestoreGuard(); guard.Track(baseline, baseline, painted);
+        Tk75RgbExchange.Execute(baseline, painted, device.Read, device.Write);
+        // Initial state on reconnect can still be the previous temporary colors:
+        // the explicit original must win, rather than that first observed state.
+        guard = new Tk75RgbRestoreGuard(); guard.Track(baseline, painted, baseline);
+        Check(Tk75RgbExchange.Equivalent(guard.Restore(device.Read, device.Write), baseline), "Recovery session cleanup uses the explicit persisted original.");
+    }
     public static int Run()
     {
         checks = 0;
@@ -110,6 +154,7 @@ public static class Tk75RgbExchangeHarness
         bool interrupted = false; try { Tk75RgbExchange.Execute(original, painted, device.Read, device.Write); } catch (IOException) { interrupted = true; }
         Check(interrupted && device.Writes == 2 && device.Reads == 18, "Interrupted transfer stops immediately without claiming confirmation or automatic rollback.");
         Check(device.Settings[1] == 4, "Failure during picture transfer does not proceed to mode switch.");
+        AutomaticRestoreChecks();
         return checks;
     }
 }

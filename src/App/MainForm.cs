@@ -275,7 +275,17 @@ namespace Tk75.App
             CopyPart[] parts = { CopyPart.AllExceptMapping, CopyPart.All, CopyPart.Deadzones, CopyPart.Curve, CopyPart.Filters, CopyPart.OutputRange, CopyPart.Mapping };
             Commit(KeyEditing.Paste(history.Current, SelectedKeys(), copied, parts[pasteMode.SelectedIndex], runtime.SelectedControllerId));
         }
-        void Configure() { CancelMappingDrag(); keyboardSuppression.UpdateEligibility(new SuppressionKey[0], false, true); runtime.Configure(history.Current, DefaultCalibration.Resolve(calibration == null ? null : calibration.Entries.ToDictionary(e => e.KeyIndex, e => e.Value()))); ApplyProfileInputModePreference(); RefreshModeShortcutRegistration(); ApplyKeyboardSuppressionPreference(); SyncOutputMode(); }
+        void Configure()
+        {
+            CancelMappingDrag(); sharedPressureRange = new KeyboardPressureRange(calibration);
+            if (sharedPressureRange.HasIgnoredLegacyValues && !Object.ReferenceEquals(reportedLegacyPressureRange, calibration))
+            {
+                reportedLegacyPressureRange = calibration;
+                store.Event("Legacy pressure ranges outside the positive 16-bit sensor domain were left unchanged on disk and excluded from the shared range.");
+            }
+            keyboardSuppression.UpdateEligibility(new SuppressionKey[0], false, true); runtime.Configure(history.Current, sharedPressureRange.Resolve());
+            ApplyProfileInputModePreference(); RefreshModeShortcutRegistration(); ApplyKeyboardSuppressionPreference(); SyncOutputMode();
+        }
         void Commit(Profile profile)
         {
             profile = MergePendingInput(profile); MappingValidation.RequireValid(profile);
@@ -332,19 +342,10 @@ namespace Tk75.App
             using (var dialog = new LearnDialog(reader, label)) if (dialog.ShowDialog(this) == DialogResult.OK)
             { var next = KeyMapStore.SetLabel(keymap, dialog.KeyIndex, label); KeyMapStore.Save(store.KeyMapPath(reader.Fingerprint), next); keymap = next; RefreshKeys(); RefreshBindings(); store.Event("Key label learned"); }
         }
-        void CalibrateKey()
-        {
-            RequireReader(); int[] selected = SelectedKeys(); if (selected.Length != 1) throw new InvalidOperationException(Tr("Genau eine Taste auswählen.", "Select exactly one key.")); runtime.Disable("Kalibrierung – Controller aus");
-            using (var dialog = new CalibrationDialog(reader, selected[0], Label(selected[0]), calibration.Entries.FirstOrDefault(e => e.KeyIndex == selected[0])))
-                if (dialog.ShowDialog(this) == DialogResult.OK)
-                {
-                    var next = new CalibrationDocument { DeviceIdentity = calibration.DeviceIdentity, ProtocolFingerprint = calibration.ProtocolFingerprint, Entries = calibration.Entries.Where(e => e.KeyIndex != selected[0]).ToList() };
-                    next.Entries.Add(dialog.Result); store.SaveCalibration(next); calibration = next; Configure(); UpdateKeyCard(); store.Event("Key calibrated");
-                }
-        }
         void RequireReader() { if (reader == null || !reader.IsReading) throw new InvalidOperationException("Zuerst die Tastatur verbinden."); }
         void UpdateLive()
         {
+            UpdatePressureCapture();
             if (closing || deviceDetachInProgress) return;
             bool showLive = Visible && WindowState != FormWindowState.Minimized;
             runtime.SetPreviewActive(showLive);

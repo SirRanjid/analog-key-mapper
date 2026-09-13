@@ -8,6 +8,7 @@ namespace Tk75.App
     public sealed partial class MainForm
     {
         bool sessionStarted, previewMode;
+        bool minimizeToTray, trayPreferenceLoaded, trayExitRequested;
         NotifyIcon trayIcon;
         ContextMenuStrip trayMenu;
         FormWindowState lastVisibleWindowState = FormWindowState.Normal;
@@ -35,6 +36,7 @@ namespace Tk75.App
         internal void InitializeTray(bool showIcon)
         {
             if (trayIcon != null) return;
+            LoadTrayPreference();
             trayMenu = new ContextMenuStrip();
             var open = new ToolStripMenuItem(Tr("Analog Key Mapper öffnen", "Open Analog Key Mapper"));
             var openFont = new Font(open.Font, FontStyle.Bold);
@@ -48,10 +50,11 @@ namespace Tk75.App
                 finally { RefreshKeyboardSuppression(false); UpdateControllerConnectionUi(); }
             });
             trayMenu.Items.Add(new ToolStripSeparator());
+            AddMinimizeToTrayItem(trayMenu);
             AddStartupRegistrationItem(trayMenu);
             AddReconnectStartupItem(trayMenu);
             trayMenu.Items.Add(new ToolStripSeparator());
-            trayMenu.Items.Add(Tr("Beenden", "Exit"), null, delegate { Close(); });
+            trayMenu.Items.Add(Tr("Beenden", "Exit"), null, delegate { ExitFromTray(); });
             StyleMenu(trayMenu);
             string caption = "Analog Key Mapper";
             var versions = typeof(MainForm).Assembly.GetCustomAttributes(typeof(AssemblyInformationalVersionAttribute), false);
@@ -79,7 +82,7 @@ namespace Tk75.App
         internal void RestoreFromTray()
         {
             if (IsDisposed || closing) return;
-            runtime.SetPreviewActive(true);
+            if (!deviceDetachInProgress) runtime.SetPreviewActive(true);
             if (!Visible) { WindowState = lastVisibleWindowState; Show(); }
             else if (WindowState == FormWindowState.Minimized) WindowState = lastVisibleWindowState;
             Activate();
@@ -94,11 +97,69 @@ namespace Tk75.App
             runtime.SetPreviewActive(false);
         }
 
+        // Only a user close of the editor is a request to hide. Explicit Exit,
+        // deferred cleanup and Windows shutdown always retain the real exit path.
+        bool TryMinimizeToTrayOnClosing(FormClosingEventArgs args)
+        {
+            LoadTrayPreference();
+            if (args.CloseReason != CloseReason.UserClosing || !minimizeToTray || trayIcon == null ||
+                trayExitRequested || closing || systemShutdownStarted || rgbClosePending || rgbCloseFinished) return false;
+            args.Cancel = true;
+            if (deviceDetachInProgress)
+            {
+                // Input/output cleanup owns the runtime lock during a detach.
+                // Hiding is safe without touching that worker or its draft.
+                CancelMappingDrag();
+                if (WindowState != FormWindowState.Minimized) lastVisibleWindowState = WindowState;
+                Hide();
+            }
+            else Attempt(MinimizeToTray);
+            return true;
+        }
+
+        void ExitFromTray()
+        {
+            if (IsDisposed || closing) return;
+            trayExitRequested = true;
+            Close();
+        }
+
+        void LoadTrayPreference()
+        {
+            if (trayPreferenceLoaded) return;
+            trayPreferenceLoaded = true;
+            try { minimizeToTray = TrayPreferences.Load(store.Root); }
+            catch (Exception error) { store.Event("Minimize-to-tray preference unavailable: " + error.Message); }
+        }
+
+        void SetMinimizeToTray(bool enabled)
+        {
+            TrayPreferences.Save(store.Root, enabled);
+            minimizeToTray = enabled;
+            trayPreferenceLoaded = true;
+        }
+
+        void AddMinimizeToTrayItem(ContextMenuStrip menu)
+        {
+            LoadTrayPreference();
+            var option = new ToolStripMenuItem { Checked = minimizeToTray, Enabled = !previewMode };
+            Action refresh = delegate
+            {
+                option.Text = Tr("In den Infobereich minimieren", "Minimize to tray");
+                option.ToolTipText = Tr("Mit × im Infobereich weiterlaufen. Über Beenden im Infobereich vollständig schließen.",
+                    "Keep running in the tray when you close with ×. Choose Exit in the tray to quit completely.");
+                option.Checked = minimizeToTray;
+            };
+            refresh();
+            option.Click += delegate { Attempt(delegate { SetMinimizeToTray(!minimizeToTray); }); refresh(); };
+            menu.Items.Add(option);
+            menu.Opening += delegate { refresh(); };
+        }
+
         void AddStartupMenu(ContextMenuStrip menu)
         {
             menu.Items.Add(new ToolStripSeparator());
-            var hide = menu.Items.Add(Tr("In den Infobereich minimieren", "Minimize to tray"), null, delegate { Attempt(MinimizeToTray); });
-            hide.Enabled = !previewMode;
+            AddMinimizeToTrayItem(menu);
             AddStartupRegistrationItem(menu);
             AddReconnectStartupItem(menu);
         }

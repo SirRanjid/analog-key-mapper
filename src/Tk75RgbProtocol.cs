@@ -14,6 +14,11 @@ namespace Tk75.Diagnostics
         bool RgbWriteAvailable { get; }
         Tk75RgbSnapshot CompareExchangeRgb(Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, int timeoutMs);
     }
+    public interface IRgbAutomaticRestoreSource : IRgbCompareExchangeSource
+    {
+        bool RgbAutomaticRestoreAvailable { get; }
+        Tk75RgbSnapshot CompareExchangeRgb(Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, Tk75RgbSnapshot original, int timeoutMs);
+    }
     // Pure manufacturer packet construction/readback only. Nothing in this file
     // opens a device or sends a write. Windows reports include report ID zero.
     // Pinned evidence: gearhub-v4-9d6437da.js SHA256 F8F20D3B0F44144788315A1A0FBDA7ED6A0D976C116A513666AFCF63D3105158.

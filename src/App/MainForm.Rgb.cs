@@ -222,7 +222,7 @@ namespace Tk75.App
             internal Tk75RgbSnapshot Original, Current, Desired;
             internal Thread Worker;
             internal bool Busy = true, Stopped, Abort, QuitAfterRestore, RestoreRequested, RecoveryRequired, Applied, SwitchKeyUnavailable;
-            internal int Sequence, UnsupportedKeys, InitAttempts;
+            internal int Sequence, UnsupportedKeys, InitAttempts, CloseRestoreAttempts;
             internal bool InitRetryEligible;
             internal RgbBackupWork(ReaderSession reader, uint model, string root)
             { Reader = reader; Model = model; Root = root; }
@@ -356,6 +356,12 @@ namespace Tk75.App
                 }
                 if (RgbText(request, "OriginalSnapshotSha256") != RgbHash(Tk75RgbProtocol.EncodeSnapshot(group.Original))) throw new InvalidDataException("Lighting transaction refers to a different original snapshot.");
                 var step = new RgbRecoveryStep { Sequence = RgbNumber(request, "Sequence"), Expected = RgbJournalSnapshot(request, "Expected"), Desired = RgbJournalSnapshot(request, "Desired") };
+                object automaticRestore;
+                if (request.TryGetValue("AutomaticRestore", out automaticRestore))
+                {
+                    if (!(automaticRestore is bool)) throw new InvalidDataException("Invalid automatic lighting restore marker.");
+                    step.AutomaticRestore = (bool)automaticRestore;
+                }
                 string confirmedPath = path + ".confirmed.json";
                 if (File.Exists(confirmedPath))
                 {
@@ -533,12 +539,14 @@ namespace Tk75.App
                 { "OriginalBackup", Path.GetFileName(work.BackupFile) }, { "OriginalSnapshotSha256", RgbHash(Tk75RgbProtocol.EncodeSnapshot(work.Original)) },
                 { "Sequence", sequence }, { "RequestId", id }, { "StartedUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }
             };
+            bool automaticRestore = work.Reader.RgbAutomaticRestoreAvailable;
+            transaction["AutomaticRestore"] = automaticRestore;
             PutRgbSnapshot(transaction, "Expected", expected); PutRgbSnapshot(transaction, "Desired", desired);
             WriteRgbJournal(path, transaction); // Durable publication precedes ANY hardware write.
-            var step = new RgbRecoveryStep { Sequence = sequence, Expected = expected, Desired = desired };
+            var step = new RgbRecoveryStep { Sequence = sequence, Expected = expected, Desired = desired, AutomaticRestore = automaticRestore };
             work.Sequence = sequence; work.Steps.Add(step); RequireRgbIdentity(work);
             Tk75RgbSnapshot confirmed;
-            try { confirmed = work.Reader.CompareExchangeRgb(expected, desired, RgbOperationTimeoutMilliseconds); RequireRgbIdentity(work); }
+            try { confirmed = work.Reader.CompareExchangeRgb(expected, desired, automaticRestore ? work.Original : null, RgbOperationTimeoutMilliseconds); RequireRgbIdentity(work); }
             catch (Exception error)
             {
                 try { WriteRgbJournal(path + ".failed.json", new Dictionary<string, object> {
@@ -587,7 +595,7 @@ namespace Tk75.App
         {
             while (true)
             {
-                Tk75RgbSnapshot desired; bool restore;
+                Tk75RgbSnapshot desired; bool restore, retryRestore = false;
                 lock (work.Gate)
                 {
                     work.Busy = false; Monitor.PulseAll(work.Gate);
@@ -596,6 +604,7 @@ namespace Tk75.App
                     if (work.Abort) return;
                     restore = work.RestoreRequested || work.QuitAfterRestore;
                     desired = restore ? work.Original : work.Desired; work.Desired = null; work.RestoreRequested = false; work.Busy = true;
+                    if (restore && work.QuitAfterRestore) work.CloseRestoreAttempts++;
                 }
                 try
                 {
@@ -610,11 +619,17 @@ namespace Tk75.App
                         // An uncertain write stops ordinary color updates, but
                         // may not discard a newer manual/shutdown restore request.
                         if (!work.RestoreRequested && !work.QuitAfterRestore) work.Desired = null;
+                        // One fresh-read retry can reconcile a lost write/readback
+                        // response. It never retries invalid identities or data.
+                        retryRestore = restore && work.QuitAfterRestore && work.CloseRestoreAttempts < 2 &&
+                            (ex is TimeoutException || ex is IOException && !(ex is InvalidDataException) && !(ex is MonitorCleanupException)) &&
+                            !work.Abort && work.Reader.RgbReadAvailable;
+                        if (retryRestore) work.RestoreRequested = true;
                     }
                 }
                 // A close request can arrive while an ordinary write is running.
                 // Only the following restore iteration can complete that request.
-                lock (work.Gate) if (work.QuitAfterRestore && restore) return;
+                lock (work.Gate) if (work.QuitAfterRestore && restore && !retryRestore) return;
             }
         }
         static void RunRgbWorker(RgbBackupWork work)
@@ -628,15 +643,16 @@ namespace Tk75.App
             RgbBackupWork work = rgbBackupWork; if (work == null || !Object.ReferenceEquals(work.Reader, source)) return;
             RestoreRgbWorkBeforeDisconnect(work, timeoutMs);
         }
-        static void RestoreRgbWorkBeforeDisconnect(RgbBackupWork work, int timeoutMs)
+        static bool RestoreRgbWorkBeforeDisconnect(RgbBackupWork work, int timeoutMs)
         {
-            if (work == null) return;
+            if (work == null) return true;
             var deadline = System.Diagnostics.Stopwatch.StartNew();
             lock (work.Gate)
             {
                 work.QuitAfterRestore = true; work.RestoreRequested = true; work.Desired = work.Original; Monitor.PulseAll(work.Gate);
                 while (!work.Stopped && deadline.ElapsedMilliseconds < timeoutMs) Monitor.Wait(work.Gate, Math.Max(1, timeoutMs - (int)deadline.ElapsedMilliseconds));
                 if (!work.Stopped) { work.Abort = true; work.Desired = null; Monitor.PulseAll(work.Gate); }
+                return work.Original == null || !(work.Applied || work.RecoveryRequired || !work.Stopped);
             }
         }
         bool BeginRgbCloseRestore()

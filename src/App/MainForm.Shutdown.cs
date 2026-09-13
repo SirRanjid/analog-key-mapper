@@ -31,6 +31,7 @@ namespace Tk75.App
                 return;
             }
             if (closing) return;
+            if (TryMinimizeToTrayOnClosing(args)) return;
             if (rgbClosePending) { args.Cancel = true; return; }
             if (deviceDetachInProgress) { closeAfterDeviceDetach = true; args.Cancel = true; return; }
             if (!rgbCloseFinished)
@@ -46,7 +47,7 @@ namespace Tk75.App
                 {
                     if (MessageBox.Show(this, UiText.Get(error.Message) + Tr("\nOhne Speichern beenden?", "\nExit without saving?"),
                         Tr("Speichern fehlgeschlagen", "Saving failed"), MessageBoxButtons.YesNo) != DialogResult.Yes)
-                    { CancelControllerReconnectSave(); args.Cancel = true; return; }
+                    { CancelControllerReconnectSave(); trayExitRequested = false; args.Cancel = true; return; }
                 }
                 PersistControllerReconnectState();
                 if (BeginRgbCloseRestore()) { args.Cancel = true; return; }
@@ -98,7 +99,15 @@ namespace Tk75.App
                 },
                 delegate
                 {
-                    try { RestoreRgbWorkBeforeDisconnect(lighting, SystemShutdownTimeoutMilliseconds); }
+                    // The short Windows query budget is not the RGB worker's
+                    // lifetime. Keep its source alive until pending color work
+                    // and the original-color restore have drained.
+                    try
+                    {
+                        if (!RestoreRgbWorkBeforeDisconnect(lighting, RgbCloseTimeoutMilliseconds))
+                            LogShutdownFailure("Windows shutdown lighting; helper cleanup requested and original backup retained",
+                                new System.IO.IOException("The primary lighting restore was not confirmed."));
+                    }
                     catch (Exception error) { LogShutdownFailure("Windows shutdown lighting; original backup retained", error); }
                     finally { if (ownedReader != null) ownedReader.Dispose(); }
                 },

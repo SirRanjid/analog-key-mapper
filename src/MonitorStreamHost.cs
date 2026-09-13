@@ -228,12 +228,15 @@ namespace Tk75.Diagnostics
             output.Send(result);
         }
         static void CompareExchangeRgb(SafeFileHandle feature, InputReader input, uint model,
-            MonitorRgbWriteRequest request, MonitorHostProtocol state, Stopwatch clock, OutputQueue output, DeviceEvidence evidence)
+            MonitorRgbWriteRequest request, MonitorHostProtocol state, Stopwatch clock, OutputQueue output, DeviceEvidence evidence, Tk75RgbRestoreGuard restoreGuard)
         {
             string result;
             try
             {
                 if (request.Expected.ModelId != model) throw new InvalidDataException("RGB-Sicherung gehört zu einem anderen Tastaturmodell.");
+                // The parent has already durably published this original and the
+                // authorized cleanup fallback before sending the write request.
+                if (request.Original != null) restoreGuard.Track(request.Original, request.Expected, request.Desired);
                 Tk75RgbSnapshot snapshot = Tk75RgbExchange.Execute(request.Expected, request.Desired,
                     delegate(byte[] command) { return ReadRgbFeature(feature, input, command, state, clock, output, evidence); },
                     delegate(byte[] command)
@@ -254,6 +257,7 @@ namespace Tk75.Diagnostics
                         // never renew from a write or interrupt a pending GET.
                         RefreshDeviceEvidence(feature, input, model, state, clock, output, evidence);
                     });
+                if (request.Original != null) restoreGuard.Confirm(snapshot);
                 result = "RGBSNAPSHOT " + request.RequestId.ToString(CultureInfo.InvariantCulture) + " " + Convert.ToBase64String(Tk75RgbProtocol.EncodeSnapshot(snapshot));
             }
             catch (InvalidDataException ex)
@@ -263,6 +267,26 @@ namespace Tk75.Diagnostics
             }
             finally { state.CompleteRgbRead(request.RequestId); }
             output.Send(result);
+        }
+
+        static void RestoreRgbOnExit(SafeFileHandle feature, Tk75RgbRestoreGuard restoreGuard)
+        {
+            if (!restoreGuard.Armed) return;
+            var deadline = Stopwatch.StartNew();
+            Action requireTime = delegate { if (deadline.ElapsedMilliseconds >= 5000) throw new TimeoutException("Die normale Beleuchtung konnte vor dem Verbindungsende nicht vollständig bestätigt werden."); };
+            // Cleanup uses the same owned HID handle, after input monitoring is
+            // off. It deliberately needs neither a parent heartbeat nor stdout.
+            restoreGuard.Restore(delegate(byte[] command)
+            {
+                requireTime(); SendFeature(feature, command, "Normale Beleuchtung lesen"); Thread.Sleep(20); requireTime();
+                byte[] reply = new byte[65];
+                if (!FeatureNative.HidD_GetFeature(feature, reply, reply.Length)) throw Native.Error("Normale Beleuchtung lesen");
+                return reply;
+            }, delegate(byte[] command)
+            {
+                requireTime(); SendFeature(feature, command, "Normale Beleuchtung wiederherstellen");
+                Thread.Sleep(command[1] == 0x07 || command[1] == 0x0c && command[6] == 1 ? 100 : 20); requireTime();
+            });
         }
 
         public static int Run()
@@ -292,6 +316,7 @@ namespace Tk75.Diagnostics
             Mutex monitorOwnership = null;
             bool ownsMonitor = false;
             bool cleanupRequired = false, offSucceeded = false;
+            var restoreGuard = new Tk75RgbRestoreGuard();
             string failure = null;
             try
             {
@@ -324,6 +349,7 @@ namespace Tk75.Diagnostics
                 evidence.ConfirmResponse(); // Initial Identify succeeded; ON was transferred.
                 output.Send("CAPS RGBREAD1");
                 output.Send("CAPS RGBWRITE1");
+                output.Send("CAPS RGBRESTORE1");
                 while (true)
                 {
                     RequireAlive(state, clock);
@@ -331,7 +357,7 @@ namespace Tk75.Diagnostics
                     MonitorRgbReadRequest rgbRead = state.TakeRgbRead();
                     if (rgbRead != null) ReadRgbSnapshot(feature, input, id, rgbRead, state, clock, output, evidence);
                     MonitorRgbWriteRequest rgbWrite = state.TakeRgbWrite();
-                    if (rgbWrite != null) CompareExchangeRgb(feature, input, id, rgbWrite, state, clock, output, evidence);
+                    if (rgbWrite != null) CompareExchangeRgb(feature, input, id, rgbWrite, state, clock, output, evidence, restoreGuard);
                     RefreshDeviceEvidence(feature, input, id, state, clock, output, evidence);
                     byte[] report = input.Read(50);
                     RequireAlive(state, clock);
@@ -356,6 +382,8 @@ namespace Tk75.Diagnostics
                     catch (Exception ex) { failure = "Die Druckwert-Erfassung konnte nicht ausgeschaltet werden. Bitte das Tastaturkabel kurz trennen. " + ex.Message; }
                     finally
                     {
+                        try { if (feature != null && !feature.IsInvalid) RestoreRgbOnExit(feature, restoreGuard); }
+                        catch (Exception ex) { failure = "Normale Beleuchtung konnte nicht vollständig wiederhergestellt werden; Original-Sicherung bleibt erhalten. " + ex.Message; }
                         output.BeginCleanup(failure, offSucceeded);
                         string cleanupFailure = null;
                         // OFF must precede this cancel/drain: InputReader retains its

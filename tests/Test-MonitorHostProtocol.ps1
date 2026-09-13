@@ -117,6 +117,15 @@ Assert-State ($taskWrite.RequestId -eq 7 -and $taskWrite.Expected.Layer -eq 4 -a
 Assert-State ($null -eq $taskState.TakeRgbWrite()) 'Write request dequeues exactly once.'
 Assert-Rejected { $taskState.Receive('RGBREAD 8 0', 20) } 'Read cannot overtake active write.'
 $taskState.CompleteRgbRead(7)
+Assert-State ($null -eq $taskWrite.Original) 'Legacy guarded writes never invent an automatic restore baseline.'
+$taskState.Receive("RGBWRITE 9 $taskRgbEncoded $taskRgbEncoded $taskRgbEncoded", 21)
+$taskRestoreWrite = $taskState.TakeRgbWrite()
+Assert-State ($taskRestoreWrite.RequestId -eq 9 -and [Tk75.Diagnostics.Tk75RgbExchange]::Equivalent($taskRestoreWrite.Original, $taskRgbSnapshot)) 'Automatic cleanup receives the explicit original snapshot.'
+$taskState.CompleteRgbRead(9)
+$taskOtherProfile = [Tk75.Diagnostics.Tk75RgbSnapshot]::new(3591, 3, 4, $taskRgbSettings, [byte[]]::new(384))
+$taskOtherEncoded = [Convert]::ToBase64String([Tk75.Diagnostics.Tk75RgbProtocol]::EncodeSnapshot($taskOtherProfile))
+Assert-Rejected { $taskState.Receive("RGBWRITE 10 $taskRgbEncoded $taskRgbEncoded $taskOtherEncoded", 22) } 'A fallback snapshot from another onboard profile is rejected before any request queues.'
+Assert-State ($null -eq $taskState.TakeRgbWrite()) 'Invalid fallback identity leaves the request slot empty.'
 foreach ($taskBadWrite in @("RGBWRITE 8 $taskRgbEncoded", "RGBWRITE 8 $taskRgbEncoded !", "RGBWRITE 08 $taskRgbEncoded $taskRgbEncoded", "RGBWRITE 8 $taskRgbEncoded $taskRgbEncoded extra")) {
     Assert-Rejected { $taskState.Receive($taskBadWrite, 30) } 'Incomplete or malformed guarded write rejected.'
 }

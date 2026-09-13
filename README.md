@@ -2,9 +2,9 @@
 
 **Turn GamaKay TK75 TMR key pressure into controller input — with visual mapping, editable response curves and optional key lighting.**
 
-**Free and open source · 1.0.0-rc.3 · Windows x64**
+**Free and open source · 1.0.0-rc.4 · Windows x64**
 
-**[Download Windows rc.3](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.3/AnalogKeyMapper-1.0.0-rc.3-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.3) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
+**[Download Windows rc.4](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.4/AnalogKeyMapper-1.0.0-rc.4-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.4) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
 
 ![Analog Key Mapper showing keyboard mappings, controller selection, lighting and USB connection controls](docs/images/controller.png)
 
@@ -14,12 +14,13 @@
 - **Keep controller setups separate.** Mix Xbox 360 and DualSense slots, each with its own mappings, color and USB connection control. Pending connections stay visible and can be cancelled.
 - **See and tune each output.** Keys, Curve and Controller tabs keep the keyboard in place. A clear selection outline and per-output response summaries lead to deadzones, thresholds and a square linear/custom/Bézier curve editor.
 - **Set key behavior together.** Configure Rapid Trigger and opposite-key handling (SOCD), including pairing by drag. Use Ctrl+click or a selection rectangle for bulk edits, with undo.
+- **Calibrate once for every key.** Adjust a shared min/max pressure slider or press one key fully and release. A higher reading automatically expands the scale.
 - **Save your setup and lighting.** Keep JSON profiles, signal presets and named controllers. Optional mapped-key colors include a backup and restore workflow. English and German are included.
 - **Keep the editor out of the way.** Use the tray or opt into Windows startup. Controller reconnection is a separate option that starts off. [Background startup guide](docs/background-startup.md).
 
 ## Quick start
 
-1. [Download the Windows rc.3 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.3/AnalogKeyMapper-1.0.0-rc.3-windows-x64.zip) and extract it into a writable folder.
+1. [Download the Windows rc.4 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.4/AnalogKeyMapper-1.0.0-rc.4-windows-x64.zip) and extract it into a writable folder.
 2. Double-click **`Verify-Checksums.bat`** to check the included files.
 3. Open **`AnalogKeyMapper.exe`** inside the extracted `AnalogKeyMapper` folder, connect your keyboard by USB, and create a mapping.
 
@@ -31,12 +32,12 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 ## Release candidate
 
-**rc.3** adds readable left/right modifier labels, outlined output selection with response summaries, and SOCD pairing by dragging an opposite key into Behavior. Clicking a keyboard key opens **Keys**; dragging opens **Controller**. See the [gesture guide](docs/user-guide.md#tune-response-and-key-behavior).
+**rc.4** adds a shared min/max pressure slider and single-press calibration, a saved **Minimize to tray** option for the window's X, and lighting restoration in the keyboard helper when the app connection ends. Readable modifier labels, output response summaries and SOCD pairing by drag remain available. See the [user guide](docs/user-guide.md).
 
 The release candidate also includes these connection and lifecycle safeguards:
 
 - Controller creation runs asynchronously. Cancelled or outdated requests cannot later activate a controller after its profile, input source or mode has changed.
-- Windows shutdown uses a shared cleanup time limit for controller neutralization, profile saving and lighting restoration. Unfinished lighting recovery retains its backup.
+- Windows shutdown starts controller cleanup, profile saving and lighting restoration independently. The keyboard helper also restores the original lighting before releasing its connection; unfinished recovery retains its backup.
 - Optional startup reconnection consumes the previous confirmed session once. A failed save or interrupted exit does not silently reuse an old controller list; the app explains when manual connection is needed.
 - Compact lighting journal names support normal extracted download folders while preserving recovery from older backups.
 

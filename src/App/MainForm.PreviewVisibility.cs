@@ -7,7 +7,7 @@ namespace Tk75.App
     {
         void UpdatePreviewVisibility()
         {
-            if (runtime != null && !closing && !IsDisposed && !Disposing)
+            if (runtime != null && !closing && !deviceDetachInProgress && !IsDisposed && !Disposing)
                 runtime.SetPreviewActive(Visible && WindowState != FormWindowState.Minimized);
         }
         protected override void OnVisibleChanged(EventArgs e)

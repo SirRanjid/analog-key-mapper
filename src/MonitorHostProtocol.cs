@@ -67,12 +67,14 @@ namespace Tk75.Diagnostics
                 else if (line.StartsWith("RGBWRITE ", StringComparison.Ordinal))
                 {
                     string[] parts = line.Split(' '); int requestId;
-                    if (parts.Length != 4 || !Int32.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out requestId) || requestId < 1 ||
+                    if ((parts.Length != 4 && parts.Length != 5) || !Int32.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out requestId) || requestId < 1 ||
                         parts[1] != requestId.ToString(CultureInfo.InvariantCulture)) throw new InvalidDataException("Ungültige RGB-Vergleichsanfrage.");
                     if (activeRgbReadId != 0) throw new InvalidDataException("Eine RGB-Anfrage ist bereits aktiv.");
                     Tk75RgbSnapshot expected = DecodeRgbSnapshot(parts[2]), desired = DecodeRgbSnapshot(parts[3]);
                     Tk75RgbExchange.Validate(expected, desired);
-                    activeRgbReadId = requestId; rgbWrite = new MonitorRgbWriteRequest(requestId, expected, desired);
+                    Tk75RgbSnapshot original = parts.Length == 5 ? DecodeRgbSnapshot(parts[4]) : null;
+                    if (original != null) { Tk75RgbExchange.Validate(original, expected); Tk75RgbExchange.Validate(desired, original); }
+                    activeRgbReadId = requestId; rgbWrite = new MonitorRgbWriteRequest(requestId, expected, desired, original);
                 }
                 else throw new InvalidDataException("Unbekannte Steuerzeile; erlaubt sind PING, STOP, RGBREAD oder RGBWRITE mit Zustandsvergleich.");
             }
@@ -164,6 +166,8 @@ namespace Tk75.Diagnostics
         public int RequestId { get; private set; }
         public Tk75RgbSnapshot Expected { get; private set; }
         public Tk75RgbSnapshot Desired { get; private set; }
-        internal MonitorRgbWriteRequest(int id, Tk75RgbSnapshot expected, Tk75RgbSnapshot desired) { RequestId = id; Expected = expected; Desired = desired; }
+        public Tk75RgbSnapshot Original { get; private set; }
+        internal MonitorRgbWriteRequest(int id, Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, Tk75RgbSnapshot original)
+        { RequestId = id; Expected = expected; Desired = desired; Original = original; }
     }
 }

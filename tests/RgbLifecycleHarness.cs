@@ -248,6 +248,7 @@ namespace Tk75.Tests
                 typeof(Form).GetMethod("OnFormClosing", Fields).Invoke(fixture.Form, new object[] { args });
                 Check(!args.Cancel && elapsed.ElapsedMilliseconds < 4500, "Windows shutdown does not wait indefinitely or cancel an already pending normal RGB close.");
                 Check(Get<bool>(fixture.Form, "closing"), "System shutdown seals the UI even while RGB is pending.");
+                Check(!fixture.Source.Disposed && !fixture.State<bool>("Abort"), "The short Windows query deadline does not dispose the reader or cancel its pending restore.");
                 fixture.Preserved(preserved);
                 string backup = Directory.GetFiles(fixture.Lighting, "*.backup.json").Single();
                 Check((string)ReadJournal(backup)["SnapshotBase64"] == Convert.ToBase64String(Tk75RgbProtocol.EncodeSnapshot(fixture.Source.Original)), "An interrupted restore retains the exact durable original backup.");
@@ -256,9 +257,26 @@ namespace Tk75.Tests
                 restoreRead.Release.Set();
                 Check(Get<ShutdownWork>(fixture.Form, "systemShutdownWork").Wait(5000), "The original cleanup lanes can finish after the blocked fake transport is released.");
                 Await(delegate { return fixture.State<bool>("Stopped"); }, "The interrupted lighting worker stops without requiring a live UI callback.");
+                fixture.Restored();
                 fixture.Preserved(preserved);
                 Check(Get<bool>(fixture.Form, "systemShutdownStarted"), "An earlier successful ordinary save does not convert interrupted OS shutdown into a normal clean exit.");
-                Console.WriteLine("PASS Windows shutdown: pending RGB restore is bounded; original backup and journals survive");
+                Console.WriteLine("PASS Windows shutdown: pending restore survives the query budget and restores the full original");
+            }
+        }
+        static void CloseRetriesTransientRestore(string root)
+        {
+            using (var fixture = new Fixture(root))
+            {
+                fixture.Start(); fixture.Ready(); fixture.Queue(fixture.Color(0xCCAABB)); fixture.Idle();
+                var preserved = fixture.Files();
+                int restoreRead = fixture.Source.Reads + 1;
+                fixture.Source.BeforeRead = delegate(int count, int timeout)
+                { if (count == restoreRead) throw new IOException("Synthetic transient readback failure."); };
+                fixture.Form.Close();
+                Await(delegate { return fixture.Form.IsDisposed; }, "Normal exit retries one transient restore read and finishes.");
+                Check(fixture.Source.Reads == restoreRead + 1 && Get<bool>(fixture.Form, "rgbCloseSucceeded"),
+                    "Only a successful fresh readback marks the retried close as restored.");
+                fixture.Restored(); fixture.Preserved(preserved);
             }
         }
         static void LatestColors(string root)
@@ -443,6 +461,7 @@ namespace Tk75.Tests
                 InitializationRetries(Path.Combine(root, "g"), 2);
                 PlanCache(Path.Combine(root, "h"));
                 WindowsShutdownDuringRestore(Path.Combine(root, "i"));
+                CloseRetriesTransientRestore(Path.Combine(root, "k"));
                 JournalPathBudget(root);
                 LegacyTimestampRecovery(Path.Combine(root, "j"));
                 Console.WriteLine("PASS: " + checks + " RGB lifecycle assertions; actual MainForm worker and ReaderSession, synthetic source only.");

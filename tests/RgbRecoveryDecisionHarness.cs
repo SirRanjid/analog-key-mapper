@@ -118,10 +118,41 @@ public static class RgbRecoveryDecisionHarness
         Check(decision.AtOriginal && !decision.NeedsRecovery && decision.Error == null, "Successful retry produces the existing resolvable original-state chain");
         Check(changedProfile.Profile == 1 && original.Profile == 2 && applied.Confirmed == marker, "Retry assessment preserves both source contexts and the recovery authority");
     }
+    static void AutomaticCleanupPrefixes()
+    {
+        Tk75RgbSnapshot original = Original(); var colors = new Dictionary<int, int>();
+        foreach (int key in Tk75RgbProtocol.GetSupportedKeyIndices(original.ModelId)) colors[key] = 0x123456 + key;
+        Tk75RgbSnapshot desired = new Tk75RgbSnapshot(original.ModelId, original.Profile, original.Layer,
+            Tk75RgbProtocol.PictureModeSettings(original.RawSettings, original.Layer), Tk75RgbProtocol.Overlay(original.ModelId, original.Picture, colors));
+        var write = new RgbRecoveryStep { Sequence = 1, Expected = original, Desired = desired, AutomaticRestore = true };
+        for (int appliedBlocks = 0; appliedBlocks <= 7; appliedBlocks++)
+            for (int restoredBlocks = 0; restoredBlocks <= 7; restoredBlocks++)
+            {
+                Tk75RgbSnapshot partial = Prefix(original, desired, appliedBlocks, false);
+                Tk75RgbSnapshot cleanup = Prefix(partial, original, restoredBlocks, false);
+                Recoverable(original, cleanup, new[] { write }, "An authorized helper cleanup is recoverable at every complete write/restore report boundary.");
+                var repair = new RgbRecoveryStep { Sequence = 2, Expected = cleanup, Desired = original, Confirmed = original };
+                Check(RgbRecoveryDecision.Assess(original, original, new[] { write, repair }).AtOriginal,
+                    "A recovery transaction chains from an interrupted authorized helper cleanup.");
+            }
+        write.Confirmed = desired;
+        for (int restoredBlocks = 0; restoredBlocks <= 7; restoredBlocks++)
+            Recoverable(original, Prefix(desired, original, restoredBlocks, false), new[] { write },
+                "Confirmed colors also authorize only an ordered cleanup back to the original.");
+        Tk75RgbSnapshot partiallyRestored = Prefix(desired, original, 1, false);
+        write.AutomaticRestore = false;
+        Unknown(RgbRecoveryDecision.Assess(original, partiallyRestored, new[] { write }),
+            "Legacy journals without helper cleanup authorization do not accept cleanup-only states.");
+        write.AutomaticRestore = true;
+        byte[] unrelated = partiallyRestored.Picture; unrelated[42] = 0xEF;
+        Unknown(RgbRecoveryDecision.Assess(original, new Tk75RgbSnapshot(original.ModelId, original.Profile, original.Layer, partiallyRestored.RawSettings, unrelated), new[] { write }),
+            "Cleanup authorization cannot explain an unrelated LED byte.");
+    }
     public static string Run()
     {
         checks = 0;
         OnboardProfileRetry();
+        AutomaticCleanupPrefixes();
         var original = Original(); var first = Paint(original, 0x123456); var second = Paint(original, 0xabcdef); var third = Paint(original, 0xffffff);
         var step = new RgbRecoveryStep { Sequence = 1, Expected = original, Desired = first };
         Known(RgbRecoveryDecision.Assess(original, first, new[] { step }), "Crash after write before confirmation can restore the recorded target");

@@ -16,7 +16,9 @@ Press a key and look for changing fill inside its keycap. Detecting a device is 
 
 Choose the physical **ANSI/ISO** layout and **QWERTY/QWERTZ** legends separately if needed. English is the default UI language; German is available in the menu.
 
-Uncalibrated keys use the default raw range **0–385**. **Adjust pressure range** opens optional per-key calibration. Follow the dialog, press slowly to the end and release fully. The default range and any millimetre estimate are not factory measurements of your individual keyboard.
+All keys use one shared pressure range, initially **0–385**. In **Keys**, drag the **Min** and **Max** handles to set that range for the entire keyboard. **Scale max** changes the slider's raw-value scale when a keyboard needs a different limit; press Enter or leave the field to save it.
+
+To measure the range, select one key and choose **Calibrate** beside the slider. Press that key fully once, then release. The measured minimum and maximum are saved automatically for every key. A reading above the previous limit expands the scale. **Cancel** or selecting another key discards an unfinished measurement. There is no second cycle or confirmation checkbox. The shared range is saved separately for each physical keyboard, and the default range is not a factory measurement of your individual keyboard.
 
 ## Select and map keys
 
@@ -89,13 +91,13 @@ When a key belongs to several connected controllers, the first controller in pro
 
 The app saves the keyboard's current lighting before changing it and keeps restoration records under `data/lighting/`. Supported static backgrounds are preserved on other keys. Animated effects that cannot be preserved reliably are rejected before writing.
 
-**Restore lighting** returns to the saved normal state and turns off both controller colors and the shortcut marker for the profile. Normal shutdown also requests restoration. Allow an in-progress lighting operation to finish; closing may take several seconds.
+**Restore lighting** returns to the saved normal state and turns off both controller colors and the shortcut marker for the profile. On exit, the app restores the lighting captured from the keyboard at startup, including its colors, brightness and effect. The keyboard helper also attempts restoration if the app connection is interrupted. During Windows shutdown, restoration runs independently of the interface. Original backups remain available if the keyboard becomes unavailable. Closing may take several seconds.
 
 If recovery pauses, keep the backups and follow the displayed reason. An onboard keyboard-profile change may require returning to the previous onboard profile before restoration. Onboard keyboard profiles and the mapper's JSON profiles are different settings.
 
 ## Background startup
 
-Use the optional **Start with Windows · in tray** setting, the separate **Reconnect controllers at startup** option, or **Minimize to tray**. Manual launch opens the editor; closing with **X** or tray **Exit** performs normal shutdown and lighting restoration. Reconnection starts off and only uses a confirmed previous session. See [background startup and tray controls](background-startup.md) for the exact behavior and current helper limitation.
+Use the optional **Start with Windows · in tray** setting and the separate **Reconnect controllers at startup** option. **Minimize to tray** is a saved checkbox: when enabled, the window's **X** hides the editor and keeps controllers running. Tray **Exit**, or **X** with the option disabled, closes the app and restores lighting. Reconnection starts off and only uses a confirmed previous session. See [background startup and tray controls](background-startup.md).
 
 ## Troubleshooting
 

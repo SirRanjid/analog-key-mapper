@@ -36,6 +36,39 @@ namespace Tk75.Diagnostics
                 if (before[i] != after[i] && (i >= Tk75RgbProtocol.WritablePictureLength || !allowed.Contains(i / 3)))
                     throw new InvalidDataException("RGB transaction would change an unknown LED position or the six unverified trailing bytes.");
         }
+        // Only complete HID-report boundaries are recoverable. Arbitrary mixtures
+        // can be another application's changes and must never be overwritten.
+        public static bool MatchesWritePrefix(Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, Tk75RgbSnapshot candidate)
+        {
+            foreach (Tk75RgbSnapshot state in WriteStates(expected, desired)) if (Equivalent(candidate, state)) return true;
+            return false;
+        }
+        public static bool MatchesAutomaticRestorePrefix(Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, Tk75RgbSnapshot original, Tk75RgbSnapshot candidate)
+        {
+            // Cleanup may have started after any complete report of an interrupted
+            // color change. Its own interruption must also remain recoverable.
+            foreach (Tk75RgbSnapshot state in WriteStates(expected, desired))
+                if (MatchesWritePrefix(state, original, candidate)) return true;
+            return false;
+        }
+        static IEnumerable<Tk75RgbSnapshot> WriteStates(Tk75RgbSnapshot expected, Tk75RgbSnapshot desired)
+        {
+            Validate(expected, desired);
+            yield return expected;
+            byte[] picture = expected.Picture, settings = expected.RawSettings;
+            if (!Tk75RgbProtocol.Equal(picture, desired.Picture))
+                foreach (byte[] report in Tk75RgbProtocol.BuildPictureWrites(desired.Layer, desired.Picture))
+                {
+                    Buffer.BlockCopy(report, 9, picture, report[4] * 56, report[5]);
+                    yield return new Tk75RgbSnapshot(expected.ModelId, expected.Profile, expected.Layer, settings, picture);
+                }
+            if (!SameSettings(settings, desired.RawSettings))
+            {
+                byte[] report = Tk75RgbProtocol.BuildSettingsWrite(desired.RawSettings);
+                Buffer.BlockCopy(report, 2, settings, 1, 7);
+                yield return new Tk75RgbSnapshot(expected.ModelId, expected.Profile, expected.Layer, settings, picture);
+            }
+        }
         public static Tk75RgbSnapshot Execute(Tk75RgbSnapshot expected, Tk75RgbSnapshot desired,
             Func<byte[], byte[]> read, Action<byte[]> write)
         {
@@ -55,6 +88,41 @@ namespace Tk75.Diagnostics
             Tk75RgbSnapshot confirmed = Tk75RgbProtocol.ReadSnapshot(desired.ModelId, desired.Layer, read);
             if (!Equivalent(confirmed, desired)) throw new InvalidDataException("RGB update was not confirmed by complete readback; keep the recovery backup.");
             return confirmed;
+        }
+    }
+
+    // The HID-owning helper retains the parent's durably backed-up original.
+    // Its final cleanup does not depend on the UI or a healthy parent pipe.
+    public sealed class Tk75RgbRestoreGuard
+    {
+        Tk75RgbSnapshot original, expected, desired;
+        bool confirmed;
+        public bool Armed { get { return original != null; } }
+        public void Track(Tk75RgbSnapshot baseline, Tk75RgbSnapshot before, Tk75RgbSnapshot after)
+        {
+            Tk75RgbExchange.Validate(baseline, before); Tk75RgbExchange.Validate(before, after);
+            Tk75RgbExchange.Validate(after, baseline);
+            if (original != null && !Tk75RgbExchange.Equivalent(original, baseline))
+                throw new InvalidDataException("The original keyboard lighting cannot change during an active session.");
+            original = baseline; expected = before; desired = after; confirmed = false;
+        }
+        public void Confirm(Tk75RgbSnapshot snapshot)
+        {
+            if (original == null) return;
+            if (!Tk75RgbExchange.Equivalent(snapshot, desired)) throw new InvalidDataException("The cleanup guard received an unexpected write confirmation.");
+            confirmed = true;
+        }
+        public Tk75RgbSnapshot Restore(Func<byte[], byte[]> read, Action<byte[]> write)
+        {
+            if (original == null) return null;
+            Tk75RgbSnapshot current = Tk75RgbProtocol.ReadSnapshot(original.ModelId, original.Layer, read);
+            if (Tk75RgbExchange.Equivalent(current, original)) return current;
+            Tk75RgbExchange.Validate(current, original);
+            Tk75RgbSnapshot before = confirmed ? desired : expected;
+            if (!Tk75RgbExchange.MatchesWritePrefix(before, desired, current) &&
+                !Tk75RgbExchange.MatchesAutomaticRestorePrefix(before, desired, original, current))
+                throw new InvalidDataException("Keyboard lighting changed outside the recorded operation; automatic cleanup retained the original backup.");
+            return Tk75RgbExchange.Execute(current, original, read, write);
         }
     }
 }

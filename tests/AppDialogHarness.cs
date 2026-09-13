@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -9,6 +10,7 @@ using System.Threading;
 using System.Windows.Forms;
 using Tk75.App;
 using Tk75.Diagnostics;
+using Tk75.Mapping;
 
 namespace Tk75.Tests
 {
@@ -90,10 +92,6 @@ namespace Tk75.Tests
             }
             finally { input.Reader.Sample -= delivered; }
         }
-        static void FullCycles(DialogInput input)
-        { PushDialog(input, 14, 0, 40, 100, 180, 340, 0, 40, 100, 180, 340, 0); }
-        static void RestartCalibration(CalibrationDialog dialog)
-        { DialogControls(dialog).OfType<Button>().Single(b => b.Text == "Neu aufnehmen").PerformClick(); TickDialog(dialog); }
         static void CaptureDialog(Form dialog, string path)
         {
             dialog.PerformLayout(); Application.DoEvents();
@@ -111,66 +109,162 @@ namespace Tk75.Tests
             { dialog.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png); }
         }
 
+        static MainForm PressurePreview(string data, DialogInput input)
+        {
+            var form = new MainForm(data, true);
+            try
+            {
+                form.ShowInTaskbar = false; form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-30000, -30000);
+                form.Show(); Pump(form); form.MaximumSize = new Size(2048, 2048); SetPreviewClientSize(form, DefaultClientSize);
+                var store = Field<WorkspaceStore>(form, "store");
+                CalibrationDocument saved = store.LoadCalibration(new string('c', 64), input.Reader.Fingerprint);
+                typeof(MainForm).GetField("reader", Private).SetValue(form, input.Reader);
+                typeof(MainForm).GetField("calibration", Private).SetValue(form, saved);
+                Call(form, "Configure"); SelectKeys(form, 14); DetailMode(form, null); Call(form, "RefreshPressureRangeEditor");
+                Check(!Field<System.Windows.Forms.Timer>(form, "uiTimer").Enabled && !Field<bool>(form, "discoveryEnabled"),
+                    "Inline calibration uses only the injected source; hardware discovery and automatic UI ticks remain off.");
+                return form;
+            }
+            catch { form.Dispose(); throw; }
+        }
+        static void ClickPressureCalibration(MainForm form)
+        {
+            var link = Field<LinkLabel>(form, "calibrateRange");
+            Check(link.Enabled, "The inline calibration action is available for the selected synthetic key.");
+            typeof(LinkLabel).GetMethod("OnLinkClicked", Private).Invoke(link, new object[] { new LinkLabelLinkClickedEventArgs(link.Links[0]) });
+        }
+        static void CheckPressureRange(MainForm form, double minimum, double maximum, double scale)
+        {
+            var slider = Field<PressureRangeSlider>(form, "pressureRange");
+            var shared = Field<KeyboardPressureRange>(form, "sharedPressureRange");
+            Check(shared.Minimum == minimum && shared.Maximum == maximum && shared.ScaleMaximum == scale,
+                "The keyboard-wide range matches the completed edit: " + minimum + ".." + maximum + " on " + scale + ".");
+            Check(slider.SelectedMinimum == minimum && slider.SelectedMaximum == maximum && slider.RangeMaximum == scale,
+                "The slider and global pressure range display the same values.");
+            var runtime = Field<MultiControllerSession>(form, "runtime");
+            foreach (DictionaryEntry entry in Field<IDictionary>(runtime, "slots"))
+            {
+                object session = entry.Value.GetType().GetField("Session").GetValue(entry.Value);
+                var mapping = Field<MappingSession>(session, "inner");
+                var values = Field<Dictionary<int, Calibration>>(mapping, "calibrations");
+                Check(values.Count == 256 && Enumerable.Range(0, 256).All(key => values[key].Rest == minimum && values[key].Bottom == maximum),
+                    "The real controller session applies exactly the same range to all 256 physical key IDs.");
+                Check(Field<object>(mapping, "output") == null, "Calibration never creates a controller output in this synthetic test.");
+            }
+        }
+        static void RunInlinePressureRange(string artifacts)
+        {
+            string language = UiText.Language;
+            string data = Path.Combine(artifacts, "inline-pressure-data");
+            try
+            {
+                using (var input = new DialogInput())
+                using (var form = PressurePreview(data, input))
+                {
+                    var slider = Field<PressureRangeSlider>(form, "pressureRange");
+                    var store = Field<WorkspaceStore>(form, "store");
+                    string path = store.CalibrationPath(new string('c', 64));
+                    CheckPressureRange(form, 0, 385, 385);
+                    Check(slider.Enabled && Field<NumericUpDown>(form, "pressureScaleMaximum").Enabled, "Both handles and the shared scale are editable inline.");
+                    Check(!File.Exists(path), "Opening the range editor does not invent or persist a calibration.");
+                    PushDialog(input, 14, 0); ClickPressureCalibration(form);
+                    Check(Object.ReferenceEquals(Field<ReaderSession>(form, "pressureCaptureReader"), input.Reader), "The inline action subscribes to the already-connected reader.");
+                    Check(!slider.Enabled && !Field<NumericUpDown>(form, "pressureScaleMaximum").Enabled, "Manual edits are paused during a live measurement.");
+                    Check(form.OwnedForms.Length == 0 && !DialogControls(form).OfType<CheckBox>().Any(box => box.Text.Contains("Anschlag") || box.Text.Contains("full press")),
+                        "Calibration opens no dialog and asks for no bottom-out confirmation checkbox.");
+
+                    PushDialog(input, 14, 0, 80, 250, 550); Call(form, "UpdatePressureCapture");
+                    Check(slider.SelectedMaximum == 550 && slider.RangeMaximum == 550 && slider.MeasuredValue == 550,
+                        "Pressing beyond the old limit expands the live slider and marks the measured pressure.");
+                    Check(!File.Exists(path) && Field<KeyboardPressureRange>(form, "sharedPressureRange").Maximum == 385,
+                        "An unfinished press remains a preview until the selected key is released.");
+                    PushDialog(input, 9, 900, 0); Call(form, "UpdatePressureCapture");
+                    Check(slider.SelectedMaximum == 550 && Field<ReaderSession>(form, "pressureCaptureReader") != null,
+                        "An unrelated key does not cancel the capture or widen the selected key's measurement.");
+                    PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
+                    CheckPressureRange(form, 0, 550, 550);
+                    Check(Field<ReaderSession>(form, "pressureCaptureReader") == null && slider.Enabled && File.Exists(path),
+                        "One release automatically commits the global calibration without another click or second press.");
+                    CalibrationDocument saved = store.LoadCalibration(new string('c', 64), input.Reader.Fingerprint);
+                    Check(saved.GlobalMinimum == 0 && saved.GlobalMaximum == 550 && saved.ScaleMaximum == 550 && saved.Entries.Count == 0,
+                        "The saved document records one shared range without manufacturing per-key measurements.");
+                    string committed = File.ReadAllText(path);
+                    PushDialog(input, 14, 700, 0); Call(form, "UpdatePressureCapture");
+                    Check(File.ReadAllText(path) == committed, "Later normal presses cannot recalibrate after capture has completed.");
+
+                    PushDialog(input, 14, 0); ClickPressureCalibration(form);
+                    PushDialog(input, 14, 80, 610); Call(form, "UpdatePressureCapture");
+                    ClickPressureCalibration(form);
+                    Check(Field<ReaderSession>(form, "pressureCaptureReader") == null && File.ReadAllText(path) == committed,
+                        "Cancel unsubscribes the unfinished capture and leaves the saved range unchanged.");
+                    CheckPressureRange(form, 0, 550, 550);
+                    PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
+                    Check(File.ReadAllText(path) == committed, "Releasing a cancelled press cannot save later.");
+
+                    ClickPressureCalibration(form); PushDialog(input, 14, 80, 620); Call(form, "UpdatePressureCapture");
+                    SelectKeys(form, 9); PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
+                    Check(Field<ReaderSession>(form, "pressureCaptureReader") == null && File.ReadAllText(path) == committed,
+                        "Changing the selected key cancels its pending capture instead of applying it to a different key.");
+                    SelectKeys(form, 14);
+                    var scale = Field<NumericUpDown>(form, "pressureScaleMaximum"); scale.Value = 700;
+                    Check(slider.RangeMaximum == 700 && File.ReadAllText(path) == committed,
+                        "Typing a scale limit previews it without writing on every digit.");
+                    var enter = new KeyEventArgs(Keys.Enter);
+                    typeof(NumericUpDown).GetMethod("OnKeyDown", Private).Invoke(scale, new object[] { enter });
+                    Check(enter.Handled, "Enter commits the shared scale directly in the editor.");
+                    CheckPressureRange(form, 0, 550, 700);
+                    committed = File.ReadAllText(path);
+                    scale.Text = "800";
+                    Check(File.ReadAllText(path) == committed, "Pending numeric text does not save before the user commits it.");
+                    var typedEnter = new KeyEventArgs(Keys.Enter);
+                    typeof(NumericUpDown).GetMethod("OnKeyDown", Private).Invoke(scale, new object[] { typedEnter });
+                    Check(typedEnter.Handled, "Enter validates pending numeric text instead of retaining the previous numeric value.");
+                    CheckPressureRange(form, 0, 550, 800);
+                    CalibrationDocument unchangedCalibration = Field<CalibrationDocument>(form, "calibration");
+                    KeyboardPressureRange unchangedRange = Field<KeyboardPressureRange>(form, "sharedPressureRange");
+                    committed = File.ReadAllText(path);
+                    typeof(NumericUpDown).GetMethod("OnKeyDown", Private).Invoke(scale, new object[] { new KeyEventArgs(Keys.Enter) });
+                    Check(Object.ReferenceEquals(unchangedCalibration, Field<CalibrationDocument>(form, "calibration")) &&
+                        Object.ReferenceEquals(unchangedRange, Field<KeyboardPressureRange>(form, "sharedPressureRange")) && File.ReadAllText(path) == committed,
+                        "Committing an unchanged scale preserves the calibration snapshot and avoids writing or reconfiguring output.");
+                    scale.Text = "700";
+                    typeof(NumericUpDown).GetMethod("OnKeyDown", Private).Invoke(scale, new object[] { new KeyEventArgs(Keys.Enter) });
+                    CheckPressureRange(form, 0, 550, 700);
+                    slider.AccessibilityObject.GetChild(0).Value = "10";
+                    slider.AccessibilityObject.GetChild(1).Value = "600";
+                    CheckPressureRange(form, 10, 600, 700);
+                    saved = store.LoadCalibration(new string('c', 64), input.Reader.Fingerprint);
+                    Check(saved.GlobalMinimum == 10 && saved.GlobalMaximum == 600 && saved.ScaleMaximum == 700,
+                        "Editing either real slider handle persists the range for every key.");
+                    SelectKeys(form, 9, 14);
+                    Check(slider.Enabled && !Field<LinkLabel>(form, "calibrateRange").Enabled,
+                        "The shared range stays editable for multiple keys; measurement names one selected source key.");
+                    CheckPressureRange(form, 10, 600, 700);
+                    SelectKeys(form, 14);
+                    CapturePreview(form, artifacts, "global-pressure-range");
+
+                    committed = File.ReadAllText(path); PushDialog(input, 14, 0); ClickPressureCalibration(form);
+                    PushDialog(input, 14, 80, 740, 0); input.Reader.Stop(); Call(form, "UpdatePressureCapture");
+                    Check(Field<ReaderSession>(form, "pressureCaptureReader") == null && File.ReadAllText(path) == committed,
+                        "Disconnect before the UI commits a completed measurement cannot change the saved range.");
+                    Check(!Field<LinkLabel>(form, "calibrateRange").Enabled, "A stopped reader disables calibration without silently reconnecting it.");
+                    CheckPressureRange(form, 10, 600, 700);
+                }
+                using (var input = new DialogInput())
+                using (var form = PressurePreview(data, input))
+                {
+                    CheckPressureRange(form, 10, 600, 700);
+                    Check(Field<ReaderSession>(form, "pressureCaptureReader") == null,
+                        "Reopening the editor restores the range without starting another calibration.");
+                }
+            }
+            finally { UiText.SetLanguage(language); }
+        }
+
         static void RunDialogs(string artifacts)
         {
             int started = assertions;
-            using (var input = new DialogInput())
-            using (var dialog = new CalibrationDialog(input.Reader, 14, "W", null))
-            {
-                ShowDialogOffline(dialog); TickDialog(dialog);
-                Check(dialog.ClientSize == new Size(640, 390), "Calibration opens at the designed 640x390 client size.");
-                Check(Field<bool>(dialog, "recording"), "Calibration starts recording automatically on Shown.");
-                Check(Field<Label>(dialog, "values").Text.Contains("Noch keine Messwerte"), "Empty input is described without fabricated pressure.");
-                Check(!Field<Button>(dialog, "save").Enabled, "Empty calibration cannot be saved.");
-                PushDialog(input, 14, 0, 100, 250, 500, 650, 0); TickDialog(dialog);
-                Check(Field<ProgressBar>(dialog, "progress").Value == 1 && Field<Label>(dialog, "status").Text.Contains("Noch einmal"), "First release advances the two-cycle instruction.");
-                PushDialog(input, 9, 60); TickDialog(dialog);
-                Check(Field<Label>(dialog, "status").Text.Contains("andere Taste") && !Field<bool>(dialog, "recording"), "A second physical key invalidates the calibration capture.");
-                Field<CheckBox>(dialog, "full").Checked = true;
-                RestartCalibration(dialog);
-                Check(Field<bool>(dialog, "recording") && Field<int>(dialog, "samples") == 0 && !Field<CheckBox>(dialog, "full").Checked, "Restart clears samples, errors and the previous bottom-out confirmation.");
-                Check(Field<ProgressBar>(dialog, "progress").Value == 0, "Restart resets the visible cycle count.");
-                FullCycles(input); TickDialog(dialog);
-                Check((bool)DialogCall(dialog, "CanSave"), "Two released cycles with 11 samples and five distinct values meet the measured requirements.");
-                Check(!Field<Button>(dialog, "save").Enabled, "Completed measurements still require explicit bottom-out confirmation.");
-                Field<CheckBox>(dialog, "full").Checked = true;
-                Check(Field<Button>(dialog, "save").Enabled, "Bottom-out checkbox enables a valid completed calibration.");
-                CaptureDialog(dialog, Path.Combine(artifacts, "calibration-completed-640x390.png"));
-                Field<Button>(dialog, "save").PerformClick();
-                Check(dialog.DialogResult == DialogResult.OK && dialog.Result != null, "The real Save click returns the completed calibration.");
-                Check(dialog.Result.Rest == 0 && dialog.Result.Bottom == 340 && !dialog.Result.MeasuredTravel.HasValue, "Restart discarded earlier extrema and does not invent a millimeter travel.");
-            }
-
-            foreach (int[] sparse in new[] { new[] { 0, 10, 10, 20, 30, 0, 10, 10, 20, 30, 0 }, new[] { 20, 80, 160, 320, 0, 40, 200, 340, 0 } })
-            using (var input = new DialogInput())
-            using (var dialog = new CalibrationDialog(input.Reader, 14, "W", null))
-            {
-                ShowDialogOffline(dialog); PushDialog(input, 14, sparse); TickDialog(dialog); Field<CheckBox>(dialog, "full").Checked = true;
-                Check(Field<ProgressBar>(dialog, "progress").Value == 2, "Sparse input contains two complete physical cycles.");
-                Check(!(bool)DialogCall(dialog, "CanSave") && !Field<Button>(dialog, "save").Enabled, sparse.Length >= 10 ? "Four distinct depths do not pass the five-value minimum." : "Nine samples do not pass the ten-sample minimum.");
-                Check(Field<Label>(dialog, "status").Text.Contains("neu aufnehmen"), "Insufficient precision has an actionable restart instruction."); dialog.Close();
-            }
-
-            using (var input = new DialogInput())
-            using (var dialog = new CalibrationDialog(input.Reader, 14, "W", null))
-            {
-                ShowDialogOffline(dialog); FullCycles(input); TickDialog(dialog); Field<CheckBox>(dialog, "full").Checked = true;
-                Check(Field<Button>(dialog, "save").Enabled, "Disconnect case first has a valid completed capture.");
-                input.Reader.Stop(); TickDialog(dialog);
-                Check(!(bool)DialogCall(dialog, "CanSave") && !Field<Button>(dialog, "save").Enabled, "Disconnect after completion prevents saving, including before another UI action.");
-                Field<Button>(dialog, "save").PerformClick(); Check(dialog.Result == null && dialog.DialogResult != DialogResult.OK, "Disabled Save cannot publish a disconnected calibration.");
-                Equal(input.Reader.Status, Field<Label>(dialog, "status").Text, "Disconnection reason replaces the completed instruction."); dialog.Close();
-            }
-
-            using (var input = new DialogInput())
-            using (var dialog = new CalibrationDialog(input.Reader, 14, "W", null))
-            {
-                ShowDialogOffline(dialog); input.Source.Push(new IOException("Synthetic cable removed before first pressure value."));
-                AwaitDialog(delegate { return !input.Reader.IsReading; }, "Synthetic input failure reaches the reader."); TickDialog(dialog);
-                Equal(input.Reader.Status, Field<Label>(dialog, "status").Text, "Empty-input fault reason is visible in the calibration dialog.");
-                RestartCalibration(dialog); Check(!Field<bool>(dialog, "recording") && !Field<Button>(dialog, "save").Enabled, "Restart cannot silently reconnect or record through an input fault.");
-                CaptureDialog(dialog, Path.Combine(artifacts, "calibration-input-fault-640x390.png")); dialog.Close();
-            }
+            RunInlinePressureRange(artifacts);
 
             using (var input = new DialogInput())
             using (var dialog = new LearnDialog(input.Reader, "W"))
@@ -199,7 +293,7 @@ namespace Tk75.Tests
                 Check(dialog.DialogResult != DialogResult.OK, "A disconnect before learning confirmation prevents success.");
                 Equal(input.Reader.Status, Field<Label>(dialog, "status").Text, "Learning displays disconnection instead of a success state."); dialog.Close();
             }
-            Console.WriteLine("DIALOG PASS: " + (assertions - started) + " assertions; real Learn/Calibration forms with synthetic ReaderSession only.");
+            Console.WriteLine("DIALOG PASS: " + (assertions - started) + " assertions; real Learn form and inline pressure range with synthetic ReaderSession only.");
         }
     }
 }

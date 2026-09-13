@@ -21,7 +21,7 @@ namespace Tk75.App
         readonly Dictionary<string, Control> pages = new Dictionary<string, Control>();
         readonly TableLayoutPanel keyboardArea = new TableLayoutPanel();
         readonly Panel advancedPanel = new SleekCard();
-        Button calibrateButton, addTargetButton, removeTargetButton, toggleTargetButton, advancedToggle;
+        Button addTargetButton, removeTargetButton, toggleTargetButton, advancedToggle;
         bool advancedVisible;
         bool automaticIso = true, automaticLayoutAvailable = true, changingLayout;
 
@@ -101,11 +101,11 @@ namespace Tk75.App
             BuildBehavior(SecondaryPage("behavior", "Profil & Programmregeln"));
             var helpPage = SecondaryPage("help", "Verbindung & Entwicklungsstand");
             helpPage.Controls.Add(new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Tag = "localized", Multiline = true, ScrollBars = ScrollBars.Vertical, BackColor = ModernTheme.Surface, Text = Tr(
-                "Tastatur\r\n\r\nEine eindeutig erkannte Tastatur verbindet sich automatisch. Alle Tasten starten mit dem Druckbereich 0–385. Eigene Kalibrierungen haben Vorrang. Die Füllung im Tastenhintergrund steigt mit dem Druck von unten nach oben.\r\n\r\n" +
+                "Tastatur\r\n\r\nEine eindeutig erkannte Tastatur verbindet sich automatisch. Alle Tasten starten mit dem Druckbereich 0–385. Der Min/Max-Regler gilt für alle Tasten. Zum Kalibrieren eine Taste einmal ganz drücken und loslassen. Die Füllung im Tastenhintergrund steigt mit dem Druck von unten nach oben.\r\n\r\n" +
                 "Zuordnen und einstellen\r\n\r\nWähle eine Taste und füge rechts ein Ziel hinzu. Unter Controller wählst du den Spieler. Tasten und Controller-Ziele lassen sich in beide Richtungen ziehen. Rechts wechseln die Ansichten Tasten, Kurve und Controller. Die Tastatur bleibt dabei gleich groß. Unter Kurve kannst du Punkte setzen und ziehen. Glatt (Bézier) verbindet sie weich: Wähle einen Punkt und ziehe seine Griffe. Rechtsklick auf einen Griff stellt die automatische Rundung wieder her; Rechtsklick auf einen inneren Punkt löscht ihn. Strg+Z macht Änderungen rückgängig.\r\n\r\n" +
                 "Mehrere Controller\r\n\r\nJeder Controller hat eigene Zuordnungen und einen eigenen USB-Anschluss. Klicke auf Stecker oder Buchse oder ziehe den Stecker hinein. Die kleinen Anschlüsse in der Fußleiste bedienen jeden Controller direkt; dort ziehst du vertikal. „Alle aus“ trennt alle Controller; eine zusätzliche Tastenkombination ist optional. Bis zu 32 Controllerplätze können Xbox- und DualSense-Ausgaben mischen. Windows unterstützt insgesamt höchstens vier XInput-Controller, einschließlich physischer Geräte. DualSense belegt keine XInput-Plätze. Spiele können weniger Controller unterstützen. Eigene Namen gelten innerhalb dieser App.\r\n\r\n" +
                 "Aktueller Stand\r\n\r\nDie Druckeingabe wurde an der angeschlossenen TK75 geprüft. Xbox- und DualSense-Ausgabe unterstützen die üblichen Tasten, Sticks und Trigger. Die Erkennung in einem Spiel hängt von dessen Controller-Unterstützung ab. Der Anschluss zeigt daher erst dann Verbunden, wenn der Ausgabeweg die Verbindung bestätigt. Verbindungsfehler stehen unten. Profile und eigene Kalibrierungen werden getrennt im Unterordner data gespeichert.",
-                "Keyboard\r\n\r\nAn unambiguously recognized keyboard connects automatically. All keys start with a pressure range of 0–385. Custom calibrations take priority. The background of each key fills from bottom to top as you press.\r\n\r\n" +
+                "Keyboard\r\n\r\nAn unambiguously recognized keyboard connects automatically. All keys start with a pressure range of 0–385. The min/max slider applies to every key. To calibrate, press one key fully once, then release. The background of each key fills from bottom to top as you press.\r\n\r\n" +
                 "Mapping and settings\r\n\r\nChoose a key and add a target on the right. Choose the player under Controller. Drag keys and controller targets in either direction. The right-hand panel switches between Keys, Curve and Controller while the keyboard keeps its size. Under Curve, add points and drag to move them. Smooth (Bézier) joins them smoothly: select a point and drag its handles. Right-click a handle to restore automatic smoothing; right-click an interior point to delete it. Ctrl+Z undoes changes.\r\n\r\n" +
                 "Multiple controllers\r\n\r\nEach controller has its own mappings and USB connection. Click the plug or socket, or slide the plug in. The small footer connectors address each controller directly; drag vertically there. “All off” disconnects every controller; an additional shortcut is optional. Up to 32 controller slots can mix Xbox and DualSense output. Windows supports at most four XInput controllers in total, including physical devices. DualSense does not use XInput slots. Games may support fewer controllers. Custom names apply within this app.\r\n\r\n" +
                 "Current status\r\n\r\nPressure input has been checked on the connected TK75. Xbox and DualSense output support common buttons, sticks and triggers. Recognition in a game depends on its controller support. The connector shows Connected only after the output backend confirms a connection. Connection errors appear at the bottom. Profiles and custom calibrations are stored separately in the data subfolder.") });
@@ -155,7 +155,7 @@ namespace Tk75.App
             var card = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 12, Padding = Padding.Empty, Margin = Padding.Empty };
             surface.Controls.Add(card);
             card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            foreach (int height in new[] { 38, 34, 24, 8, 40, 0, 26, 38, 40 }) card.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+            foreach (int height in new[] { 38, 34, 24, 8, 94, 0, 26, 38, 40 }) card.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
             card.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
             keyTitle.Text = "Taste auswählen"; keyTitle.Font = new Font("Segoe UI", 20, FontStyle.Bold); keyTitle.AutoSize = false; keyTitle.AutoEllipsis = true; keyTitle.Dock = DockStyle.Fill; card.Controls.Add(keyTitle, 0, 0);
             keyHint.AutoSize = false; keyHint.AutoEllipsis = true; keyHint.UseMnemonic = false; keyHint.TextAlign = ContentAlignment.TopLeft; keyHint.Margin = new Padding(3, 0, 3, 3); keyHint.Dock = DockStyle.Fill; keyHint.Tag = "muted"; keyHint.Text = "Klicke auf eine Taste in der Abbildung."; card.Controls.Add(keyHint, 0, 1);
@@ -164,7 +164,7 @@ namespace Tk75.App
             keyCardTips.SetToolTip(keyHint, keyHint.Text); Disposed += delegate { keyCardTips.Dispose(); };
             pressureText.AutoSize = false; pressureText.AutoEllipsis = true; pressureText.UseMnemonic = false; pressureText.Dock = DockStyle.Fill; pressureText.Text = "Druck: —"; pressureText.Tag = "muted"; pressureText.TextAlign = ContentAlignment.MiddleLeft; pressureText.TextChanged += delegate { keyCardTips.SetToolTip(pressureText, pressureText.Text); }; card.Controls.Add(pressureText, 0, 2);
             pressure.Dock = DockStyle.Fill; pressure.Margin = new Padding(3, 0, 3, 6); card.Controls.Add(pressure, 0, 3);
-            calibrateButton = new SleekButton { Text = "1 · Kalibrieren", Dock = DockStyle.Fill, Tag = "primary" }; calibrateButton.Click += delegate { Attempt(CalibrateKey); }; card.Controls.Add(calibrateButton, 0, 4);
+            card.Controls.Add(BuildPressureRangeEditor(), 0, 4);
             inputDetails.Click += delegate { if (reader != null) MessageBox.Show(this, UiText.Get(reader.Status), Tr("Druckwert-Verbindung", "Pressure input connection"), MessageBoxButtons.OK, MessageBoxIcon.Information); }; card.Controls.Add(inputDetails, 0, 5);
             UiText.PreserveText(targetHeader); targetHeader.Text = "Controller-Ziele"; targetHeader.Font = new Font("Segoe UI", 12, FontStyle.Bold); card.Controls.Add(targetHeader, 0, 6);
             Combo(targets, 260, Enum.GetValues(typeof(OutputTarget)).Cast<OutputTarget>().Select(t => (object)new TargetItem(t, delegate { return CurrentControllerStyle; })).ToArray()); targets.IgnoreClosedTextInput = true; targets.DrawMode = DrawMode.OwnerDrawFixed; targets.FlatStyle = FlatStyle.Flat; targets.DropDownWidth = 360; targets.SelectedIndex = 0; targets.Dock = DockStyle.Fill; targets.Margin = new Padding(3, 4, 3, 3); card.Controls.Add(targets, 0, 7);
@@ -241,10 +241,8 @@ namespace Tk75.App
         {
             int[] selected = SelectedKeys(); bool one = selected.Length == 1; bool any = selected.Length != 0;
             keyTitle.Text = one ? string.Format(Tr("Taste {0}", "Key {0}"), Label(selected[0])) : any ? string.Format(Tr("{0} Tasten", "{0} keys"), selected.Length) : Tr("Taste auswählen", "Choose a key");
-            var entry = one && calibration != null ? calibration.Entries.FirstOrDefault(e => e.KeyIndex == selected[0]) : null;
-            keyHint.Text = !any ? Tr("Klicke auf eine Taste in der Abbildung.", "Click a key on the keyboard.") : !one ? Tr("Ziele gemeinsam zuweisen. Jede Taste nutzt ihren eigenen Druckbereich.", "Assign targets together. Each key uses its own pressure range.") : entry == null ? Tr("Standard · 0–385", "Default · 0–385") : Tr("Kalibriert · bereit zum Zuordnen.", "Calibrated · ready to map.");
-            calibrateButton.Enabled = one && reader != null && reader.IsReading; calibrateButton.Text = entry == null ? Tr("Druckbereich anpassen", "Adjust pressure range") : Tr("Erneut kalibrieren", "Calibrate again");
-            if (calibrateButton.Enabled) ModernTheme.Primary(calibrateButton); else ModernTheme.Secondary(calibrateButton);
+            keyHint.Text = !any ? Tr("Klicke auf eine Taste in der Abbildung.", "Click a key on the keyboard.") : string.Format(Tr("{0}–{1} · gemeinsamer Druckbereich für alle Tasten", "{0}–{1} · shared pressure range for all keys"), sharedPressureRange.Minimum, sharedPressureRange.Maximum);
+            RefreshPressureRangeEditor();
             if (one && reader != null && !reader.IsReading) keyHint.Text = Tr("Keine Druckwerte.\nVerbindungsdetails stehen unten.", "No pressure data.\nSee connection details below.");
             inputDetails.Visible = reader != null && (!reader.IsReading || !reader.HasReceivedSamples);
             ((TableLayoutPanel)inputDetails.Parent).RowStyles[5].Height = inputDetails.Visible ? 22 : 0;
@@ -259,23 +257,14 @@ namespace Tk75.App
         void UpdatePressure(KeyStateSnapshot[] snapshot)
         {
             int[] selected = SelectedKeys();
-            if (selected.Length != 1) { SetPressureDisplay(0, Tr("Druck: —", "Pressure: —")); return; }
+            if (selected.Length != 1) { if (pressureCaptureReader == null) pressureRange.MeasuredValue = null; SetPressureDisplay(0, Tr("Druck: —", "Pressure: —")); return; }
             var samples = snapshot.Where(s => s.KeyIndex == selected[0] && s.Known).ToArray();
-            if (samples.Length == 0) { SetPressureDisplay(0, reader == null ? Tr("Zum Messen oben verbinden", "Connect above to measure") : !reader.IsReading ? Tr("Druckzugriff noch nicht bereit", "Pressure input is not ready") : Tr("Warte auf Druckdaten …", "Waiting for pressure data …")); return; }
-            var sample = samples[0]; var entry = calibration == null ? null : calibration.Entries.FirstOrDefault(e => e.KeyIndex == selected[0]);
-            if (sample.Stale) { SetPressureDisplay(0, string.Format(Tr("Letzter Wert: {0} · veraltet", "Last value: {0} · stale"), sample.RawValue)); return; }
-            bool estimated; double amount = DisplayDepth(sample.RawValue, entry, out estimated);
-            SetPressureDisplay((int)Math.Round(amount * 1000), string.Format(estimated ? Tr("Druck · {0} · Standard", "Pressure · {0} · default") : Tr("Druck · {0} · kalibriert", "Pressure · {0} · calibrated"), amount.ToString("P0")));
-        }
-        // UI and mapping use the same default range. Saved individual
-        // calibrations remain separate and override it.
-        static double DisplayDepth(int raw, CalibrationEntry entry, out bool estimated)
-        {
-            estimated = entry == null || Double.IsNaN(entry.Rest) || Double.IsInfinity(entry.Rest) ||
-                Double.IsNaN(entry.Bottom) || Double.IsInfinity(entry.Bottom) || entry.Rest == entry.Bottom ||
-                Double.IsInfinity(entry.Bottom - entry.Rest);
-            double amount = estimated ? (raw - DefaultCalibration.Rest) / (DefaultCalibration.Bottom - DefaultCalibration.Rest) : (raw - entry.Rest) / (entry.Bottom - entry.Rest);
-            return Math.Max(0, Math.Min(1, amount));
+            if (samples.Length == 0) { if (pressureCaptureReader == null) pressureRange.MeasuredValue = null; SetPressureDisplay(0, reader == null ? Tr("Zum Messen oben verbinden", "Connect above to measure") : !reader.IsReading ? Tr("Druckzugriff noch nicht bereit", "Pressure input is not ready") : Tr("Warte auf Druckdaten …", "Waiting for pressure data …")); return; }
+            var sample = samples[0];
+            if (sample.Stale) { if (pressureCaptureReader == null) pressureRange.MeasuredValue = null; SetPressureDisplay(0, string.Format(Tr("Letzter Wert: {0} · veraltet", "Last value: {0} · stale"), sample.RawValue)); return; }
+            double amount = sharedPressureRange.Depth(sample.RawValue);
+            SetPressureDisplay((int)Math.Round(amount * 1000), string.Format(Tr("Druck · {0} · Rohwert {1}", "Pressure · {0} · raw {1}"), amount.ToString("P0"), sample.RawValue));
+            if (pressureCaptureReader == null) pressureRange.MeasuredValue = sample.RawValue;
         }
         void SetPressureDisplay(int value, string text)
         { if (pressure.Value != value) pressure.Value = value; if (pressureText.Text != text) pressureText.Text = text; }
@@ -318,8 +307,7 @@ namespace Tk75.App
             foreach (int index in LayoutIndices())
             {
                 KeyStateSnapshot sample; bool valid = current.TryGetValue(index, out sample) && sample.Known && !sample.Stale;
-                var cal = calibration == null ? null : calibration.Entries.FirstOrDefault(e => e.KeyIndex == index); double? depth = null; bool estimated = false;
-                if (valid) depth = DisplayDepth(sample.RawValue, cal, out estimated);
+                double? depth = valid ? (double?)sharedPressureRange.Depth(sample.RawValue) : null; bool estimated = sharedPressureRange.IsDefault;
                 keyboard.UpdateKeyState(index, mapped.Contains(index), valid && depth.HasValue && depth.Value > 0, depth, estimated);
             }
         }

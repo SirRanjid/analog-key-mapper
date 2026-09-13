@@ -100,6 +100,24 @@ namespace Tk75.Tests
             }
         }
 
+        static void TrayPreferencePersistence(string directory)
+        {
+            string data = Path.Combine(directory, "tray-preference-data");
+            Check(!TrayPreferences.Load(data), "Without an explicit tray preference the close button keeps its ordinary exit behavior.");
+            Check(!Directory.Exists(data), "Loading the tray preference never creates files or directories.");
+            Directory.CreateDirectory(data);
+            string language = Path.Combine(data, "ui-language.txt"); File.WriteAllText(language, "de");
+            TrayPreferences.Save(data, true);
+            Check(TrayPreferences.Load(data), "Enabling close-to-tray survives a new preference read.");
+            TrayPreferences.Save(data, false);
+            Check(!TrayPreferences.Load(data), "Disabling close-to-tray survives a new preference read.");
+            Check(File.ReadAllText(language) == "de", "The tray preference leaves the language preference untouched.");
+            Check(Directory.GetFiles(data, "*.tmp").Length == 0, "Atomic preference writes leave no temporary files.");
+            File.WriteAllText(Path.Combine(data, TrayPreferences.FileName), "invalid");
+            Reject(delegate { TrayPreferences.Load(data); }, "An invalid saved preference is surfaced without inventing an enabled value.");
+            Check(File.ReadAllText(Path.Combine(data, TrayPreferences.FileName)) == "invalid", "Invalid saved settings are left intact for recovery.");
+        }
+
         sealed class FakeController : IControllerSession, IPreviewDemandSession
         {
             internal Profile Profile;
@@ -230,6 +248,58 @@ namespace Tk75.Tests
                 Check(ProfileJson.Serialize(Field<EditHistory>(form, "history").Current) == profileJson, "Background transitions preserve the profile.");
                 Check(Object.ReferenceEquals(runtime, Field<MultiControllerSession>(form, "runtime")), "Background transitions preserve the runtime instance.");
                 CheckPassive(form);
+
+                using (var menu = new ContextMenuStrip())
+                {
+                    Call(form, "AddMinimizeToTrayItem", menu);
+                    var preference = (ToolStripMenuItem)menu.Items[0];
+                    Check(!preference.Checked && !preference.CheckOnClick, "Minimize-to-tray is a saved checkbox, checked only after a successful write.");
+                    // Preview mode disables preferences to protect documentation
+                    // captures. Enable this one synthetic item in its temp workspace.
+                    preference.Enabled = true;
+                    preference.PerformClick();
+                    Check(preference.Checked && Field<bool>(form, "minimizeToTray"), "Clicking the option enables close-to-tray.");
+                    Check(form.Visible && !form.IsDisposed, "Changing the tray option does not immediately hide or close the editor.");
+                    Check(TrayPreferences.Load(Path.Combine(directory, "data")), "The changed option is saved outside the profile.");
+                    Check(runtime.IsControllerEnabled(firstId) && runtime.IsControllerEnabled("second"), "Changing the tray option preserves active controller output.");
+
+                    foreach (CloseReason reason in new[] { CloseReason.WindowsShutDown, CloseReason.ApplicationExitCall, CloseReason.TaskManagerClosing, CloseReason.None })
+                    {
+                        var close = new FormClosingEventArgs(reason, false);
+                        Check(!(bool)Call(form, "TryMinimizeToTrayOnClosing", close) && !close.Cancel,
+                            "Only a user editor close is intercepted; " + reason + " retains its exit path.");
+                    }
+                    form.Close(); Pump(form);
+                    Check(!form.IsDisposed && !form.Visible && !Field<bool>(form, "closing"), "The actual close event hides the editor while the preference is enabled.");
+                    Check(!first.PreviewActive && !second.PreviewActive, "Closing to tray immediately stops preview work.");
+                    Check(runtime.IsControllerEnabled(firstId) && runtime.IsControllerEnabled("second"), "Closing to tray preserves both controller connections.");
+                    Check(!Field<bool>(form, "rgbClosePending") && !Field<bool>(form, "applicationResourcesDisposed"), "Closing to tray does not begin the lighting or resource exit sequence.");
+                    Check(ProfileJson.Serialize(Field<EditHistory>(form, "history").Current) == profileJson, "Closing to tray preserves mapping settings.");
+                    Call(form, "RestoreFromTray"); Pump(form);
+                    Check(form.Visible && second.PreviewActive, "The tray restores the same selected controller after an X close.");
+                    preference.PerformClick();
+                    var ordinaryClose = new FormClosingEventArgs(CloseReason.UserClosing, false);
+                    Check(!preference.Checked && !(bool)Call(form, "TryMinimizeToTrayOnClosing", ordinaryClose) && !ordinaryClose.Cancel,
+                        "Disabling the option returns X to the ordinary exit path.");
+                    preference.PerformClick();
+                    Check(form.Visible && preference.Checked, "Re-enabling the option changes only its preference.");
+                    Set(form, "deviceDetachInProgress", true);
+                    form.Close(); Pump(form);
+                    Check(!form.Visible && !form.IsDisposed && !Field<bool>(form, "closeAfterDeviceDetach"),
+                        "X during keyboard cleanup hides without scheduling a later application exit.");
+                    Set(form, "deviceDetachInProgress", false);
+                    Call(form, "RestoreFromTray"); Pump(form);
+                }
+
+                ToolStripMenuItem exit = Field<ContextMenuStrip>(form, "trayMenu").Items.OfType<ToolStripMenuItem>()
+                    .Single(item => item.Text == UiText.Get("Beenden", "Exit"));
+                Set(form, "deviceDetachInProgress", true);
+                exit.PerformClick();
+                Check(!form.IsDisposed && Field<bool>(form, "trayExitRequested") && Field<bool>(form, "closeAfterDeviceDetach"),
+                    "Explicit tray Exit remains pending while a keyboard detach owns cleanup.");
+                Set(form, "deviceDetachInProgress", false); Set(form, "closeAfterDeviceDetach", false);
+                form.Close();
+                Check(form.IsDisposed && Field<bool>(form, "closing"), "The tray's explicit Exit completes after deferred cleanup instead of returning to the tray.");
             }
             finally { form.Dispose(); }
             Check(Field<NotifyIcon>(form, "trayIcon") == null, "Form disposal releases its notification icon.");
@@ -319,6 +389,7 @@ namespace Tk75.Tests
                 System.Threading.Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
                 StartupRegistration(Path.GetFullPath(args[0]));
                 ReconnectPreferences();
+                TrayPreferencePersistence(Path.GetFullPath(args[0]));
                 ReconnectCancelsForPendingEdits(Path.GetFullPath(args[0]));
                 BackgroundAndRestore(Path.GetFullPath(args[0]));
                 BackgroundMessageLoop(Path.GetFullPath(args[0]));

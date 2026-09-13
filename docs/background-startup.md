@@ -1,6 +1,6 @@
 # Background startup and tray controls
 
-**1.0.0-rc.1 · 11 September 2026.** [Current validation status](status.md).
+**1.0.0-rc.4 · 13 September 2026.** [Current validation status](status.md).
 
 ## Open or hide the window
 
@@ -8,7 +8,7 @@ Opening `AnalogKeyMapper.exe` normally shows the editor. Opening the same instal
 
 `AnalogKeyMapper.exe --background` starts the same WinForms application in the notification area without showing the editor or a taskbar window. A second background launch leaves the existing window as it is. Click the tray icon, or choose **Open Analog Key Mapper** from its menu, to show the editor.
 
-Choose **Minimize to tray** in the application menu to hide the window while keeping input and connected controllers running. This saves the profile first. Closing the window with **X** exits the application; it does not hide it.
+Enable **Minimize to tray** in the application menu to make the window's **X** hide the editor while keeping input and connected controllers running. Clicking the option changes the saved checkbox without immediately hiding the window. Closing to the tray saves the profile first. The option initially starts off; when disabled, **X** exits the app.
 
 ## Start with Windows
 
@@ -30,9 +30,9 @@ Slots reconnect asynchronously, one at a time, while the window remains responsi
 
 ## Exit and background work
 
-Both the window's **X** and tray **Exit** use normal shutdown: save the profile, neutralize and disconnect controllers, and request restoration of the saved keyboard lighting. Allow pending lighting operations to finish; closing can take several seconds, and recovery rules still apply if restoration cannot complete.
+Tray **Exit** always closes the app, even when **Minimize to tray** is enabled. The window's **X** also exits when that option is off. A real exit saves the profile, neutralizes and disconnects controllers, and restores the keyboard lighting captured at startup. The keyboard helper retains that same original state and attempts restoration before releasing the keyboard if the app connection is interrupted. Closing can take several seconds; the backup remains available if the keyboard becomes unavailable.
 
-Windows shutdown or sign-out uses a separate three-second total cleanup budget and does not ask a save question. Controller cleanup, lighting restoration and profile saving run independently. If Windows ends the process first, lighting recovery records remain available and automatic reconnection requires manual intervention at the next start. If another application cancels Windows shutdown after cleanup has begun, the mapper finishes closing.
+Windows shutdown or sign-out always performs a real exit and does not ask a save question. The interface waits at most three seconds while controller cleanup, lighting restoration and profile saving run independently. Reaching that interface deadline no longer cancels a pending lighting restore. The helper also attempts restoration when its parent connection ends. If Windows terminates cleanup or the keyboard is unplugged, lighting recovery records remain available and automatic reconnection requires manual intervention at the next start. If another application cancels Windows shutdown after cleanup has begun, the mapper finishes closing.
 
 Hidden or minimized windows skip live UI refresh and preview calculations. Input safety checks, shortcuts, device handling and lighting maintenance remain active. The maintenance timer remains configured for **33 ms**, and active controller output retains its **4 ms** worker wait. These are scheduling settings, not measured end-to-end latency or a guarantee of zero latency, constant CPU usage or identical performance on every machine.
 
