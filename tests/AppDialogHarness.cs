@@ -341,6 +341,39 @@ namespace Tk75.Tests
                     PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
                     Check(File.ReadAllText(path) == committed, "Releasing a cancelled press cannot save later.");
 
+                    foreach (string tab in new[] { "advancedToggle", "controllerToggle" })
+                    {
+                        DetailMode(form, null); RevealKeySetting(form, slider.Parent);
+                        PushDialog(input, 14, 0); ClickPressureCalibration(form);
+                        PushDialog(input, 14, 80, 620); Call(form, "UpdatePressureCapture");
+                        Call(form, "SetDetailMode", null, true, false);
+                        Check(Field<ReaderSession>(form, "pressureCaptureReader") != null,
+                            "Returning to the same Keys context preserves an intentional in-progress raw calibration.");
+                        Field<Button>(form, tab).PerformClick();
+                        Check(Field<ReaderSession>(form, "pressureCaptureReader") == null,
+                            "Leaving Keys through " + tab + " cancels raw calibration before the next UI tick.");
+                        PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
+                        Check(File.ReadAllText(path) == committed, "A late release after a tab switch cannot save a hidden raw range.");
+                        CheckPressureRange(form, 0, 550, 550);
+                    }
+                    DetailMode(form, null); RevealKeySetting(form, slider.Parent);
+                    foreach (bool minimize in new[] { false, true })
+                    {
+                        PushDialog(input, 14, 0); ClickPressureCalibration(form);
+                        PushDialog(input, 14, 80, 630); Call(form, "UpdatePressureCapture");
+                        FormWindowState previousState = form.WindowState;
+                        if (minimize) form.WindowState = FormWindowState.Minimized; else form.Hide();
+                        Check(Field<ReaderSession>(form, "pressureCaptureReader") == null,
+                            "The " + (minimize ? "minimize" : "hide/tray") + " event immediately cancels raw calibration.");
+                        PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
+                        Check(File.ReadAllText(path) == committed, "A release while the editor is hidden cannot persist a background raw calibration.");
+                        CheckPressureRange(form, 0, 550, 550);
+                        if (minimize) form.WindowState = previousState; else form.Show();
+                        Pump(form); DetailMode(form, null); RevealKeySetting(form, slider.Parent);
+                        Check(Field<Button>(form, "calibrateRange").Enabled && Field<ReaderSession>(form, "pressureCaptureReader") == null,
+                            "Restoring Keys makes Calibrate usable without rearming the canceled raw recording.");
+                    }
+
                     ClickPressureCalibration(form); PushDialog(input, 14, 80, 620); Call(form, "UpdatePressureCapture");
                     SelectKeys(form, 9); PushDialog(input, 14, 0); Call(form, "UpdatePressureCapture");
                     Check(Field<ReaderSession>(form, "pressureCaptureReader") == null && File.ReadAllText(path) == committed,

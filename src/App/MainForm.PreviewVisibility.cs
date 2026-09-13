@@ -12,6 +12,8 @@ namespace Tk75.App
             // Recording is an editor gesture. Once its progress/cancel controls
             // are hidden, a later release must not silently change a threshold.
             if (!visible && inputThresholdCaptureReader != null) CancelInputThresholdCapture();
+            if (!visible && pressureCaptureReader != null)
+            { CancelPressureCapture(); RefreshPressureRangeEditor(); }
             if (runtime != null && !closing && !deviceDetachInProgress)
                 runtime.SetPreviewActive(visible);
         }

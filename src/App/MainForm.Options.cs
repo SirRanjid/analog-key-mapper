@@ -88,6 +88,8 @@ namespace Tk75.App
             if (deviceDetachInProgress || closing) return;
             if (mode != "input" && socdCapture != null) CancelSocdCapture(false);
             if (mode != "advanced" && inputThresholdCaptureReader != null) CancelInputThresholdCapture();
+            if (mode != null && mode != "input" && pressureCaptureReader != null)
+            { CancelPressureCapture(); RefreshPressureRangeEditor(); }
             if (mode != detailsMode) { settings.EndEdit(); FlushInputDraft(); }
             detailsMode = mode; advancedVisible = mode == "advanced";
             controllerHeading.Visible = mode == "controller"; detailsTitle.Visible = mode != "controller";
