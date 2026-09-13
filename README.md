@@ -66,7 +66,7 @@ Capture an opposite key directly on the keyboard:
 
 </details>
 
-Screenshots use synthetic example data and show English and German interfaces. English is the default language.
+Screenshots use synthetic example data. The interface is shown in English; key legends follow the selected physical keyboard layout.
 
 ## Contributing and license
 
