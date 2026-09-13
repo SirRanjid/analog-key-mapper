@@ -32,7 +32,7 @@ namespace Tk75.App
     internal sealed class CurveSettingSliderCell : DataGridViewTextBoxCell
     {
         public CurveSettingRange Range;
-        public CurveSettingSliderCell() { ReadOnly = true; ValueType = typeof(double); }
+        public CurveSettingSliderCell() { ValueType = typeof(double); }
         public override object Clone()
         { var cell = (CurveSettingSliderCell)base.Clone(); cell.Range = Range; return cell; }
         public static Rectangle Track(Rectangle cell)

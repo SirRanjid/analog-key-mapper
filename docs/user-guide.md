@@ -73,6 +73,8 @@ The output list in **Keys** outlines its selected row even when the list has onl
 
 The vertical controls beside the numeric fields adjust initial actuation, release movement and repress movement. Their scale is a percentage of each key's pressure range, not a measured distance in millimeters. Faint keycap annotations show the configured actuation point; wider keys also show release and repress values. Hover a key for the complete explanation. A key with no additional actuation setting continues to follow its pressure range.
 
+Each threshold also has **Calibrate**: press one selected key as far as desired, then release it completely to accept the measured value for the selection. For Rapid Trigger, the measured distance becomes the release or repress movement amount. This changes only that behavior setting; it does not recalibrate the key's Min/Max range or the keyboard scale.
+
 In **Curve**, sliders accompany the editable numbers for deadzones, output range, scale, smoothing and the other response options. A drag previews the curve and becomes one undoable edit when released. Hover a setting or curve point for its explanation or coordinates. Edits apply to all selected keys for the current controller.
 
 To capture an opposite key, select the first key and open **Behavior**, then click **Capture**. Click the desired opposite key on the keyboard illustration. This pairs both keys, keeps the original key's SOCD policy and preserves their actuation settings. Existing partners are unpaired; **Undo** restores the previous pairings. **Cancel** or **Escape** cancels capture. Dragging a key continues to open **Controller** for normal output mapping.
