@@ -12,9 +12,9 @@ namespace Tk75.App
         {
             if (curveInputEventsBuilt) return;
             curveInputEventsBuilt = true;
-            var fields = new[] { InputActivationFields.Actuation, InputActivationFields.Release, InputActivationFields.Press };
+            var fields = new[] { InputActivationFields.Actuation, InputActivationFields.Release };
             var groups = new Control[][] { new Control[] { actuationPoint, actuationSlider, calibrateActuation },
-                new Control[] { releaseMovement, releaseSlider, calibrateRelease }, new Control[] { pressMovement, repressSlider, calibrateRepress } };
+                new Control[] { releaseMovement, releaseSlider, calibrateRelease } };
             for (int i = 0; i < groups.Length; i++)
             {
                 InputActivationFields field = fields[i];
@@ -44,7 +44,6 @@ namespace Tk75.App
                 if (IsDisposed || Disposing || curve.IsDisposed || inputThresholdCaptureReader != null) return;
                 if (actuationPoint.ContainsFocus || actuationSlider.ContainsFocus || calibrateActuation.ContainsFocus) PreviewCurveInputOption(InputActivationFields.Actuation, null);
                 else if (releaseMovement.ContainsFocus || releaseSlider.ContainsFocus || calibrateRelease.ContainsFocus) PreviewCurveInputOption(InputActivationFields.Release, null);
-                else if (pressMovement.ContainsFocus || repressSlider.ContainsFocus || calibrateRepress.ContainsFocus) PreviewCurveInputOption(InputActivationFields.Press, null);
                 else { RefreshCurveInputPreview(); if (settings.ContainsFocus) ShowFocusedCurveSetting(); else curve.ActiveSetting = null; }
             });
         }
@@ -61,19 +60,18 @@ namespace Tk75.App
                 KeyInputSettings stored = profile.Inputs.FirstOrDefault(input => input.KeyIndex == key);
                 var value = stored == null ? new KeyInputSettings { KeyIndex = key } : new KeyInputSettings { KeyIndex = key,
                     RapidTriggerEnabled = stored.RapidTriggerEnabled, ActuationPoint = stored.ActuationPoint,
-                    ReleaseMovement = stored.ReleaseMovement, PressMovement = stored.PressMovement };
+                    ReleaseMovement = stored.ReleaseMovement, PressMovement = stored.ActuationPoint };
                 if ((draftFields & InputActivationFields.RapidTrigger) != 0) value.RapidTriggerEnabled = rapidTrigger.Checked;
                 if ((draftFields & InputActivationFields.Actuation) != 0) value.ActuationPoint = (double)actuationPoint.Value / 100;
                 if ((draftFields & InputActivationFields.Release) != 0) value.ReleaseMovement = (double)releaseMovement.Value / 100;
-                if ((draftFields & InputActivationFields.Press) != 0) value.PressMovement = (double)pressMovement.Value / 100;
                 bool configured = stored != null || draftFields != InputActivationFields.None;
                 if (percent.HasValue)
                 {
                     double amount = Math.Max(.0001, Math.Min(1, percent.Value / 100)); configured = true;
                     if (field == InputActivationFields.Actuation) value.ActuationPoint = amount;
                     else if (field == InputActivationFields.Release) value.ReleaseMovement = amount;
-                    else if (field == InputActivationFields.Press) value.PressMovement = amount;
                 }
+                value.PressMovement = value.ActuationPoint;
                 if (first == null) { first = value; firstConfigured = configured; }
                 else if (configured != firstConfigured || !CurveCanvas.SameInputPreview(first, value)) mixed = true;
             }

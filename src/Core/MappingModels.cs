@@ -46,6 +46,8 @@ namespace Tk75.Mapping
         [DataMember(IsRequired = true, Order = 0)] public int KeyIndex;
         [DataMember(Order = 1)] public bool RapidTriggerEnabled;
         [DataMember(Order = 2)] public double ActuationPoint;
+        // Retained for reading older profiles. Retrigger movement now uses
+        // ActuationPoint; this legacy value never controls runtime behavior.
         [DataMember(Order = 3)] public double PressMovement;
         [DataMember(Order = 4)] public double ReleaseMovement;
         [DataMember(Order = 5)] public int? OppositeKeyIndex;
@@ -54,7 +56,7 @@ namespace Tk75.Mapping
         [OnDeserializing] private void OnReading(StreamingContext context) { Defaults(); }
         private void Defaults()
         {
-            RapidTriggerEnabled = false; ActuationPoint = .1; PressMovement = ReleaseMovement = .02;
+            RapidTriggerEnabled = false; ActuationPoint = PressMovement = .1; ReleaseMovement = .02;
             OppositeKeyIndex = null; OppositePolicy = InputOpposedPolicy.Neutral;
         }
     }

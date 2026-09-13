@@ -101,7 +101,9 @@ public static class PreviewComposerHarness
         raw[1] = .53;
         Near(0, MappingEngine.ComposePreview(raw, Cals(), p, states, inputs, .01).LeftTrigger, "RT waits for actual repress distance");
         raw[1] = .59;
-        Near(.59, MappingEngine.ComposePreview(raw, Cals(), p, states, inputs, .01).LeftTrigger, "RT represses using saved valley");
+        Near(0, MappingEngine.ComposePreview(raw, Cals(), p, states, inputs, .01).LeftTrigger, "A shorter legacy repress value cannot activate the preview prematurely");
+        raw[1] = .68;
+        Near(.68, MappingEngine.ComposePreview(raw, Cals(), p, states, inputs, .01).LeftTrigger, "RT preview reuses actuation as its movement from the saved valley");
 
         var two = ProfileFor(Bind("first", 1, OutputTarget.LeftTrigger), Bind("second", 1, OutputTarget.RightTrigger));
         states.Clear(); inputs.Clear(); states.Add("first", new SignalState { IsPressed = true, SmoothedValue = Double.NaN });

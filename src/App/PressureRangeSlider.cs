@@ -14,7 +14,7 @@ namespace Tk75.App
         double? measuredValue;
         int activeHandle, hoverHandle = -1;
         bool dragging, interactionChanged;
-        float dragOffset;
+        SliderDragPrecision pointerDrag;
 
         public event EventHandler ValueChanged;
         public event EventHandler ValueCommitted;
@@ -160,14 +160,23 @@ namespace Tk75.App
             if (e.Button != MouseButtons.Left || !Enabled) return;
             Focus(); activeHandle = NearestHandle(e.X); hoverHandle = activeHandle;
             RectangleF hit = HandleBounds(activeHandle); hit.Inflate(5 * UiScale, 5 * UiScale);
-            dragOffset = hit.Contains(e.Location) ? e.X - Position(activeHandle == 0 ? selectedMinimum : selectedMaximum) : 0;
             interactionChanged = false; dragging = true; Capture = true;
-            MoveHandle(ValueAt(e.X - dragOffset)); Invalidate();
+            if (!hit.Contains(e.Location)) MoveHandle(ValueAt(e.X));
+            pointerDrag.Begin(activeHandle == 0 ? selectedMinimum : selectedMaximum, e.X, TrackY, UiScale);
+            Invalidate();
+        }
+        void MovePointer(int x, int y)
+        {
+            double gap = Math.Min(1, rangeMaximum - rangeMinimum);
+            double minimum = activeHandle == 0 ? rangeMinimum : selectedMinimum + gap;
+            double maximum = activeHandle == 0 ? selectedMaximum - gap : rangeMaximum;
+            if (pointerDrag.Move(x, y, (rangeMaximum - rangeMinimum) / (TrackRight - TrackLeft), minimum, maximum))
+                MoveHandle(Math.Round(pointerDrag.Value, MidpointRounding.AwayFromZero));
         }
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
-            if (dragging) { MoveHandle(ValueAt(e.X - dragOffset)); return; }
+            if (dragging) { MovePointer(e.X, e.Y); return; }
             int next = NearestHandle(e.X);
             if (hoverHandle != next) { hoverHandle = next; Invalidate(); }
         }
@@ -175,7 +184,7 @@ namespace Tk75.App
         {
             base.OnMouseUp(e);
             if (e.Button == MouseButtons.Left && dragging)
-            { MoveHandle(ValueAt(e.X - dragOffset)); FinishInteraction(); }
+            { MovePointer(e.X, e.Y); FinishInteraction(); }
         }
         protected override void OnMouseCaptureChanged(EventArgs e)
         { base.OnMouseCaptureChanged(e); if (dragging && !Capture) FinishInteraction(); }

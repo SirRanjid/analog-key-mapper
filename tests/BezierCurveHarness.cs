@@ -240,9 +240,109 @@ public static class BezierCurveHarness
         var missing = SignalProcessor.Process(Double.NaN, new Calibration(0, 385), s, state, .01);
         Check(!missing.IsValid && missing.Final == 0, "Bezier never invents missing input");
     }
+    static void EditableBuiltins()
+    {
+        foreach (CurveKind kind in new[] { CurveKind.Linear, CurveKind.Exponential, CurveKind.Logarithmic, CurveKind.Smoothstep })
+        {
+            double[] exponents = kind == CurveKind.Exponential ? new[] { .1, .25, .5, 1.0, 2, 2.5, 3, 4, 8, 16, 64 } :
+                kind == CurveKind.Logarithmic ? new[] { .000000001, .01, 1, 2, 4, 10, 100, 10000, 1e12 } : new[] { 2.0 };
+            foreach (double exponent in exponents)
+            {
+                // Dormant custom points deliberately differ from the active
+                // preset. Conversion must fit the active analytic shape.
+                var source = new SignalSettings { Curve = kind, Exponent = exponent, Scale = .7, TopDeadzone = .08,
+                    CustomPoints = new List<CurvePoint> { new CurvePoint(0, 0), new CurvePoint(.3, .8), new CurvePoint(1, 1) } };
+                var untouched = Copy(source.CustomPoints);
+                var points = CurveBezierEditing.Create(source);
+                Check(points.Count >= 2 && points.Count <= 64, "bounded editable point count");
+                bool exact = kind == CurveKind.Linear || kind == CurveKind.Smoothstep || kind == CurveKind.Exponential && (exponent == 1 || exponent == 2 || exponent == 3);
+                if (exact) Check(points.Count == 2, "exact cubic uses only its two endpoint knots");
+                if (kind == CurveKind.Exponential && exponent == 2.5 || kind == CurveKind.Logarithmic && exponent == 4)
+                    Check(points.Count <= 6, "built-in precision/aggressive preset has a simple editable shape");
+                var curveOnly = new SignalSettings { Curve = kind, Exponent = exponent };
+                double maximum = 0, previous = -1;
+                for (int i = 0; i <= 4096; i++)
+                {
+                    double x = i / 4096.0;
+                    double actual = BezierCurve.Evaluate(points, x);
+                    double expected = SignalProcessor.Process(x, new Calibration(0, 1), curveOnly, new SignalState(), .01).AfterCurve;
+                    maximum = Math.Max(maximum, Math.Abs(actual - expected));
+                    Check(actual >= previous && actual >= 0 && actual <= 1, "converted preset is monotone and bounded"); previous = actual;
+                    Near(expected, actual, "editable shape retains actual processor shape " + kind + "/" + exponent, exact ? 2e-14 : .0006);
+                    // Independent logarithmically spaced probes cover endpoints
+                    // where fractional powers can change between uniform samples.
+                    double endpoint = Math.Pow(10, -i / 128.0);
+                    foreach (double edge in new[] { endpoint, 1 - endpoint })
+                    {
+                        expected = SignalProcessor.Process(edge, new Calibration(0, 1), curveOnly, new SignalState(), .01).AfterCurve;
+                        Near(expected, BezierCurve.Evaluate(points, edge), "endpoint approximation " + kind + "/" + exponent, exact ? 2e-14 : .0006);
+                    }
+                }
+                Console.WriteLine("EDITABLE SHAPE " + kind + "/" + exponent + ": " + points.Count + " knots, maximum uniform error " + maximum.ToString("G4"));
+                Unchanged(untouched, source.CustomPoints, "conversion preserves dormant points and preset data");
+                Check(source.Curve == kind && source.Exponent == exponent && source.Scale == .7 && source.TopDeadzone == .08,
+                    "conversion leaves signal processing parameters untouched");
+                Check(!Object.ReferenceEquals(points, source.CustomPoints), "editable approximation is detached from source points");
+                foreach (double strength in new[] { 0.0, .7, 2.0 })
+                {
+                    var originalResponse = new SignalSettings { Curve = kind, Exponent = exponent, Scale = strength,
+                        TopDeadzone = .08, BottomDeadzone = .12, OutputDeadzone = .15, MinOutput = .1, MaxOutput = .85 };
+                    var editableResponse = new SignalSettings { Curve = CurveKind.Bezier, Exponent = exponent, CustomPoints = points, Scale = strength,
+                        TopDeadzone = .08, BottomDeadzone = .12, OutputDeadzone = .15, MinOutput = .1, MaxOutput = .85 };
+                    for (int sample = 0; sample <= 256; sample++)
+                    {
+                        double raw = sample / 256.0;
+                        var expected = SignalProcessor.Process(raw, new Calibration(0, 1), originalResponse, new SignalState(), .01);
+                        var actual = SignalProcessor.Process(raw, new Calibration(0, 1), editableResponse, new SignalState(), .01);
+                        // The separate minimum-output jump can straddle the
+                        // threshold by the fit tolerance. Away from that edge,
+                        // account for the unchanged strength/range amplification.
+                        double scaled = expected.AfterCurve * strength;
+                        if (Math.Abs(scaled - originalResponse.OutputDeadzone) > .0006 * strength)
+                            Near(expected.Final, actual.Final, "fitting preserves effective response with separate strength and deadzones", .0011);
+                    }
+                }
+            }
+        }
+        var stored = Settings(new List<CurvePoint> { new CurvePoint(0, 0, .1), new CurvePoint(.4, .6, .7), new CurvePoint(1, 1, 0) });
+        var copy = CurveBezierEditing.Create(stored); Unchanged(stored.CustomPoints, copy, "existing custom Bezier handles survive");
+        copy[1].Y = .8; Check(stored.CustomPoints[1].Y == .6, "editing converted points cannot overwrite a preset source");
+    }
+    static void ExtremeEditingGuard()
+    {
+        foreach (SignalSettings source in new[] {
+            new SignalSettings { Curve = CurveKind.Exponential, Exponent = .01 },
+            new SignalSettings { Curve = CurveKind.Exponential, Exponent = .05 },
+            new SignalSettings { Curve = CurveKind.Logarithmic, Exponent = Double.MaxValue },
+            new SignalSettings { Curve = CurveKind.Exponential, Exponent = Double.NaN },
+            new SignalSettings { Curve = (CurveKind)100 } })
+        {
+            List<CurvePoint> refused;
+            Check(!CurveBezierEditing.TryCreate(source, out refused) && refused == null,
+                "No inaccurate or invalid draft escapes the bounded fitting API.");
+        }
+        foreach (double exponent in new[] { Double.Epsilon, .000001, Double.MaxValue })
+        {
+            var source = new SignalSettings { Curve = CurveKind.Exponential, Exponent = exponent };
+            List<CurvePoint> points;
+            Check(CurveBezierEditing.TryCreate(source, out points), "A numerically representable extreme may remain editable when its fit actually passes.");
+            Check(points.Count <= 64, "Extreme fitting remains bounded.");
+            double previous = 0;
+            for (int step = 0; step <= 4096; step++)
+            {
+                double x = Math.Exp(Math.Log(Double.Epsilon) * (1 - step / 4096.0));
+                double expected = Math.Pow(x, exponent), actual = BezierCurve.Evaluate(points, x);
+                Near(expected, actual, "Independent logarithmic endpoint probes validate accepted extreme fits", .0006);
+                Check(actual >= previous && actual >= 0 && actual <= 1, "Accepted extreme fit stays monotone and finite"); previous = actual;
+            }
+            foreach (double x in new[] { 0.0, Double.Epsilon, 1 - 1.1102230246251565e-16, 1.0 })
+                Near(x == 0 ? 0 : Math.Pow(x, exponent), BezierCurve.Evaluate(points, x), "Representable endpoint limits retain their response", .0006);
+            foreach (double slope in BezierCurve.EffectiveTangents(points)) Check(Finite(slope) && slope >= 0, "Extreme effective handles remain finite and monotone");
+        }
+    }
     public static string Run()
     {
-        checks = 0; Arithmetic(); InvalidData(); ProfilesAndPipeline();
+        checks = 0; Arithmetic(); InvalidData(); ProfilesAndPipeline(); EditableBuiltins(); ExtremeEditingGuard();
         return "PASS: " + checks + " pure Bezier arithmetic, monotonicity, C1, validation, JSON and copy/edit checks; no native/GUI/HID access.";
     }
 }

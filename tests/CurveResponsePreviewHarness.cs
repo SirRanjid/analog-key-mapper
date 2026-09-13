@@ -74,12 +74,12 @@ public static class CurveResponsePreviewHarness
         Near(target, SmoothingStepPreview.Create(slower, 1, 100).Output[0], "Zero smoothing is immediate");
         foreach (double release in new[] { .01, .2, .75, 1.0 }) foreach (double press in new[] { .01, .25, .8, 1.0 })
         {
-            var input = new KeyInputSettings { RapidTriggerEnabled = true, ActuationPoint = .9, ReleaseMovement = release, PressMovement = press };
+            var input = new KeyInputSettings { RapidTriggerEnabled = true, ActuationPoint = press, ReleaseMovement = release, PressMovement = .037 };
             var up = RapidTriggerMovementPreview.Create(input, InputActivationFields.Release);
             Near(release, up.FromPressure - up.ToPressure, "Release arrow is a relative travel distance");
             Check(up.FromPressure >= input.ActuationPoint && up.ToPressure >= 0, "Release example first actuates and stays in the key's range");
             var down = RapidTriggerMovementPreview.Create(input, InputActivationFields.Press);
-            Near(press, down.ToPressure - down.FromPressure, "Repress arrow is a relative travel distance");
+            Near(input.ActuationPoint, down.ToPressure - down.FromPressure, "Retrigger illustration reuses actuation and ignores a differing legacy press value");
             Check(down.FromPressure >= 0 && down.ToPressure <= 1, "Repress example stays inside calibrated travel");
             Check(down.RequiresFreshActuation == (release == 1 || press == 1), "Full-release cases explicitly reset RT instead of fabricating a retrigger");
             if (!down.RequiresFreshActuation)

@@ -39,6 +39,7 @@ try {
     $arguments += (Join-Path $PSScriptRoot 'CurveShapePickerUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'CurveDynamicsUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'CurveRangeRailUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'SliderPrecisionUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'InputThresholdUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'InputThresholdCaptureUiHarness.cs')
     & $compiler @arguments

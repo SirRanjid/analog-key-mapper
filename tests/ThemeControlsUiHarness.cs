@@ -15,6 +15,8 @@ namespace Tk75.Tests
         static extern IntPtr ThemeSend(IntPtr window, int message, IntPtr wparam, IntPtr lparam);
         sealed class ThemeCombo : SleekComboBox
         { public void RecreateNativeHandle() { RecreateHandle(); } }
+        sealed class ThemeGrid : DataGridView
+        { public void RecreateNativeHandle() { RecreateHandle(); } }
         sealed class ThemeDcHost : Form
         { protected override bool ShowWithoutActivation { get { return true; } } }
         [StructLayout(LayoutKind.Sequential)]
@@ -34,6 +36,10 @@ namespace Tk75.Tests
         static extern int SetScrollPos(IntPtr window, int bar, int position, bool redraw);
         [DllImport("user32.dll", ExactSpelling = true)]
         static extern bool SetScrollRange(IntPtr window, int bar, int minimum, int maximum, bool redraw);
+        [DllImport("user32.dll", ExactSpelling = true)]
+        static extern bool ShowScrollBar(IntPtr window, int bar, bool show);
+        [DllImport("uxtheme.dll", ExactSpelling = true)]
+        static extern IntPtr GetWindowTheme(IntPtr window);
         [DllImport("gdi32.dll", ExactSpelling = true)]
         static extern bool BitBlt(IntPtr destination, int x, int y, int width, int height, IntPtr source, int sourceX, int sourceY, uint operation);
         [DllImport("gdi32.dll", ExactSpelling = true)]
@@ -152,6 +158,73 @@ namespace Tk75.Tests
                     CheckThemeExistingFrame(panel, true, "AutoScroll frame immediately after content range change " + i);
                     CheckThemeExistingFrame(panel, false, "Horizontal AutoScroll frame immediately after content range change " + i);
                 }
+                host.Close();
+            }
+        }
+        static void CheckExistingScrollbar(Control control, string description)
+        {
+            using (Bitmap image = ThemeCaptureExistingDc(control))
+                CheckThemeSurface(image, new Rectangle(Point.Empty, image.Size), description);
+        }
+        static void RunScrollbarLifetimeDrawing(string artifacts)
+        {
+            // Exercise the real grid-created scrollbars, not just independent
+            // test controls. Native show/theme/focus changes can draw directly
+            // after a completed WM_PAINT and were absent from the old probe.
+            using (Form host = new ThemeDcHost { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual,
+                Location = new Point(24, 24), ClientSize = new Size(480, 340), BackColor = ModernTheme.Surface,
+                TopMost = true, FormBorderStyle = FormBorderStyle.None })
+            using (ThemeGrid grid = new ThemeGrid { Bounds = new Rectangle(12, 12, 456, 316),
+                AllowUserToAddRows = false, RowHeadersVisible = false, ScrollBars = ScrollBars.Both })
+            {
+                grid.Columns.Add("Setting", "Setting"); grid.Columns.Add("Value", "Value");
+                grid.Columns[0].Width = 420; grid.Columns[1].Width = 180;
+                for (int row = 0; row < 48; row++) grid.Rows.Add("Synthetic setting " + row, row);
+                host.Controls.Add(grid); ModernTheme.Apply(host); host.Show(); host.Update(); grid.Refresh();
+                for (int lifecycle = 0; lifecycle < 3; lifecycle++)
+                {
+                    if (lifecycle == 1) { grid.Visible = false; grid.Visible = true; }
+                    if (lifecycle == 2) grid.RecreateNativeHandle();
+                    grid.PerformLayout();
+                    ScrollBar[] bars = grid.Controls.OfType<ScrollBar>().Where(b => b.Visible).ToArray();
+                    ThemeCheck(bars.Length == 2, "Both original grid scrollbars survive lifecycle " + lifecycle + ".");
+                    foreach (ScrollBar bar in bars)
+                    {
+                        string name = (bar is VScrollBar ? "Vertical" : "Horizontal") + " grid scrollbar lifecycle " + lifecycle;
+                        ThemeCheck(GetWindowTheme(bar.Handle) == IntPtr.Zero, name + " has one app painter with no competing native theme renderer.");
+                        CheckExistingScrollbar(bar, name + " immediately after show/recreation");
+                        ShowScrollBar(bar.Handle, 2, false); ShowScrollBar(bar.Handle, 2, true);
+                        CheckExistingScrollbar(bar, name + " immediately after native ShowScrollBar");
+                        ThemeSend(bar.Handle, 0x0128, (IntPtr)(2 | (3 << 16)), IntPtr.Zero);
+                        CheckExistingScrollbar(bar, name + " immediately after UI state change");
+                        ThemeSend(bar.Handle, 0x031A, IntPtr.Zero, IntPtr.Zero);
+                        ThemeCheck(GetWindowTheme(bar.Handle) == IntPtr.Zero, name + " keeps app painting across a native theme change.");
+                        CheckExistingScrollbar(bar, name + " immediately after theme change");
+                        ThemeSend(bar.Handle, 0x0085, (IntPtr)1, IntPtr.Zero);
+                        CheckExistingScrollbar(bar, name + " immediately after native frame paint");
+                        ThemeSend(bar.Handle, 0x0007, IntPtr.Zero, IntPtr.Zero);
+                        CheckExistingScrollbar(bar, name + " immediately after focus cue");
+                        ThemeSend(bar.Handle, 0x0200, IntPtr.Zero, (IntPtr)(4 | (40 << 16)));
+                        CheckExistingScrollbar(bar, name + " immediately after hover");
+                        ThemeSend(bar.Handle, 0x02A3, IntPtr.Zero, IntPtr.Zero);
+                        // Bounded CI-only samples allow queued native redraws or
+                        // fades to run. Production contains no polling timer.
+                        for (int frame = 0; frame < 5; frame++)
+                        {
+                            System.Threading.Thread.Sleep(24); Application.DoEvents();
+                            CheckExistingScrollbar(bar, name + " after queued paint/hover fade frame " + frame);
+                        }
+                    }
+                    grid.FirstDisplayedScrollingRowIndex = 10 + lifecycle;
+                    ThemeCheck(grid.FirstDisplayedScrollingRowIndex == 10 + lifecycle, "Native grid scrolling still applies after lifecycle " + lifecycle + ".");
+                    grid.Visible = false; grid.Rows.Clear(); grid.Rows.Add("One synthetic row", "0"); grid.Visible = true; grid.PerformLayout();
+                    ThemeCheck(grid.Controls.OfType<VScrollBar>().All(b => !b.Visible), "The grid can hide its unneeded original scrollbar after lifecycle " + lifecycle + ".");
+                    for (int row = 1; row < 48; row++) grid.Rows.Add("Synthetic setting " + row, row);
+                    grid.PerformLayout();
+                    foreach (ScrollBar bar in grid.Controls.OfType<ScrollBar>().Where(b => b.Visible))
+                        CheckExistingScrollbar(bar, "Grid scrollbar immediately after rows make it reappear " + lifecycle);
+                }
+                using (Bitmap image = ThemeCaptureExistingDc(grid)) image.Save(Path.Combine(artifacts, "preview-theme-grid-lifetime-dc.png"));
                 host.Close();
             }
         }
@@ -385,6 +458,7 @@ namespace Tk75.Tests
                 host.Close();
             }
             RunImmediateScrollDrawing(artifacts);
+            RunScrollbarLifetimeDrawing(artifacts);
             Check(themeFailures.Count == 0, "Native theme failures: " + String.Join(" | ", themeFailures.ToArray()));
             Console.WriteLine("NATIVE THEME PASS: " + (assertions - started) + " assertions; real native arrows, numeric editing, popup lifecycle, accessibility and scrollbar surfaces.");
         }

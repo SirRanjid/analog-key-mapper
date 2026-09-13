@@ -51,6 +51,8 @@ namespace Tk75.Tests
             Field<NumericUpDown>(form, "actuationPoint").Value = 37.5M;
             Check(Math.Abs(canvas.InputPreview.ActuationPoint - .375) < 1e-10 && canvas.ActiveInputField == InputActivationFields.Actuation,
                 "A numeric threshold draft updates its input guide without pressing Apply.");
+            Check(canvas.InputPreview.PressMovement == canvas.InputPreview.ActuationPoint,
+                "The draft's retrigger movement uses the same actuation value despite a differing legacy PressMovement.");
             var release = Field<InputThresholdSlider>(form, "releaseSlider");
             ThresholdCall(release, "BeginEdit", false); ThresholdCall(release, "Preview", 28.0);
             Check(Math.Abs(canvas.InputPreview.ReleaseMovement - .28) < 1e-10 && canvas.ActiveInputField == InputActivationFields.Release,
@@ -64,7 +66,7 @@ namespace Tk75.Tests
             foreach (Size size in new[] { DefaultClientSize, new Size(SupportedMinimumSize.Width - (form.Width - form.ClientSize.Width), SupportedMinimumSize.Height - (form.Height - form.ClientSize.Height)) })
             {
                 SetPreviewClientSize(form, size); Pump(form);
-                foreach (InputActivationFields field in new[] { InputActivationFields.Actuation, InputActivationFields.Release, InputActivationFields.Press })
+                foreach (InputActivationFields field in new[] { InputActivationFields.Actuation, InputActivationFields.Release })
                 {
                     string settingsBeforeView = Json(Current(form)); double[] rangesBeforeView = DynamicsRailValues(canvas);
                     Call(form, "PreviewCurveInputOption", field, null);

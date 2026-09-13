@@ -233,6 +233,7 @@ namespace Tk75.App
 
         static void StyleGrid(DataGridView grid, Fonts fonts)
         {
+            QuietToolTip.AttachGrid(grid);
             grid.BackgroundColor = Surface;
             grid.BorderStyle = BorderStyle.None;
             grid.CellBorderStyle = DataGridViewCellBorderStyle.None;

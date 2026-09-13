@@ -15,9 +15,7 @@ namespace Tk75.App
         bool editing, mouseGesture, finishing, originalMixed, changed;
         int active;
         double originalValue;
-        float pointerOffset;
-        int pointerOrigin;
-        bool preserveThumb;
+        SliderDragPrecision pointerDrag;
         public bool Reversed { get; set; }
         public bool IsEditing { get { return editing; } }
         public int ActiveHandle { get { return active; } }
@@ -54,7 +52,7 @@ namespace Tk75.App
             if (EditStarted != null) EditStarted(handle);
             if (!Enabled) return;
             originalValue = values[active]; originalMixed = mixed[active]; changed = false;
-            editing = true; mouseGesture = mouse; pointerOffset = 0;
+            editing = true; mouseGesture = mouse;
         }
         void Preview(double value)
         {
@@ -80,12 +78,10 @@ namespace Tk75.App
             finishing = true; try { if (Capture) Capture = false; } finally { finishing = false; }
             Invalidate(); if (Canceled != null) Canceled();
         }
-        void MovePointer(int y)
+        void MovePointer(int x, int y)
         {
-            if (preserveThumb && y == pointerOrigin) return;
-            preserveThumb = false;
-            double amount = (y - pointerOffset - 6) / TrackHeight;
-            Preview(Reversed ? 1 - amount : amount);
+            if (!pointerDrag.Move(y, x, (Reversed ? -1.0 : 1.0) / TrackHeight, minimum[active], maximum[active])) return;
+            Preview(pointerDrag.Value);
         }
         protected override void OnMouseDown(MouseEventArgs e)
         {
@@ -94,15 +90,19 @@ namespace Tk75.App
             float position = Position(values[active]);
             // Picking up either a normal or mixed handle is not a new value.
             // Keep its exact fractional position until the pointer moves.
-            preserveThumb = Math.Abs(e.Y - position) <= 7; pointerOrigin = e.Y;
-            pointerOffset = preserveThumb ? e.Y - position : 0;
+            bool preserveThumb = Math.Abs(e.Y - position) <= 7;
+            if (!preserveThumb)
+            {
+                double amount = (e.Y - 6) / TrackHeight;
+                Preview(Reversed ? 1 - amount : amount);
+            }
+            pointerDrag.Begin(values[active], e.Y, Width / 2.0, Math.Max(1, Font.Height / 15.0));
             Capture = true;
-            if (pointerOffset == 0 && Math.Abs(e.Y - position) > 7) MovePointer(e.Y);
         }
         protected override void OnMouseMove(MouseEventArgs e)
-        { base.OnMouseMove(e); if (editing && mouseGesture) MovePointer(e.Y); }
+        { base.OnMouseMove(e); if (editing && mouseGesture) MovePointer(e.X, e.Y); }
         protected override void OnMouseUp(MouseEventArgs e)
-        { if (e.Button == MouseButtons.Left && editing && mouseGesture) { MovePointer(e.Y); Finish(); } base.OnMouseUp(e); }
+        { if (e.Button == MouseButtons.Left && editing && mouseGesture) { MovePointer(e.X, e.Y); Finish(); } base.OnMouseUp(e); }
         protected override void OnMouseCaptureChanged(EventArgs e)
         { base.OnMouseCaptureChanged(e); if (!finishing && !Capture && editing && mouseGesture) CancelEdit(); }
         protected override bool IsInputKey(Keys keyData)

@@ -15,7 +15,7 @@ namespace Tk75.App
         readonly Label targetHeader = new Label { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
         readonly LinkLabel inputDetails = new LinkLabel { Text = "Warum kommen keine Druckwerte?", AutoSize = true };
         readonly SleekComboBox layoutMode = new SleekComboBox();
-        readonly ToolTip keyCardTips = new ToolTip { InitialDelay = 450, ReshowDelay = 100, AutoPopDelay = 15000 };
+        readonly QuietToolTip keyCardTips = new QuietToolTip();
         readonly ProgressBar pressure = new SleekProgressBar { Maximum = 1000, Style = ProgressBarStyle.Continuous };
         readonly Panel pageHost = new Panel { Dock = DockStyle.Fill };
         readonly Dictionary<string, Control> pages = new Dictionary<string, Control>();
@@ -223,16 +223,17 @@ namespace Tk75.App
             settings.CellFormatting += delegate(object sender, DataGridViewCellFormattingEventArgs e) { if (e.ColumnIndex == 1 && e.Value as string == "Gemischt") { e.Value = UiText.Get("Gemischt"); e.FormattingApplied = true; } };
             EventHandler arrange = delegate {
                 int width = Math.Max(1, responseArea.ClientSize.Width);
-                bool beside = width >= 464;
-                int side = beside ? Math.Min(212, width - 278) : Math.Min(212, width);
-                int responseHeight = beside ? 264 : side + 8 + 264;
-                int settingsHeight = Math.Max(220, curveEditorScroll.ClientSize.Height - 78 - responseHeight);
+                const int thresholdWidth = 184, gap = 12, minimumThresholdHeight = 264;
+                bool beside = width >= thresholdWidth + gap + 180;
+                int side = beside ? width - thresholdWidth - gap : width;
+                int responseHeight = beside ? Math.Max(minimumThresholdHeight, side) : side + 8 + minimumThresholdHeight;
+                int settingsHeight = Math.Max(192, curveEditorScroll.ClientSize.Height - 78 - responseHeight);
                 int totalHeight = 78 + responseHeight + settingsHeight;
                 if (editorArea.Height != totalHeight) editorArea.Height = totalHeight;
                 if (editorArea.RowStyles[1].Height != responseHeight) editorArea.RowStyles[1].Height = responseHeight;
                 if (editorArea.RowStyles[2].Height != settingsHeight) editorArea.RowStyles[2].Height = settingsHeight;
-                keyBehaviorPanel.Bounds = beside ? new Rectangle(0, 0, 270, 264) : new Rectangle(0, side + 8, width, 264);
-                curve.Bounds = beside ? new Rectangle(278, (264 - side) / 2, side, side) : new Rectangle(Math.Max(0, (width - side) / 2), 0, side, side);
+                keyBehaviorPanel.Bounds = beside ? new Rectangle(0, 0, thresholdWidth, responseHeight) : new Rectangle(0, side + 8, width, minimumThresholdHeight);
+                curve.Bounds = beside ? new Rectangle(thresholdWidth + gap, 0, side, side) : new Rectangle(0, 0, side, side);
             };
             editorArea.Layout += delegate { arrange(null, EventArgs.Empty); };
             responseArea.SizeChanged += arrange; curveEditorScroll.SizeChanged += arrange;

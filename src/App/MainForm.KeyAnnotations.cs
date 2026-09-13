@@ -29,13 +29,13 @@ namespace Tk75.App
                     string press = SummaryNumber(input.ActuationPoint * 100);
                     string release = SummaryNumber(input.ReleaseMovement * 100);
                     compact = input.RapidTriggerEnabled ? "↓" + press + "↑" + release : "↕" + press;
-                    full = input.RapidTriggerEnabled ? compact + "↧" + SummaryNumber(input.PressMovement * 100) : compact;
+                    full = compact;
                     narrow = input.RapidTriggerEnabled ? press + "/" + release : compact;
-                    description += "\n" + Tr("↓ Erstes Auslösen · ↑ Loslassen · ↧ Erneutes Auslösen · ↕ gleicher Druck-/Loslasspunkt. Kleine Beschriftungen ohne %-Zeichen: Prozent des individuellen Druckbereichs; bei Platzmangel Druck/Loslassen.",
-                        "↓ Initial actuation · ↑ Release · ↧ Repress · ↕ same press/release point. Compact labels omit the % sign: percentages of this key's pressure range; press/release when space is tight.");
+                    description += "\n" + Tr("↓ Erstes Auslösen · ↑ Loslassen · ↕ gleicher Druck-/Loslasspunkt. Kleine Beschriftungen ohne %-Zeichen: Prozent des individuellen Druckbereichs; bei Platzmangel Druck/Loslassen.",
+                        "↓ Initial actuation · ↑ Release · ↕ same press/release point. Compact labels omit the % sign: percentages of this key's pressure range; press/release when space is tight.");
                     description += "\n" + (input.RapidTriggerEnabled
-                        ? Tr("Rapid Trigger: Loslassen ab dem höchsten Druck, erneutes Auslösen ab dem tiefsten Druck seit dem Loslassen.",
-                            "Rapid Trigger: release movement is measured from peak pressure; repress movement from the lowest pressure since release.")
+                        ? Tr("Rapid Trigger: Loslassen ab dem höchsten Druck, erneutes Auslösen um den Aktuationsweg ab dem tiefsten Druck seit dem Loslassen.",
+                            "Rapid Trigger: release movement is measured from peak pressure; repress uses actuation travel from the lowest pressure since release.")
                         : Tr("Aktiv ab dem Auslösepunkt; darunter wird die Taste losgelassen.", "Active at or above actuation; released below it."));
                 }
                 else description += "\n" + Tr("Kein zusätzlicher Auslösepunkt eingestellt; die Ausgabe folgt dem Druckbereich.", "No additional actuation gate is configured; output follows the pressure range.");

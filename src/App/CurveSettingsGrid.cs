@@ -29,14 +29,14 @@ namespace Tk75.App
         }
     }
 
-    internal sealed class CurveSettingSliderCell : DataGridViewTextBoxCell
+    internal sealed class CurveSettingSliderCell : CurveSettingTextCell
     {
         public CurveSettingRange Range;
         public CurveSettingSliderCell() { ValueType = typeof(double); }
         public override object Clone()
         { var cell = (CurveSettingSliderCell)base.Clone(); cell.Range = Range; return cell; }
         public static Rectangle Track(Rectangle cell)
-        { return new Rectangle(cell.Left + 11, cell.Top + 12, Math.Max(1, cell.Width - 22), 4); }
+        { return new Rectangle(cell.Left + 11, cell.Top + cell.Height / 2, Math.Max(1, cell.Width - 22), 4); }
         protected override void Paint(Graphics graphics, Rectangle clipBounds, Rectangle cellBounds, int rowIndex,
             DataGridViewElementStates cellState, object value, object formattedValue, string errorText,
             DataGridViewCellStyle cellStyle, DataGridViewAdvancedBorderStyle advancedBorderStyle, DataGridViewPaintParts paintParts)
@@ -59,11 +59,8 @@ namespace Tk75.App
                 using (var edge = new Pen(ModernTheme.Surface, 1.5f)) graphics.DrawEllipse(edge, x - 5, track.Top - 5, 10, 10);
             }
             graphics.SmoothingMode = previous;
-            string label = !available ? "—" : mixed ? UiText.Get("Gemischt") : Range.Display(Convert.ToDouble(value, CultureInfo.InvariantCulture));
-            TextRenderer.DrawText(graphics, label, cellStyle.Font ?? DataGridView.Font,
-                new Rectangle(cellBounds.Left + 3, cellBounds.Top + 20, Math.Max(1, cellBounds.Width - 6), Math.Max(1, cellBounds.Height - 21)),
-                available ? ModernTheme.Foreground : ModernTheme.Muted,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            // The adjacent Value column carries the exact number or Mixed.
+            // Omit a redundant label and any invented thumb for mixed values.
         }
     }
 
@@ -74,9 +71,8 @@ namespace Tk75.App
         CurveSettingSliderCell editingSlider;
         object originalValue;
         double draftValue;
-        bool mouseGesture, finishing, draftChanged, preserveThumbPosition;
-        float thumbOffset;
-        int lastPointerX;
+        bool mouseGesture, finishing, draftChanged;
+        SliderDragPrecision pointerDrag;
         public event Action<string> SliderStarted;
         public event Action<string, double> SliderPreviewed;
         public event Action<string, double> SliderCommitted;
@@ -90,7 +86,7 @@ namespace Tk75.App
             if (editingSlider == cell) return true;
             CancelSlider();
             editingSlider = cell; originalValue = cell.Value; draftValue = cell.Range.Clamp(cell.Value == null ? cell.Range.FirstValue : Convert.ToDouble(cell.Value, CultureInfo.InvariantCulture));
-            mouseGesture = mouse; thumbOffset = 0; draftChanged = preserveThumbPosition = false;
+            mouseGesture = mouse; draftChanged = false;
             if (SliderStarted != null) SliderStarted(cell.Range.Property);
             return editingSlider == cell;
         }
@@ -131,23 +127,25 @@ namespace Tk75.App
             if (!BeginSlider(cell, true)) return;
             Rectangle track = CurveSettingSliderCell.Track(GetCellDisplayRectangle(hit.ColumnIndex, hit.RowIndex, false));
             float thumb = track.Left + (float)((draftValue - cell.Range.Minimum) / Math.Max(.00000001, cell.Range.Maximum - cell.Range.Minimum)) * track.Width;
-            if (cell.Value != null && Math.Abs(e.X - thumb) <= 7) { thumbOffset = e.X - thumb; preserveThumbPosition = true; }
-            lastPointerX = e.X; Capture = true;
-            if (!preserveThumbPosition) MoveSlider(e.X);
+            bool preserveThumb = cell.Value != null && Math.Abs(e.X - thumb) <= 7;
+            if (!preserveThumb) Preview(cell.Range.FromFraction((double)(e.X - track.Left) / track.Width));
+            pointerDrag.Begin(draftValue, e.X, track.Top, Math.Max(1, Font.Height / 15.0));
+            Capture = true;
         }
-        void MoveSlider(int x)
+        void MoveSlider(int x, int y)
         {
             if (editingSlider == null) return;
-            if (preserveThumbPosition && x == lastPointerX) return;
-            preserveThumbPosition = false; lastPointerX = x;
             Rectangle track = CurveSettingSliderCell.Track(GetCellDisplayRectangle(editingSlider.ColumnIndex, editingSlider.RowIndex, false));
-            Preview(editingSlider.Range.FromFraction((x - thumbOffset - track.Left) / track.Width));
+            CurveSettingRange range = editingSlider.Range;
+            if (!pointerDrag.Move(x, y, (range.Maximum - range.Minimum) / track.Width, range.Minimum, range.Maximum)) return;
+            double fraction = range.Maximum > range.Minimum ? (pointerDrag.Value - range.Minimum) / (range.Maximum - range.Minimum) : 0;
+            Preview(range.FromFraction(fraction));
         }
         protected override void OnMouseMove(MouseEventArgs e)
-        { if (editingSlider != null && mouseGesture) MoveSlider(e.X); else base.OnMouseMove(e); }
+        { if (editingSlider != null && mouseGesture) MoveSlider(e.X, e.Y); else base.OnMouseMove(e); }
         protected override void OnMouseUp(MouseEventArgs e)
         {
-            if (e.Button == MouseButtons.Left && editingSlider != null && mouseGesture) { MoveSlider(e.X); FinishSlider(); }
+            if (e.Button == MouseButtons.Left && editingSlider != null && mouseGesture) { MoveSlider(e.X, e.Y); FinishSlider(); }
             base.OnMouseUp(e);
         }
         bool SliderKey(KeyEventArgs e)

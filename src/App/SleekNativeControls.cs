@@ -56,6 +56,10 @@ namespace Tk75.App
         internal static extern IntPtr GetWindowDC(IntPtr window);
         [DllImport("user32.dll", ExactSpelling = true)]
         internal static extern int ReleaseDC(IntPtr window, IntPtr dc);
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        static extern int SetWindowTheme(IntPtr window, string application, string classes);
+        [DllImport("uxtheme.dll", ExactSpelling = true)]
+        static extern int BufferedPaintStopAllAnimations(IntPtr window);
         [DllImport("user32.dll", EntryPoint = "PostMessageW", ExactSpelling = true)]
         internal static extern bool PostMessage(IntPtr window, int message, IntPtr wparam, IntPtr lparam);
         [DllImport("user32.dll", EntryPoint = "SendMessageW", ExactSpelling = true)]
@@ -70,6 +74,19 @@ namespace Tk75.App
         static extern bool RestoreDC(IntPtr dc, int state);
         [DllImport("gdi32.dll", ExactSpelling = true)]
         static extern bool OffsetViewportOrgEx(IntPtr dc, int x, int y, IntPtr previous);
+
+        internal static void OwnScrollbarPainting(IntPtr window)
+        {
+            if (window == IntPtr.Zero) return;
+            // These surfaces are already completely drawn by the app. Leaving
+            // the native theme renderer active also leaves its hover/fade paint
+            // paths active. Disable that second painter on this owned HWND only;
+            // keep the native scrollbar range, geometry, input and accessibility.
+            // The documented association lasts for this handle's lifetime.
+            // https://learn.microsoft.com/windows/win32/api/uxtheme/nf-uxtheme-setwindowtheme
+            SetWindowTheme(window, "", "");
+            BufferedPaintStopAllAnimations(window);
+        }
 
         internal static bool TryClientPaint(ref Message message, Size size, Action<Graphics> paint)
         {
@@ -300,6 +317,16 @@ namespace Tk75.App
             {
                 standalone = owner is ScrollBar; vertical = owner is VScrollBar;
                 if (owner is ScrollableControl) owner.Layout += LayoutChanged;
+                owner.HandleCreated += ScrollHandleCreated;
+                owner.VisibleChanged += VisibilityChanged;
+                if (owner.IsHandleCreated) NativeControlPaint.OwnScrollbarPainting(owner.Handle);
+            }
+            void ScrollHandleCreated(object sender, EventArgs e) { NativeControlPaint.OwnScrollbarPainting(Handle); }
+            void VisibilityChanged(object sender, EventArgs e)
+            {
+                if (!Owner.Visible) return;
+                if (standalone) PaintStandaloneWindow();
+                else ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero);
             }
             void LayoutChanged(object sender, LayoutEventArgs e)
             {
@@ -313,6 +340,8 @@ namespace Tk75.App
             public override void Dispose()
             {
                 if (Owner is ScrollableControl) Owner.Layout -= LayoutChanged;
+                Owner.HandleCreated -= ScrollHandleCreated;
+                Owner.VisibleChanged -= VisibilityChanged;
                 base.Dispose();
             }
             protected override void WndProc(ref Message message)
@@ -326,13 +355,26 @@ namespace Tk75.App
                 { if (message.Msg == NativeControlPaint.Print) ScrollbarDrawing.PaintFrame(Handle, message.WParam); return; }
                 if (ScrollbarDrawing.ChangesScrollAppearance(message.Msg))
                 {
-                    if (standalone) Owner.Invalidate();
+                    if (standalone) PaintStandaloneWindow();
                     // Non-client scrollbars do not expose the SBM_* redraw
                     // flag. Finish their frame within this same input/layout
                     // message, before a later queued paint can expose the
                     // native light frame for a whole display interval.
                     else if (ScrollbarDrawing.ChangesFrameAppearance(message.Msg)) ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero);
                 }
+            }
+            void PaintStandaloneWindow()
+            {
+                if (Handle == IntPtr.Zero || Owner.IsDisposed || !Owner.Visible || Owner.ClientSize.Width < 1 || Owner.ClientSize.Height < 1) return;
+                IntPtr dc = NativeControlPaint.GetWindowDC(Handle);
+                if (dc == IntPtr.Zero) return;
+                try
+                {
+                    using (Graphics target = Graphics.FromHdc(dc))
+                    using (BufferedGraphics buffer = BufferedGraphicsManager.Current.Allocate(target, new Rectangle(Point.Empty, Owner.ClientSize)))
+                    { PaintStandalone(buffer.Graphics); buffer.Render(target); }
+                }
+                finally { NativeControlPaint.ReleaseDC(Handle, dc); }
             }
             bool SuppressNativeRedraw(ref Message message)
             {
@@ -380,6 +422,7 @@ namespace Tk75.App
             {
                 if (Handle == handle) return;
                 ReleaseHandle(); if (handle != IntPtr.Zero) AssignHandle(handle);
+                NativeControlPaint.OwnScrollbarPainting(handle);
             }
             protected override void WndProc(ref Message message)
             {
@@ -466,10 +509,12 @@ namespace Tk75.App
 
         internal static bool ChangesScrollAppearance(int message)
         {
-            return message == 0x0005 || message == 0x000A || message == 0x0047 || message == 0x00A0 ||
+            return message == 0x0005 || message == 0x0007 || message == 0x0008 || message == 0x000A ||
+                message == 0x0018 || message == 0x0047 || message == 0x007D || message == 0x0085 || message == 0x00A0 ||
                 message == 0x00A1 || message == 0x00A2 || message == 0x0114 || message == 0x0115 ||
                 message == 0x0200 || message == 0x0201 || message == 0x0202 || message == 0x020A ||
                 message == 0x020E || message == 0x0215 || message == 0x02A2 || message == 0x02A3 ||
+                message == 0x0128 || message == 0x031A ||
                 message == 0x00E0 || message == 0x00E2 || message == 0x00E9;
         }
         internal static bool ChangesFrameAppearance(int message)

@@ -82,7 +82,7 @@ public static class KeyInputHarness
                 KeyInputSettings before = Input(original, key), after = Input(edited, key);
                 Check(after.RapidTriggerEnabled == (((fields & InputActivationFields.RapidTrigger) != 0) ? source.RapidTriggerEnabled : before.RapidTriggerEnabled), "Selected activation flags preserve mixed rapid-trigger values");
                 Near(((fields & InputActivationFields.Actuation) != 0) ? source.ActuationPoint : before.ActuationPoint, after.ActuationPoint, "Only selected actuation changes");
-                Near(((fields & InputActivationFields.Press) != 0) ? source.PressMovement : before.PressMovement, after.PressMovement, "Only selected press movement changes");
+                Near(after.ActuationPoint, after.PressMovement, "Every activation edit stores only the selected key's effective actuation/retrigger distance");
                 Near(((fields & InputActivationFields.Release) != 0) ? source.ReleaseMovement : before.ReleaseMovement, after.ReleaseMovement, "Only selected release movement changes");
                 Check(after.OppositeKeyIndex == before.OppositeKeyIndex && after.OppositePolicy == before.OppositePolicy, "Activation editing retains each destination's own pair and policy");
             }
@@ -95,13 +95,13 @@ public static class KeyInputHarness
         source.ActuationPoint = .9;
         Near(.6, Input(all, 1).ActuationPoint, "Returned activation settings do not alias their source");
         Input(all, 1).PressMovement = .8;
-        Near(.13, Input(all, 3).PressMovement, "Edited destinations are independent of each other");
+        Near(.6, Input(all, 3).PressMovement, "Edited destinations are independent and retain the shared actuation/retrigger distance");
         var mixedSource = new KeyInputSettings { KeyIndex = -1, ActuationPoint = .7, PressMovement = Double.NaN,
             ReleaseMovement = 0, OppositeKeyIndex = -1, OppositePolicy = (InputOpposedPolicy)999 };
         Profile partial = KeyInputEditing.ApplyActivation(original, new[] { 1, 6 }, mixedSource, InputActivationFields.Actuation);
         Near(.7, Input(partial, 1).ActuationPoint, "Unselected mixed/invalid draft fields are not copied or validated");
         Near(.7, Input(partial, 6).ActuationPoint, "A selected missing input receives only explicit activation changes");
-        Near(new KeyInputSettings().PressMovement, Input(partial, 6).PressMovement, "New input retains defaults for untouched activation values");
+        Near(.7, Input(partial, 6).PressMovement, "A new selected input uses actuation for its compatibility press field too");
         Check(Double.IsNaN(mixedSource.PressMovement) && mixedSource.KeyIndex == -1 && mixedSource.OppositeKeyIndex == -1, "Reading mixed source never mutates it");
         Profile none = KeyInputEditing.ApplyActivation(original, new OneShotKeys(1, 6), mixedSource, InputActivationFields.None);
         Check(ProfileJson.Serialize(none) == baseline && Input(none, 6) == null, "No selected fields is a detached no-op without new physical gates");
@@ -116,7 +116,12 @@ public static class KeyInputHarness
         }
         Reject(delegate { KeyInputEditing.ApplyActivation(original, new[] { 1, 3 }, null); }, "Missing activation source rejected");
         Reject(delegate { KeyInputEditing.ApplyActivation(original, new[] { 1, 3 }, source, (InputActivationFields)16); }, "Unknown activation flags rejected");
-        Reject(delegate { KeyInputEditing.ApplyActivation(original, new[] { 1, 3 }, mixedSource, InputActivationFields.Press); }, "Invalid selected activation value rejects complete edit");
+        Profile legacyPressEdit = KeyInputEditing.ApplyActivation(original, new[] { 1, 3 }, mixedSource, InputActivationFields.Press);
+        foreach (int key in new[] { 1, 3 })
+        {
+            Near(Input(original, key).ActuationPoint, Input(legacyPressEdit, key).ActuationPoint, "Legacy Press-only editing cannot change actuation");
+            Near(Input(original, key).ActuationPoint, Input(legacyPressEdit, key).PressMovement, "Legacy Press-only editing discards its obsolete source and retains the effective distance");
+        }
 
         Profile removed = KeyInputEditing.Remove(original, new OneShotKeys(1, 3));
         Check(removed.Inputs.Count == 3 && Input(removed, 1) == null && Input(removed, 3) == null, "Bulk removal removes every chosen physical setting");
@@ -198,10 +203,38 @@ public static class KeyInputHarness
         var missing = new Profile { SuppressedKeyboardKeys = null };
         Reject(delegate { ProfileJson.Serialize(missing); }, "Explicitly null suppression list is rejected");
     }
+    static void SharedActuationRetriggerChecks()
+    {
+        foreach (double legacyDistance in new[] { .001, .03, .9, 1.0 })
+        {
+            var reference = new Session(); reference.Add(14, "effective", OutputTarget.LeftTrigger);
+            var restored = new Session(); restored.Add(14, "effective", OutputTarget.LeftTrigger);
+            reference.Profile.Inputs.Add(new KeyInputSettings { KeyIndex = 14, RapidTriggerEnabled = true, ActuationPoint = .2, PressMovement = .2, ReleaseMovement = .15 });
+            restored.Profile.Inputs.Add(new KeyInputSettings { KeyIndex = 14, RapidTriggerEnabled = true, ActuationPoint = .2, PressMovement = legacyDistance, ReleaseMovement = .15 });
+            string saved = ProfileJson.Serialize(restored.Profile);
+            restored.Profile = ProfileJson.Deserialize(saved);
+            Near(legacyDistance, restored.Profile.Inputs[0].PressMovement, "Reading an old profile retains its compatibility field without destructive migration");
+            Check(saved == ProfileJson.Serialize(restored.Profile), "A no-edit legacy profile round trip is lossless");
+            foreach (double pressure in new[] { 0, .19, .2, .8, .7, .65, .7, .79, .85, .3, .05, .24, .25, 0, .19, .2 })
+            {
+                ControllerFrame expected = reference.At(14, pressure), actual = restored.At(14, pressure);
+                Near(expected.LeftTrigger, actual.LeftTrigger, "Old repress settings cannot change emitted controller values");
+                Check(expected.InputResults[14].Active == actual.InputResults[14].Active && reference.Inputs[14].PressOrder == restored.Inputs[14].PressOrder,
+                    "Old repress settings cannot change physical activation, retrigger order or SOCD evidence");
+            }
+            var history = new EditHistory(restored.Profile);
+            history.Commit(KeyInputEditing.ApplyActivation(history.Current, new[] { 14 }, new KeyInputSettings { ActuationPoint = .37 }, InputActivationFields.Actuation));
+            Near(.37, history.Current.Inputs[0].ActuationPoint, "Editing the one visible threshold updates actuation");
+            Near(.37, history.Current.Inputs[0].PressMovement, "Editing the one visible threshold also writes its compatibility value");
+            Check(history.Undo() && ProfileJson.Serialize(history.Current) == saved, "One undo restores the original legacy profile exactly");
+        }
+    }
+
     public static string Run()
     {
         checks = 0;
         BulkInputEditingChecks();
+        SharedActuationRetriggerChecks();
         SuppressionMetadataChecks();
         var s = new Session(); s.Add(14, "one", OutputTarget.LeftTrigger); s.Add(14, "two", OutputTarget.RightTrigger);
         s.Profile = KeyInputEditing.Configure(s.Profile, new KeyInputSettings { KeyIndex = 14, RapidTriggerEnabled = true,
@@ -216,10 +249,11 @@ public static class KeyInputHarness
         f = s.At(14, .65); Near(0, f.LeftTrigger, "Release at exact peak distance bypasses minimum/filter"); Near(0, f.RightTrigger, "Release reaches every mapping");
         Check(!s.Signals["one"].IsPressed && s.Signals["one"].SmoothedValue == 0, "Release resets target filter");
         f = s.At(14, .69); Near(0, f.LeftTrigger, "Insufficient repress movement remains released");
-        f = s.At(14, .7); Check(f.InputResults[14].Active && f.LeftTrigger > 0, "Exact repress distance triggers");
+        f = s.At(14, .74); Check(!f.InputResults[14].Active, "A legacy shorter repress distance cannot bypass the shared actuation distance");
+        f = s.At(14, .75); Check(f.InputResults[14].Active && f.LeftTrigger > 0, "A repress movement equal to actuation triggers");
         Check(s.Inputs[14].PressOrder > initialOrder, "Repress receives a new activation order");
-        s.At(14, .4); s.At(14, .02); f = s.At(14, .07);
-        Check(f.InputResults[14].Active, "Continuous RT can repress below original actuation point");
+        s.At(14, .4); s.At(14, .02); f = s.At(14, .12);
+        Check(f.InputResults[14].Active, "Continuous RT reuses actuation as movement measured from the current valley");
         f = s.At(14, 0); Near(0, f.LeftTrigger, "Full release immediately neutral"); Check(!s.Inputs[14].HasActuated, "Full rest resets RT cycle");
         f = s.At(14, .07); Check(!f.InputResults[14].Active, "After full release initial point applies again");
         f = s.At(14, .1); Check(f.InputResults[14].Active, "Initial point restarts cycle");
@@ -248,7 +282,7 @@ public static class KeyInputHarness
         s.Profile = KeyInputEditing.Configure(s.Profile, rapidPartner); s.Inputs.Clear(); s.Signals.Clear();
         s.Raw[21] = 0; s.At(14, .6); s.At(21, .8); f = s.At(21, .77);
         Near(.6, f.LeftTrigger, "RT release of SOCD winner restores still-held opponent"); Near(0, f.RightTrigger, "RT release stays neutral despite positive raw depth");
-        f = s.At(21, .8); Near(.8, f.RightTrigger, "RT repress participates in physical last-pressed priority");
+        f = s.At(21, .87); Near(.87, f.RightTrigger, "RT repress at the shared actuation distance participates in physical last-pressed priority");
         // Opposite input is required even when it has no controller bindings.
         s.Profile.Bindings.RemoveAll(delegate(Binding binding) { return binding.KeyIndex == 21; });
         f = s.Frame(); Near(0, f.LeftTrigger, "Unmapped configured opponent can suppress mapped input");
@@ -272,7 +306,7 @@ public static class KeyInputHarness
         var legacy = ProfileJson.Deserialize("{\"Version\":1,\"Name\":\"Legacy\",\"Bindings\":[]}");
         Check(legacy.Inputs != null && legacy.Inputs.Count == 0, "Version1 legacy profile defaults to no input gates");
         var minimal = ProfileJson.Deserialize("{\"Version\":1,\"Name\":\"Input\",\"Bindings\":[],\"Inputs\":[{\"KeyIndex\":0}]}");
-        Near(.1, minimal.Inputs[0].ActuationPoint, "Optional input defaults restored"); Near(.02, minimal.Inputs[0].PressMovement, "Press distance default restored");
+        Near(.1, minimal.Inputs[0].ActuationPoint, "Optional input defaults restored"); Near(.1, minimal.Inputs[0].PressMovement, "Legacy press-field default follows the default actuation distance");
         foreach (string bad in new [] {
             "{\"KeyIndex\":0,\"Unknown\":1}", "{\"KeyIndex\":0,\"KeyIndex\":1}", "{\"KeyIndex\":0,\"RapidTriggerEnabled\":1}",
             "{\"KeyIndex\":0,\"ActuationPoint\":\"0.1\"}", "{\"KeyIndex\":0,\"ActuationPoint\":null}", "{\"KeyIndex\":0,\"OppositeKeyIndex\":\"1\"}",

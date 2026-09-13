@@ -262,9 +262,10 @@ namespace Tk75.Tests
             LayoutCheck(!Field<Control>(form, "preset").Visible, label + ": presets do not create a second visible shape selector.");
             CheckBar(form, Field<Control>(form, "curveShape").Parent, label + "/advanced/signal");
             DataGridView settings = Field<DataGridView>(form, "settings"); Control curve = Field<Control>(form, "curve");
-            LayoutCheck(settings.ClientSize.Width >= 180 && settings.ClientSize.Height >= 210, label + ": settings editor too small: " + settings.ClientSize);
+            LayoutCheck(settings.ClientSize.Width >= 180 && settings.ClientSize.Height >= 190, label + ": settings editor too small: " + settings.ClientSize);
             LayoutCheck(curve.ClientSize.Width >= 184 && curve.ClientSize.Height >= 184, label + ": curve editor too small: " + curve.ClientSize);
             LayoutCheck(curve.Width == curve.Height, label + ": curve control remains square: " + curve.Size);
+            LayoutCheck(curve.Right == curve.Parent.ClientSize.Width, label + ": curve uses all available width to the right of the pressure controls.");
             RectangleF plot = (RectangleF)typeof(CurveCanvas).GetProperty("Plot", Private).GetValue(curve, null);
             LayoutCheck(Math.Abs(plot.Width - plot.Height) < 0.01f, label + ": curve coordinate plot remains square: " + plot);
             LayoutCheck(plot.Width > 0 && plot.Height > 0 && plot.Left >= 0 && plot.Top >= 0 && plot.Right <= curve.ClientSize.Width && plot.Bottom + 7 + curve.Font.Height <= curve.ClientSize.Height,
@@ -275,15 +276,15 @@ namespace Tk75.Tests
                 LayoutCheck(thresholds.Right <= curve.Left && thresholds.Top <= curve.Top, label + ": vertical pressure controls sit to the left of the square curve.");
                 LayoutCheck(!Field<Panel>(form, "curveEditorScroll").VerticalScroll.Visible, label + ": the normal Curve view scrolls only the lower settings grid.");
             }
-            else if (curve.Parent.ClientSize.Width < 464)
+            else if (curve.Parent.ClientSize.Width < 376)
                 LayoutCheck(thresholds.Top >= curve.Bottom + 8, label + ": the minimum layout puts usable vertical sliders below the plot.");
             CheckStableKeyboard(form, baseline, drawing, label + "/advanced"); CapturePreview(form, artifacts, label + "-advanced");
             RevealCurveSetting(form, thresholds);
-            foreach (string name in new[] { "keyBehaviorStatus", "rapidTrigger", "actuationPoint", "releaseMovement", "pressMovement", "actuationSlider", "releaseSlider", "repressSlider", "calibrateActuation", "calibrateRelease", "calibrateRepress", "applyKeyBehavior", "resetKeyBehavior" })
+            foreach (string name in new[] { "keyBehaviorStatus", "rapidTrigger", "actuationPoint", "releaseMovement", "actuationSlider", "releaseSlider", "calibrateActuation", "calibrateRelease", "applyKeyBehavior", "resetKeyBehavior" })
                 VisibleInside(form, Field<Control>(form, name), label + "/advanced/" + name);
-            foreach (string name in new[] { "actuationSlider", "releaseSlider", "repressSlider" })
+            foreach (string name in new[] { "actuationSlider", "releaseSlider" })
                 LayoutCheck(Field<Control>(form, name).Height >= 84, label + ": vertical slider retains a usable track: " + name);
-            foreach (string name in new[] { "calibrateActuation", "calibrateRelease", "calibrateRepress" })
+            foreach (string name in new[] { "calibrateActuation", "calibrateRelease" })
             {
                 Control button = Field<Control>(form, name);
                 int captionWidth = TextRenderer.MeasureText(button.Text, button.Font, Size.Empty, TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width;
@@ -972,15 +973,16 @@ namespace Tk75.Tests
             };
             Call(form, "Commit", fixture); SelectKeys(form, 9, 14); DetailMode(form, "input");
             Check(Field<CheckBox>(form, "rapidTrigger").CheckState == CheckState.Indeterminate, "Mixed rapid-trigger states remain explicit for multiple selected keys.");
-            foreach (string name in new[] { "rapidTrigger", "actuationPoint", "releaseMovement", "pressMovement", "applyKeyBehavior" })
+            foreach (string name in new[] { "rapidTrigger", "actuationPoint", "releaseMovement", "applyKeyBehavior" })
                 Check(Field<Control>(form, name).Enabled, "Multiple selected keys keep the " + name + " editor available.");
             Profile expected = Current(form);
-            foreach (KeyInputSettings input in expected.Inputs.Where(input => input.KeyIndex == 9 || input.KeyIndex == 14)) input.ActuationPoint = .31;
+            foreach (KeyInputSettings input in expected.Inputs.Where(input => input.KeyIndex == 9 || input.KeyIndex == 14)) input.ActuationPoint = input.PressMovement = .31;
             Field<NumericUpDown>(form, "actuationPoint").Value = 31; Call(form, "SaveKeyBehavior"); Pump(form);
             Equal(Json(expected), Json(Current(form)), "A bulk input field changes only that field, preserving mixed settings and both existing SOCD pairs.");
             Call(form, "Undo"); Pump(form); Equal(Json(fixture), Json(Current(form)), "A bulk input edit is one undo step.");
             expected = Current(form);
-            foreach (KeyInputSettings input in expected.Inputs.Where(input => input.KeyIndex == 9 || input.KeyIndex == 14)) input.RapidTriggerEnabled = true;
+            foreach (KeyInputSettings input in expected.Inputs.Where(input => input.KeyIndex == 9 || input.KeyIndex == 14))
+            { input.RapidTriggerEnabled = true; input.PressMovement = input.ActuationPoint; }
             Field<CheckBox>(form, "rapidTrigger").CheckState = CheckState.Checked; Call(form, "SaveKeyBehavior"); Pump(form);
             Equal(Json(expected), Json(Current(form)), "Rapid trigger can be enabled for every selected key without copying another key's numeric settings.");
             Call(form, "Undo"); Pump(form); Equal(Json(fixture), Json(Current(form)), "Bulk rapid-trigger editing is one undo step.");
@@ -1000,7 +1002,7 @@ namespace Tk75.Tests
             Call(form, "Undo"); Pump(form); Equal(Json(pairedBeforePolicy), Json(Current(form)), "The policy choice has its own undo step.");
             Call(form, "Undo"); Pump(form); Equal(Json(fixture), Json(Current(form)), "The preceding opposite-key choice has one undo step.");
             expected = Current(form);
-            foreach (KeyInputSettings input in expected.Inputs.Where(input => input.KeyIndex == 9 || input.KeyIndex == 14)) input.ActuationPoint = .27;
+            foreach (KeyInputSettings input in expected.Inputs.Where(input => input.KeyIndex == 9 || input.KeyIndex == 14)) input.ActuationPoint = input.PressMovement = .27;
             Field<NumericUpDown>(form, "actuationPoint").Value = 27;
             var keyboard = Field<VisualKeyboard>(form, "keyboard"); keyboard.SelectKey(keyboard.LayoutModel.FindByIndex(15), false); Pump(form);
             Equal(Json(expected), Json(Current(form)), "Changing physical selection flushes a pending input draft to its original selected keys only.");
@@ -1008,7 +1010,8 @@ namespace Tk75.Tests
             SelectKeys(form, 9, 14, 15); DetailMode(form, "input");
             Check(!Field<ComboBox>(form, "oppositeKey").Enabled && !Field<ComboBox>(form, "oppositeMode").Enabled, "Selecting more than two keys disables ambiguous SOCD pairing controls.");
             expected = Current(form);
-            foreach (KeyInputSettings input in expected.Inputs.Where(input => input.KeyIndex != 21)) input.ReleaseMovement = .18;
+            foreach (KeyInputSettings input in expected.Inputs.Where(input => input.KeyIndex != 21))
+            { input.ReleaseMovement = .18; input.PressMovement = input.ActuationPoint; }
             Field<NumericUpDown>(form, "releaseMovement").Value = 18; Call(form, "SaveKeyBehavior"); Pump(form);
             Equal(Json(expected), Json(Current(form)), "Three-key numeric editing retains established opposing pairs and the unselected key's settings.");
             Call(form, "Undo"); Pump(form); SelectKeys(form, 9, 14); DetailMode(form, "input");
@@ -1857,6 +1860,7 @@ namespace Tk75.Tests
                 RunIsolatedFeature("curve-shape", artifacts, featureFailures, CheckCurveShapePicker);
                 RunIsolatedFeature("curve-dynamics", artifacts, featureFailures, RunCurveDynamicsUi);
                 RunIsolatedFeature("curve-ranges", artifacts, featureFailures, RunCurveRangeRailUi);
+                RunIsolatedFeature("slider-precision", artifacts, featureFailures, delegate(MainForm preview, string output) { RunSliderPrecisionUi(preview); });
                 RunIsolatedFeature("threshold-capture", artifacts, featureFailures, delegate(MainForm preview, string output) { RunInputThresholdCapture(output); });
                 RunIsolatedFeature("key-annotations", artifacts, featureFailures, RunKeyAnnotations);
                 RunIsolatedFeature("mapping-summaries", artifacts, featureFailures, CheckMappingSummaries);

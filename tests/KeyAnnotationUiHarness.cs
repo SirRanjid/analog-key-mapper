@@ -41,7 +41,7 @@ namespace Tk75.Tests
                 {
                     Call(form, "SwitchLanguage", requestedLanguage);
                     var annotations = Field<Dictionary<int, KeyboardBehaviorAnnotation>>(keyboard, "behaviorAnnotations");
-                    Check(annotations[14].Compact == "↓18↑3" && annotations[14].Full == "↓18↑3↧4" && annotations[14].Narrow == "18/3", "RT cap metadata retains press/release values on narrow caps and adds repress when space permits.");
+                    Check(annotations[14].Compact == "↓18↑3" && annotations[14].Full == "↓18↑3" && annotations[14].Narrow == "18/3", "RT cap metadata shows only the shared actuation value and release movement, including on narrow caps.");
                     Check(annotations[9].Compact == "↕25" && annotations[9].Full == "↕25", "Equal fixed press/release values use one compact, explicitly shared boundary.");
                     Check(annotations[15].Compact == "" && annotations[15].Description.Contains(requestedLanguage == "en" ? "Continuous pressure" : "Kontinuierlicher Druck"), "An untouched continuous key does not invent a 10% actuation gate.");
                     Check(annotations[20].Compact == "●35" && annotations[20].Description.Contains(requestedLanguage == "en" ? "calculated output" : "berechneten Ausgabe"), "A mapped digital key shows its actual output threshold with distinct semantics from physical actuation.");
@@ -50,7 +50,7 @@ namespace Tk75.Tests
                     Check(annotations[32].Compact == "→…" && annotations[32].Description.Contains("●30") && annotations[32].Description.Contains("●70"), "Different outputs remain explicit instead of inventing one shared threshold.");
                     Check(annotations[26].Compact == "R12–330" && annotations[26].Description.Contains(requestedLanguage == "en" ? "Individual raw" : "Individueller Rohdruck"), "A key with only an explicit per-key pressure range is visibly configured without a fake actuation gate.");
                     string tip = (string)typeof(VisualKeyboard).GetMethod("TooltipFor", Private).Invoke(keyboard, new object[] { keyboard.LayoutModel.FindByIndex(14) });
-                    Check(tip.Contains("18%") && tip.Contains("3%") && tip.Contains("4%") && !tip.Contains("mm"), "The key tooltip exposes all thresholds without claiming measured millimeters.");
+                    Check(tip.Contains("18%") && tip.Contains("3%") && !tip.Contains("4%") && !tip.Contains("mm"), "The key tooltip reports effective thresholds and never presents obsolete legacy repress or unmeasured millimeters.");
                     object snapshot = annotations[14];
                     for (int i = 0; i < 5; i++) Call(form, "RefreshKeyBehaviorAnnotations");
                     Check(Object.ReferenceEquals(snapshot, annotations[14]), "Unchanged annotation refreshes keep their immutable presentation snapshot.");
@@ -62,12 +62,12 @@ namespace Tk75.Tests
                 using (var detached = new VisualKeyboard { LayoutModel = KeyboardLayout.Tk75Iso(), Size = new Size(1000, 440) })
                 {
                     int invalidations = 0;
-                    var value = new KeyboardBehaviorAnnotation { Compact = "↓18↑3", Full = "↓18↑3↧4", Narrow = "18/3", Description = "test description" };
+                    var value = new KeyboardBehaviorAnnotation { Compact = "↓18↑3", Full = "↓18↑3", Narrow = "18/3", Description = "test description" };
                     detached.CreateControl(); detached.SetBehaviorAnnotation(14, value);
                     value.Compact = "mutated";
                     Check(Field<Dictionary<int, KeyboardBehaviorAnnotation>>(detached, "behaviorAnnotations")[14].Compact == "↓18↑3", "Caller mutations cannot alter painted annotations.");
                     detached.Invalidated += delegate { invalidations++; };
-                    detached.SetBehaviorAnnotation(14, new KeyboardBehaviorAnnotation { Compact = "↓18↑3", Full = "↓18↑3↧4", Narrow = "18/3", Description = "test description" });
+                    detached.SetBehaviorAnnotation(14, new KeyboardBehaviorAnnotation { Compact = "↓18↑3", Full = "↓18↑3", Narrow = "18/3", Description = "test description" });
                     Check(invalidations == 0, "Identical annotations cause no repaint.");
                     using (var decorated = new Bitmap(detached.Width, detached.Height))
                     using (var plain = new Bitmap(detached.Width, detached.Height))
@@ -106,7 +106,7 @@ namespace Tk75.Tests
                         index == 21 ? new KeyboardBehaviorAnnotation { Compact = "→10–80", Narrow = "→80" } :
                         index == 26 ? new KeyboardBehaviorAnnotation { Compact = "R12–330", Narrow = "R" } :
                         index == 32 ? new KeyboardBehaviorAnnotation { Compact = "→…" } :
-                        new KeyboardBehaviorAnnotation { Compact = "↓18↑3", Full = "↓18↑3↧4", Narrow = "18/3" };
+                        new KeyboardBehaviorAnnotation { Compact = "↓18↑3", Full = "↓18↑3", Narrow = "18/3" };
                     keyboard.SetBehaviorAnnotation(index, annotation);
                     keyboard.SetControllerAssignments(index, new[] { new KeyboardControllerBadge { Number = 1, Name = "Controller", Selected = true } });
                 }

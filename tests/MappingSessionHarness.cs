@@ -435,13 +435,15 @@ public static class MappingSessionHarness
         }
         using (var f = new Fixture(false))
         {
-            f.Profile.Inputs.Add(new KeyInputSettings { KeyIndex = 14, RapidTriggerEnabled = true, ActuationPoint = .5, PressMovement = .05, ReleaseMovement = .05 });
+            f.Profile.Inputs.Add(new KeyInputSettings { KeyIndex = 14, RapidTriggerEnabled = true, ActuationPoint = .5, PressMovement = .05, ReleaseMovement = .6 });
             f.Session.Configure(f.Profile, f.Calibrations); FakeOutput output = f.Arm(); f.Input.Set(14, 80, 0);
             Wait(delegate { return f.Session.Preview.LeftY > 0 && output.Last.LeftY > 0; }, "Rapid-trigger preview begins with genuine activation.");
             f.Session.SetPreviewActive(false); f.Input.Set(14, 20, 0);
             Wait(delegate { return Neutral(output.Last); }, "Actual rapid-trigger release still runs while hidden.");
+            f.Input.Set(14, 70, 0);
+            Wait(delegate { return output.Last.LeftY > 0; }, "Live rapid-trigger history reuses the actuation distance while hidden.");
             f.Input.Set(14, 30, 0);
-            Wait(delegate { return output.Last.LeftY > 0; }, "Live rapid-trigger history can re-press below initial actuation while hidden.");
+            Wait(delegate { return output.Last.LeftY == .3; }, "Live RT can remain active below initial actuation while the release movement has not been reached.");
             f.Session.SetPreviewActive(true);
             Wait(delegate { return f.Session.Preview.InputResults.ContainsKey(14); }, "Reactivated rapid-trigger preview is computed.");
             Check(f.Session.Preview.LeftY == 0 && output.Last.LeftY > 0,
@@ -943,8 +945,10 @@ public static class MappingSessionHarness
             Wait(delegate { return output.Last.LeftY == 0 && !f.Session.Frame.InputResults[14].Active; }, "Physical lift immediately releases despite minimum output");
             Thread.Sleep(35);
             Check(output.Last.LeftY == 0, "Rapid-trigger state persists across unchanged worker frames");
-            f.Input.Set(14, 55, 0);
-            Wait(delegate { return output.Last.LeftY > 0 && f.Session.Frame.InputResults[14].Active; }, "Physical repress reactivates from the new low point");
+            f.Input.Set(14, 55, 0); Thread.Sleep(35);
+            Check(output.Last.LeftY == 0, "A shorter legacy press distance does not reactivate the live worker early");
+            f.Input.Set(14, 65, 0);
+            Wait(delegate { return output.Last.LeftY > 0 && f.Session.Frame.InputResults[14].Active; }, "Physical repress reactivates after moving the actuation distance from the new low point");
             var detached = f.Session.Frame; detached.InputResults[14].Allowed = false; detached.InputResults[14].Normalized = 99;
             Check(f.Session.Frame.InputResults[14].Allowed && f.Session.Frame.InputResults[14].Normalized <= 1, "Per-key preview results are detached copies");
             f.Input.Reading = false;

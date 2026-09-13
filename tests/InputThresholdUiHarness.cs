@@ -24,12 +24,13 @@ namespace Tk75.Tests
             Call(form, "Commit", fixture); SelectKeys(form, 9, 14); DetailMode(form, "advanced"); RevealCurveSetting(form, Field<Control>(form, "keyBehaviorPanel"));
             var slider = Field<InputThresholdSlider>(form, "actuationSlider");
             var release = Field<InputThresholdSlider>(form, "releaseSlider");
-            var repress = Field<InputThresholdSlider>(form, "repressSlider");
             var number = Field<NumericUpDown>(form, "actuationPoint");
             Profile before = Current(form);
-            Check(slider.Mixed && release.Mixed && repress.Mixed, "Vertical controls show mixed thresholds without inventing shared values.");
-            Check(slider.Enabled && release.Enabled && repress.Enabled, "Rapid Trigger enables the two movement sliders as well as initial actuation.");
-            foreach (string name in new[] { "actuationSlider", "releaseSlider", "repressSlider", "calibrateActuation", "calibrateRelease", "calibrateRepress" })
+            Check(slider.Mixed && release.Mixed, "Vertical controls show mixed thresholds without inventing shared values.");
+            Check(slider.Enabled && release.Enabled, "Rapid Trigger enables release movement beside the shared actuation/retrigger control.");
+            Check(typeof(MainForm).GetField("repressSlider", Private) == null && typeof(MainForm).GetField("calibrateRepress", Private) == null,
+                "There is no independent Repress control or calibration action.");
+            foreach (string name in new[] { "actuationSlider", "releaseSlider", "calibrateActuation", "calibrateRelease" })
                 VisibleInside(form, Field<Control>(form, name), "vertical-input/" + name);
             Check(number.Top < slider.Top || number.Parent == slider.Parent && number.Bounds.Bottom <= slider.Bounds.Top,
                 "The numeric editor sits above its vertical threshold scale.");
@@ -45,6 +46,8 @@ namespace Tk75.Tests
             Call(form, "SaveKeyBehavior"); Pump(form);
             double storedActuation = Current(form).Inputs.Single(input => input.KeyIndex == 9).ActuationPoint;
             Check(Math.Abs(storedActuation - .357) < 1e-12, "35.7 percent normalizes to the intended actuation fraction.");
+            Check(Current(form).Inputs.Where(input => input.KeyIndex == 9 || input.KeyIndex == 14).All(input => input.PressMovement == input.ActuationPoint),
+                "Applying actuation also synchronizes the compatibility field for every selected key.");
             var expected = KeyInputEditing.ApplyActivation(before, new[] { 9, 14 }, new KeyInputSettings { ActuationPoint = storedActuation }, InputActivationFields.Actuation);
             Equal(Json(expected), Json(Current(form)), "Apply shares only the chosen actuation setting and preserves mixed RT settings and unselected keys.");
             Call(form, "Undo"); Pump(form); Equal(Json(before), Json(Current(form)), "One undo restores the vertical threshold edit.");
@@ -53,7 +56,7 @@ namespace Tk75.Tests
             double amount = (double)capture.Invoke(null, new object[] { new Calibration(20, 420), 180.0 });
             Check(amount == .4, "Per-option calibration uses the source key's own saved rest/bottom range.");
             var apply = typeof(MainForm).GetMethod("ApplyCapturedInputThreshold", BindingFlags.Static | BindingFlags.NonPublic);
-            foreach (InputActivationFields field in new[] { InputActivationFields.Actuation, InputActivationFields.Release, InputActivationFields.Press })
+            foreach (InputActivationFields field in new[] { InputActivationFields.Actuation, InputActivationFields.Release })
             {
                 Profile measured = (Profile)apply.Invoke(null, new object[] { before, new[] { 9, 14 }, 9, field, amount });
                 var expectedInput = new KeyInputSettings { ActuationPoint = amount, ReleaseMovement = amount, PressMovement = amount };
@@ -64,7 +67,16 @@ namespace Tk75.Tests
             Check(!(bool)Field<Button>(form, "calibrateActuation").Enabled && !(bool)Field<Button>(form, "calibrateRelease").Enabled,
                 "Per-option recording remains unavailable without live keyboard pressure data.");
             Field<CheckBox>(form, "rapidTrigger").CheckState = CheckState.Unchecked;
-            Check(slider.Enabled && !release.Enabled && !repress.Enabled, "Turning Rapid Trigger off keeps actuation available and disables movement sliders.");
+            Check(slider.Enabled && !release.Enabled, "Turning Rapid Trigger off keeps actuation available and disables release movement.");
+            Call(form, "ResetKeyBehavior");
+            var sameEffective = Current(form);
+            sameEffective.Inputs = new List<KeyInputSettings> {
+                new KeyInputSettings { KeyIndex = 9, RapidTriggerEnabled = true, ActuationPoint = .24, ReleaseMovement = .03, PressMovement = .001 },
+                new KeyInputSettings { KeyIndex = 14, RapidTriggerEnabled = true, ActuationPoint = .24, ReleaseMovement = .03, PressMovement = .9 }
+            };
+            Call(form, "Commit", sameEffective); SelectKeys(form, 9, 14); DetailMode(form, "advanced");
+            Check(!slider.Mixed && !release.Mixed, "Different obsolete legacy PressMovement values do not fabricate mixed settings for identical effective controls.");
+            Equal(Json(sameEffective), Json(Current(form)), "Displaying identical effective settings does not silently migrate the stored legacy fields.");
             Call(form, "ResetKeyBehavior"); Call(form, "Commit", original); SelectKeys(form, 14); DetailMode(form, null);
             Console.WriteLine("INPUT THRESHOLDS PASS: " + (assertions - started) + " assertions; vertical drafts, mixed fields, undo and scoped per-option capture.");
         }

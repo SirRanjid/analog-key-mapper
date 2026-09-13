@@ -2,7 +2,7 @@
 
 [Back to the project](../README.md) · [User guide](user-guide.md) · [Current status](status.md)
 
-**1.0.0-rc.7 is a free, unsigned release candidate.** Final hardware and game acceptance is pending before stable 1.0. Use the version shown on the release asset; compiling these sources does not sign or publish a release.
+**1.0.0-rc.8 is a free, unsigned release candidate.** Final hardware and game acceptance is pending before stable 1.0. Use the version shown on the release asset; compiling these sources does not sign or publish a release.
 
 ## What the download contains
 
@@ -10,8 +10,8 @@ Choose a package from [Releases](https://github.com/SirRanjid/analog-key-mapper/
 
 | Package | Contents |
 | --- | --- |
-| `AnalogKeyMapper-1.0.0-rc.7-windows-x64.zip` | The unsigned Windows app, keyboard monitor, diagnostic tool and Xbox/DualSense output helper, plus licenses and checksum verification scripts. No compiler is required to open the editor. |
-| `AnalogKeyMapper-1.0.0-rc.7-source.zip` | Complete application and controller-helper sources, vendored Go dependencies, build scripts, tests, documentation, licenses and checksum verification scripts. |
+| `AnalogKeyMapper-1.0.0-rc.8-windows-x64.zip` | The unsigned Windows app, keyboard monitor, diagnostic tool and Xbox/DualSense output helper, plus licenses and checksum verification scripts. No compiler is required to open the editor. |
+| `AnalogKeyMapper-1.0.0-rc.8-source.zip` | Complete application and controller-helper sources, vendored Go dependencies, build scripts, tests, documentation, licenses and checksum verification scripts. |
 
 Both ZIPs contain an `AnalogKeyMapper` folder and `SHA256SUMS.txt`. Neither includes a driver installer, personal profiles or private device captures. Source test fixtures include sanitized sample pressure reports, with their provenance documented separately.
 
@@ -43,8 +43,8 @@ This checks the files listed in the selected package folder's `SHA256SUMS.txt`. 
 The release also provides a separate `SHA256SUMS.txt` for the two ZIP downloads. Compare those entries with the ZIP hashes from PowerShell before extraction if you want to check the archives themselves:
 
 ```powershell
-Get-FileHash .\AnalogKeyMapper-1.0.0-rc.7-windows-x64.zip -Algorithm SHA256
-Get-FileHash .\AnalogKeyMapper-1.0.0-rc.7-source.zip -Algorithm SHA256
+Get-FileHash .\AnalogKeyMapper-1.0.0-rc.8-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\AnalogKeyMapper-1.0.0-rc.8-source.zip -Algorithm SHA256
 ```
 
 Checksums detect file changes. They are not a code signature or independent proof of the publisher's identity when the files and manifest come from the same download.
@@ -149,4 +149,6 @@ The packager never overwrites an existing release directory and excludes persona
 .\Test-All.ps1
 ```
 
-These ordinary suites cover pure calculations, synthetic input sources, synthetic helper processes, Windows calls and offscreen UI controls. They do not install a driver or create a real virtual controller. Separate opt-in live acceptance tests create actual devices and are excluded from the offline GitHub workflow. Windows desktop support is required for the UI suites. Record failed or blocked suites accurately; see [the recorded validation and its limits](status.md).
+These ordinary suites cover pure calculations, synthetic input sources, synthetic helper processes, Windows calls and app-owned UI controls. They do not install a driver or create a real virtual controller. Most UI fixtures are offscreen; native scrollbar tests use small nonactivating visible test windows to inspect pixels already drawn to their own controls. Run UI suites when those temporary windows will not interrupt your work. Separate opt-in live acceptance tests create actual devices and are excluded from the offline GitHub workflow.
+
+The rc.8 checks cover curve fitting and editable handles, shared fine-drag behavior, compact settings, concise help and scrollbar lifecycle/redraw paths. Windows desktop support is required for the UI suites. A CI pass does not establish behavior under every Windows desktop theme, or final hardware and game acceptance. Record failed or blocked suites accurately; see [the recorded validation and its limits](status.md).

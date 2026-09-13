@@ -83,8 +83,20 @@ namespace Tk75.Tests
                         Check(cell.ToolTipText.Contains(value), "The complete output tooltip retains customization: " + value);
                     string keyText = Field<Label>(form, "selectionStatus").Text;
                     Check(keyText.Contains("Rapid Trigger") && keyText.Contains("18%") && keyText.Contains("SOCD"), "Physical RT, actuation and SOCD remain a separate shared-key summary.");
-                    string keyTip = Field<ToolTip>(form, "keyCardTips").GetToolTip(Field<Label>(form, "selectionStatus"));
+                    Check(!keyText.Contains("4%"), "The shared-key summary does not advertise an obsolete legacy repress value.");
+                    Label summaryLabel = Field<Label>(form, "selectionStatus");
+                    QuietToolTip tips = Field<QuietToolTip>(form, "keyCardTips");
+                    string keyTip = tips.GetToolTip(summaryLabel);
                     Check(keyTip.Contains(requestedLanguage == "en" ? "all mapped outputs" : "alle zugeordneten Ausgänge"), "Physical behavior explicitly names its shared scope.");
+                    Check(keyTip.Length <= QuietToolTip.MaximumTextLength && keyTip.IndexOf('\n') < 0 && tips.InitialDelay >= 900 && tips.ReshowDelay >= 650,
+                        "Physical behavior hover help stays compact and delayed.");
+                    string keyDescription = summaryLabel.AccessibleDescription;
+                    Check(keyDescription.Length > keyTip.Length && keyDescription.Contains("Rapid Trigger") && keyDescription.Contains("18%") &&
+                        keyDescription.Contains("3%") && keyDescription.Contains("SOCD") &&
+                        keyDescription.StartsWith(requestedLanguage == "en" ? "Physical key behavior" : "Physisches Tastenverhalten", StringComparison.Ordinal),
+                        "The full localized behavior explanation remains accessible independently of the shortened hover text.");
+                    UiText.Apply(form);
+                    Equal(keyDescription, summaryLabel.AccessibleDescription, "UI text translation preserves the current full accessible description.");
                     Check(grid.Columns["response"].HeaderText == (requestedLanguage == "en" ? "Response" : "Reaktion"), "Response headers follow the current language.");
                     object sameText = cell.Value;
                     for (int i = 0; i < 10; i++) Call(form, "UpdateKeyCard");

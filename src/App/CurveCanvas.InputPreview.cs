@@ -24,10 +24,10 @@ namespace Tk75.App
         }
         static KeyInputSettings CopyInputPreview(KeyInputSettings value)
         { return value == null ? null : new KeyInputSettings { KeyIndex = value.KeyIndex, RapidTriggerEnabled = value.RapidTriggerEnabled,
-            ActuationPoint = value.ActuationPoint, ReleaseMovement = value.ReleaseMovement, PressMovement = value.PressMovement }; }
+            ActuationPoint = value.ActuationPoint, ReleaseMovement = value.ReleaseMovement, PressMovement = value.ActuationPoint }; }
         public static bool SameInputPreview(KeyInputSettings first, KeyInputSettings second)
         { return first == null || second == null ? first == null && second == null : first.RapidTriggerEnabled == second.RapidTriggerEnabled &&
-            first.ActuationPoint == second.ActuationPoint && first.ReleaseMovement == second.ReleaseMovement && first.PressMovement == second.PressMovement; }
+            first.ActuationPoint == second.ActuationPoint && first.ReleaseMovement == second.ReleaseMovement; }
         public void UpdateInputPreview(KeyInputSettings value, bool configured, bool isMixed, InputActivationFields field)
         {
             if (SameInputPreview(inputPreview, value) && inputPreviewConfigured == configured && inputPreviewMixed == isMixed && activeInputField == field) return;
@@ -45,8 +45,8 @@ namespace Tk75.App
         string InputPreviewHelp()
         {
             if (inputPreview == null) return "";
-            string help = "\n\n" + UiText.Get("Die strichpunktierte Aktuationsmarke gehört zur separaten physischen Tastenstufe. Die dargestellte Signal-Kennlinie enthält diese Freigabe nicht. Rapid Trigger nutzt Bewegungsabstände ab dem letzten Hoch-/Tiefpunkt, keine festen Druckpositionen; fokussiere Loslassen oder Erneut drücken für ein Bewegungsbeispiel.",
-                "The dash-dot actuation guide belongs to the separate physical-key stage. The signal response does not include that input gate. Rapid Trigger uses movement distances from the last peak/valley, not fixed pressure positions; focus Release or Repress for a movement example.");
+            string help = "\n\n" + UiText.Get("Die strichpunktierte Aktuationsmarke gehört zur separaten physischen Tastenstufe. Die dargestellte Signal-Kennlinie enthält diese Freigabe nicht. Rapid Trigger nutzt Bewegungsabstände ab dem letzten Hoch-/Tiefpunkt, keine festen Druckpositionen; fokussiere Loslassen für ein Bewegungsbeispiel. Erneutes Drücken verwendet denselben Weg wie Auslösen.",
+                "The dash-dot actuation guide belongs to the separate physical-key stage. The signal response does not include that input gate. Rapid Trigger uses movement distances from the last peak/valley, not fixed pressure positions; focus Release for a movement example. Repress uses the actuation amount.");
             if (!inputPreviewConfigured) help += "\n" + UiText.Get("Diese Taste arbeitet bisher kontinuierlich. Ein fokussierter Aktuationswert ist eine Vorschau; eine Einstellung ist erst nach einer Änderung gespeichert.",
                 "This key currently uses continuous pressure. A focused actuation value is a preview; it becomes a configured setting after a change is applied.");
             if (inputPreviewMixed) help += "\n" + UiText.Get("Tasteneinstellungen gemischt: gezeigt wird die erste ausgewählte Taste.", "Key settings are mixed: the first selected key is shown.");
@@ -136,7 +136,7 @@ namespace Tk75.App
             using (var arrow = new Pen(ModernTheme.AccentHover, 2))
             using (var cap = new AdjustableArrowCap(3, 4))
             { arrow.CustomEndCap = cap; graphics.DrawLine(arrow, arrowX, fromY, arrowX, toY); }
-            double amount = activeInputField == InputActivationFields.Release ? inputPreview.ReleaseMovement : inputPreview.PressMovement;
+            double amount = activeInputField == InputActivationFields.Release ? inputPreview.ReleaseMovement : inputPreview.ActuationPoint;
             DrawDynamicCaption(graphics, UiText.Get("Beispiel · Weg ", "Example · travel ") + Percent(amount));
         }
         void DrawDynamicCaption(Graphics graphics, string text)

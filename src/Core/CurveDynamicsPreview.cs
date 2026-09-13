@@ -47,8 +47,8 @@ namespace Tk75.Mapping
                 // Begin above rest after a release long enough to deactivate.
                 // If either distance requires all travel, rest necessarily
                 // resets Rapid Trigger: do not invent a relative retrigger.
-                result.FromPressure = Math.Max(0, Math.Min(.25, Math.Min((1 - settings.PressMovement) / 2, 1 - settings.ReleaseMovement)));
-                result.ToPressure = result.FromPressure + settings.PressMovement;
+                result.FromPressure = Math.Max(0, Math.Min(.25, Math.Min((1 - settings.ActuationPoint) / 2, 1 - settings.ReleaseMovement)));
+                result.ToPressure = result.FromPressure + settings.ActuationPoint;
                 result.RequiresFreshActuation = result.FromPressure <= 0;
                 result.Path = new List<CurvePoint> { new CurvePoint(0, 0), new CurvePoint(.2, 1), new CurvePoint(.52, result.FromPressure), new CurvePoint(.88, result.ToPressure), new CurvePoint(1, result.ToPressure) };
             }

@@ -65,7 +65,7 @@ namespace Tk75.App
                     "OUT: 0% at the bottom, 100% at the top, matching the output axis. Lower handle: minimum active output. Upper handle: maximum output. Released output remains zero."));
             help += "\n" + Tr("Griffe ziehen. ←/→ oder Leertaste wählt einen Griff, ↑/↓ verändert ihn, Umschalt für große Schritte. Loslassen übernimmt einmal; Esc bricht ab. Alle ausgewählten Zuordnungen ändern sich gemeinsam.",
                 "Drag a handle. Left/Right or Space selects one, Up/Down adjusts it, Shift uses larger steps. Release applies one edit; Esc cancels. Every selected mapping changes together.");
-            rail.AccessibleDescription = help; keyCardTips.SetToolTip(rail, help);
+            rail.AccessibleDescription = help; keyCardTips.SetToolTip(rail, null);
         }
     }
 }

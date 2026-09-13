@@ -49,7 +49,14 @@ namespace Tk75.App
             {
                 if (shapeEditing == value) return;
                 CancelEdit(); shapeEditing = value; inspectedInput = null; hovered = hoveredPart = -1;
-                if (value) { activeInputField = InputActivationFields.None; activeSetting = null; }
+                if (value)
+                {
+                    activeInputField = InputActivationFields.None; activeSetting = null;
+                    var editable = EditableShape();
+                    if (editable == null) shapeEditing = false;
+                    if (editable != null && editable.Curve == CurveKind.Bezier && selectedPoint < 0)
+                        selectedPoint = editable.CustomPoints.Count > 2 ? editable.CustomPoints.Count / 2 : 0;
+                }
                 UpdateViewButton(); UpdateTip(); Invalidate();
             }
         }
@@ -79,15 +86,17 @@ namespace Tk75.App
             if (viewButton == null) return;
             viewButton.SetBounds(Math.Max(58, Width - 104), 4, Math.Min(98, Math.Max(70, Width - 64)), 25);
             viewButton.Text = shapeEditing || DynamicPreviewVisible ? UiText.Get("Antwort", "Response") : UiText.Get("Bearbeiten", "Edit shape");
-            viewButton.Enabled = settings != null || DynamicPreviewVisible;
+            viewButton.Enabled = DynamicPreviewVisible || settings != null && EditableShape() != null;
             viewButton.AccessibleName = viewButton.Text;
-            tips.SetToolTip(viewButton, shapeEditing || DynamicPreviewVisible ? UiText.Get("Die tatsächliche Ausgabe mit Totbereichen, Stärke und Ausgabegrenzen anzeigen.",
+            viewButton.AccessibleDescription = shapeEditing || DynamicPreviewVisible ? UiText.Get("Die tatsächliche Ausgabe mit Totbereichen, Stärke und Ausgabegrenzen anzeigen.",
                 "Show the effective output including deadzones, strength and output limits.") : UiText.Get("Kurvenform bearbeiten: eigene Punkte setzen und ziehen, Bézier-Griffe verändern.",
-                "Edit the curve shape: add and drag custom points or adjust Bézier handles."));
+                "Edit the curve shape: add and drag custom points or adjust Bézier handles.");
+            if (!viewButton.Enabled && shapeFitUnavailable) viewButton.AccessibleDescription = ShapeUnavailableText();
         }
         static string Percent(double value) { return (value * 100).ToString("0.#", CultureInfo.CurrentCulture) + "%"; }
         string ResponseCaption(SignalSettings shown)
         {
+            if (shapeFitUnavailable && activeSetting == null && activeInputField == InputActivationFields.None) return ShapeUnavailableText();
             if (activeInputField == InputActivationFields.Actuation && inputPreview != null)
                 return (inputPreviewConfigured ? UiText.Get("Tasten-Aktuation · ", "Key actuation · ") : UiText.Get("Aktuation Vorschau · ", "Actuation preview · ")) + Percent(inputPreview.ActuationPoint);
             if (activeSetting != null)

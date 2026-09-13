@@ -25,7 +25,7 @@ namespace Tk75.App
         void BeginInputThresholdCapture(InputActivationFields field)
         {
             RequireReader();
-            if (field != InputActivationFields.Actuation && field != InputActivationFields.Release && field != InputActivationFields.Press) throw new ArgumentOutOfRangeException("field");
+            if (field != InputActivationFields.Actuation && field != InputActivationFields.Release) throw new ArgumentOutOfRangeException("field");
             int[] selected = SelectedKeys(); if (selected.Length == 0 || calibration == null) return;
             if (field != InputActivationFields.Actuation && rapidTrigger.CheckState == CheckState.Unchecked) return;
             CancelInputThresholdCapture(); CancelPressureCapture(); CancelInputThresholdGestures(); FlushInputDraft();
@@ -79,7 +79,7 @@ namespace Tk75.App
             }
             if (previous == null) return;
             if (handler != null) previous.Sample -= handler;
-            actuationSlider.MeasuredPercent = releaseSlider.MeasuredPercent = repressSlider.MeasuredPercent = null;
+            actuationSlider.MeasuredPercent = releaseSlider.MeasuredPercent = null;
             RefreshCurveInputPreview();
             if (!IsDisposed && !closing)
             {
@@ -90,8 +90,8 @@ namespace Tk75.App
         void RefreshInputThresholdCaptureButtons()
         {
             bool capturing = inputThresholdCaptureReader != null;
-            var buttons = new[] { calibrateActuation, calibrateRelease, calibrateRepress };
-            var fields = new[] { InputActivationFields.Actuation, InputActivationFields.Release, InputActivationFields.Press };
+            var buttons = new[] { calibrateActuation, calibrateRelease };
+            var fields = new[] { InputActivationFields.Actuation, InputActivationFields.Release };
             for (int i = 0; i < buttons.Length; i++)
             {
                 bool active = capturing && inputThresholdCaptureField == fields[i];
@@ -107,7 +107,7 @@ namespace Tk75.App
                         "From rest, press any selected key through the desired movement distance, then release. This sets only this Rapid Trigger option for every selected key: a movement distance, not a fixed actuation point.");
                 help += "\n" + Tr("Die gespeicherten Min-/Max-Druckbereiche bleiben erhalten. Loslassen bestätigt; ein zusätzlicher Haken ist nicht nötig.",
                     "Saved min/max pressure ranges are preserved. Releasing confirms the measurement; no checkbox is needed.");
-                buttons[i].AccessibleName = buttons[i].Text + " · " + (fields[i] == InputActivationFields.Actuation ? Tr("Auslösen", "Actuation") : fields[i] == InputActivationFields.Release ? Tr("Loslassen", "Release") : Tr("Erneut drücken", "Repress"));
+                buttons[i].AccessibleName = buttons[i].Text + " · " + (fields[i] == InputActivationFields.Actuation ? Tr("Auslösen", "Actuation") : Tr("Loslassen", "Release"));
                 buttons[i].AccessibleDescription = help; keyCardTips.SetToolTip(buttons[i], help);
             }
         }
@@ -132,7 +132,7 @@ namespace Tk75.App
             }
             if (source < 0) return;
             double amount = CapturedInputThreshold(sharedPressureRange.ForKey(source), maximum);
-            var measuredSlider = inputThresholdCaptureField == InputActivationFields.Actuation ? actuationSlider : inputThresholdCaptureField == InputActivationFields.Release ? releaseSlider : repressSlider;
+            var measuredSlider = inputThresholdCaptureField == InputActivationFields.Actuation ? actuationSlider : releaseSlider;
             measuredSlider.MeasuredPercent = amount * 100; PreviewCurveInputOption(inputThresholdCaptureField, amount * 100);
             SetInputStatus(string.Format(Tr("{0}: {1:0.##} % · Loslassen übernimmt", "{0}: {1:0.##}% · release to apply"), Label(source), amount * 100));
             if (!complete) return;
@@ -150,7 +150,6 @@ namespace Tk75.App
             var value = KeyInputEditing.GetOrDefault(profile, source);
             if (field == InputActivationFields.Actuation) value.ActuationPoint = amount;
             else if (field == InputActivationFields.Release) value.ReleaseMovement = amount;
-            else if (field == InputActivationFields.Press) value.PressMovement = amount;
             else throw new ArgumentOutOfRangeException("field");
             return KeyInputEditing.ApplyActivation(profile, keys, value, field);
         }

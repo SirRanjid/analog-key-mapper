@@ -2,9 +2,9 @@
 
 **Turn GamaKay TK75 TMR key pressure into controller input — with visual mapping, editable response curves and optional key lighting.**
 
-**Free and open source · 1.0.0-rc.7 · Windows x64**
+**Free and open source · 1.0.0-rc.8 · Windows x64**
 
-**[Download Windows rc.7](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.7/AnalogKeyMapper-1.0.0-rc.7-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.7) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
+**[Download Windows rc.8](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.8/AnalogKeyMapper-1.0.0-rc.8-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.8) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
 
 ![Analog Key Mapper showing keyboard mappings, controller selection, lighting and USB connection controls](docs/images/controller.png)
 
@@ -12,15 +12,15 @@
 
 - **Map in both directions.** Drag a key onto a controller output, or an output onto a key. The grabbed shape follows your pointer; readable left/right labels and numbered key badges identify assignments.
 - **Keep controller setups separate.** Mix Xbox 360 and DualSense slots, each with its own mappings, color and USB connection control. Pending connections stay visible and can be cancelled.
-- **See and tune each output.** Keys, Curve and Controller tabs keep the keyboard in place. A clear selection outline and per-output response summaries lead to deadzones, thresholds and a square linear/custom/Bézier curve editor.
+- **See and tune each output.** Keys, Curve and Controller tabs keep the keyboard in place. A larger square graph, compact settings and directly editable Bézier handles let you refine any curve, including presets.
 - **Set key behavior together.** Configure Rapid Trigger and opposite-key handling (SOCD). Use Capture, then click the opposite key to pair it. Use Ctrl+click or a selection rectangle for bulk edits, with undo.
-- **Tune one key or a whole selection.** Set individual min/max pressure ranges, or calibrate selected keys with one press and release. The keyboard shares one adjustable scale. Vertical actuation controls and faint keycap values make thresholds visible.
+- **Tune one key or a whole selection.** Set individual min/max pressure ranges, or calibrate selected keys with one press and release. The keyboard shares one adjustable scale. Two vertical controls set actuation and release; move away from a slider while dragging for finer adjustments.
 - **Save your setup and lighting.** Keep JSON profiles, signal presets and named controllers. Optional mapped-key colors include a backup and restore workflow. English and German are included.
 - **Keep the editor out of the way.** Use the tray or opt into Windows startup. Controller reconnection is a separate option that starts off. [Background startup guide](docs/background-startup.md).
 
 ## Quick start
 
-1. [Download the Windows rc.7 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.7/AnalogKeyMapper-1.0.0-rc.7-windows-x64.zip) and extract it into a writable folder.
+1. [Download the Windows rc.8 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.8/AnalogKeyMapper-1.0.0-rc.8-windows-x64.zip) and extract it into a writable folder.
 2. Double-click **`Verify-Checksums.bat`** to check the included files.
 3. Open **`AnalogKeyMapper.exe`** inside the extracted `AnalogKeyMapper` folder, connect your keyboard by USB, and create a mapping.
 
@@ -32,7 +32,7 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 ## Release candidate
 
-**rc.7** separates simple key assignments from advanced pressure tuning. Vertical actuation and Rapid Trigger controls sit beside a smaller square curve, each with its own calibration button. Response previews show what the settings change, with real editable points in **Edit shape**. A single shape selector replaces the duplicate choice. Numeric edits keep their row and scroll position, and native control styling covers the intermediate repaint as well as the finished screen. See the [user guide](docs/user-guide.md).
+**rc.8** gives the curve more room beside two vertical controls and keeps the settings below compact. **Actuation** also determines Rapid Trigger's renewed press; **Release** sets the release movement. Both have a calibration button. Every preset curve can be refined with Bézier points and handles without changing the saved preset. Sliders share finer dragging away from their track. The graph has no hover popups; other setting hints are brief and delayed. Scrollbar painting also covers native visibility and handle changes. See the [user guide](docs/user-guide.md).
 
 The release candidate also includes these connection and lifecycle safeguards:
 
@@ -54,7 +54,7 @@ Individual pressure ranges and output assignments:
 
 Actuation and Rapid Trigger controls, each with its own Calibrate button:
 
-![Vertical actuation, release and repress controls with per-option calibration](docs/images/key-behavior.png)
+![Vertical actuation and release controls with per-option calibration beside the square graph](docs/images/key-behavior.png)
 
 Response settings with sliders and a square curve editor:
 

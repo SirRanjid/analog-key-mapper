@@ -26,6 +26,8 @@ namespace Tk75.App
         { return (profilePath ?? "") + "\n" + runtime.SelectedControllerId + "\n" + string.Join("\n", ids.OrderBy(id => id, StringComparer.Ordinal).ToArray()); }
         void BuildCurveSettingsSliders()
         {
+            settings.Columns[0].CellTemplate = new CurveSettingTextCell();
+            settings.Columns[1].CellTemplate = new CurveSettingTextCell();
             settings.Columns.Add(new DataGridViewColumn(new CurveSettingSliderCell()) { Name = "slider", HeaderText = Tr("Regler", "Adjust"), ReadOnly = true,
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, FillWeight = 48, MinimumWidth = 88, SortMode = DataGridViewColumnSortMode.NotSortable });
             settings.Columns[2].DisplayIndex = 1;
@@ -120,24 +122,30 @@ namespace Tk75.App
         }
         void RefreshCurveSettingRow(DataGridViewRow row, string property, Binding[] chosen, string[] values)
         {
-            if (row.MinimumHeight != 44) row.MinimumHeight = 44;
-            if (row.Height != 44) row.Height = 44;
-            if (row.Cells[0].Style.WrapMode != DataGridViewTriState.True) row.Cells[0].Style.WrapMode = DataGridViewTriState.True;
+            int height = Math.Max(32, settings.Font.Height + 14);
+            if (row.MinimumHeight != height) row.MinimumHeight = height;
+            if (row.Height != height) row.Height = height;
+            if (row.Cells[0].Style.WrapMode != DataGridViewTriState.False) row.Cells[0].Style.WrapMode = DataGridViewTriState.False;
             var slider = row.Cells[2] as CurveSettingSliderCell;
             slider.Range = CurveSliderRange(property, chosen);
             SetCurveCellValue(slider, slider.Range != null && values.Length == 1 ? (object)slider.Range.FirstValue : null);
             string description = CurveSettingHelp(property);
             if (slider.Range != null)
             {
-                description += "\n\n" + Tr("Regler ziehen oder mit ←/→ anpassen. Umschalt = großer Schritt; Pos1/Ende = Grenzen. Loslassen übernimmt, Esc bricht ab.",
-                    "Drag the slider or use ←/→. Shift makes a larger step; Home/End reach the limits. Release to apply; Esc cancels.");
+                description += "\n\n" + Tr("Regler ziehen oder mit ←/→ anpassen. Beim Ziehen vom Regler wegbewegen für feinere Schritte. Umschalt = großer Schritt; Pos1/Ende = Grenzen. Loslassen übernimmt, Esc bricht ab.",
+                    "Drag the slider or use ←/→. Move away from the track while dragging for finer steps. Shift makes a larger step; Home/End reach the limits. Release to apply; Esc cancels.");
                 description += "\n" + Tr("Reglerbereich: ", "Slider range: ") + slider.Range.Display(slider.Range.Minimum) + " – " + slider.Range.Display(slider.Range.Maximum) + ".";
                 description += "\n" + Tr("Zahlenfeld: ", "Number field: ") + (property == "SmoothingTimeConstant" ? Tr("Sekunden (0,05 = 50 ms).", "seconds (0.05 = 50 ms).") :
                     property == "Exponent" || property == "Scale" ? Tr("Faktor; größere Werte können direkt eingegeben werden.", "factor; larger values can be entered directly.") : Tr("0–1 (0,25 = 25 %).", "0–1 (0.25 = 25%)."));
             }
             description += "\n" + Tr("Gilt für alle ausgewählten Zuordnungen. Gemischt bleibt unverändert, bis du einen Wert festlegst.",
                 "Applies to every selected mapping. Mixed values stay unchanged until you choose a value.");
-            foreach (DataGridViewCell cell in row.Cells) if (cell.ToolTipText != description) cell.ToolTipText = description;
+            string hint = QuietToolTip.Summarize(CurveSettingHelp(property));
+            foreach (CurveSettingTextCell cell in row.Cells)
+            {
+                cell.HelpDescription = description;
+                if (cell.ToolTipText != hint) cell.ToolTipText = hint;
+            }
         }
         static void SetCurveCellValue(DataGridViewCell cell, object value)
         { if (!Object.Equals(cell.Value, value)) cell.Value = value; }

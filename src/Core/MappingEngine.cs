@@ -137,7 +137,7 @@ namespace Tk75.Mapping
             else
             {
                 state.Valley = Math.Min(state.Valley, normalized);
-                if (normalized > state.Valley && normalized + 1e-12 >= state.Valley + settings.PressMovement)
+                if (normalized > state.Valley && normalized + 1e-12 >= state.Valley + settings.ActuationPoint)
                 { state.Active = true; state.Peak = normalized; }
             }
             // Retain the last activation order across partial RT releases so the

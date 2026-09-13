@@ -4,5 +4,5 @@ using System.Reflection;
 [assembly: AssemblyDescription("Local keyboard diagnostics for Analog Key Mapper")]
 [assembly: AssemblyProduct("Analog Key Mapper")]
 [assembly: AssemblyVersion("0.1.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.7")]
-[assembly: AssemblyInformationalVersion("1.0.0-rc.7")]
+[assembly: AssemblyFileVersion("1.0.0.8")]
+[assembly: AssemblyInformationalVersion("1.0.0-rc.8")]

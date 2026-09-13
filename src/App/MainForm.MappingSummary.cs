@@ -114,7 +114,6 @@ namespace Tk75.App
             if (input.RapidTriggerEnabled)
             {
                 parts.Add(Tr("Loslassen ", "Release ") + SummaryPercent(input.ReleaseMovement));
-                parts.Add(Tr("Erneut drücken ", "Repress ") + SummaryPercent(input.PressMovement));
             }
             if (input.OppositeKeyIndex.HasValue)
             {

@@ -10,9 +10,7 @@ namespace Tk75.App
     {
         double value = 10, originalValue;
         bool mixed, originalMixed, editing, mouseEdit, finishing, changed;
-        int pointerOrigin;
-        float thumbOffset;
-        bool preserveThumb;
+        SliderDragPrecision pointerDrag;
         double? measuredPercent;
         public event Action<double> Previewed;
         public event Action<double> Committed;
@@ -111,20 +109,21 @@ namespace Tk75.App
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e); if (e.Button != MouseButtons.Left || !Enabled) return;
-            Focus(); BeginEdit(true); pointerOrigin = e.Y; thumbOffset = 0;
-            preserveThumb = !mixed && Math.Abs(e.Y - Position(value)) <= 8;
-            if (preserveThumb) thumbOffset = e.Y - Position(value);
-            Capture = true; if (!preserveThumb) MovePointer(e.Y);
+            Focus(); BeginEdit(true);
+            bool preserveThumb = !mixed && Math.Abs(e.Y - Position(value)) <= 8;
+            if (!preserveThumb) Preview((e.Y - TrackTop) / (TrackBottom - TrackTop) * 100);
+            pointerDrag.Begin(value, e.Y, TrackX, Math.Max(1, Font.Height / 15.0));
+            Capture = true;
         }
-        void MovePointer(int y)
+        void MovePointer(int x, int y)
         {
-            if (!editing || preserveThumb && y == pointerOrigin) return;
-            preserveThumb = false; Preview((y - thumbOffset - TrackTop) / (TrackBottom - TrackTop) * 100);
+            if (!editing || !pointerDrag.Move(y, x, 100 / (TrackBottom - TrackTop), .01, 100)) return;
+            Preview(pointerDrag.Value);
         }
         protected override void OnMouseMove(MouseEventArgs e)
-        { base.OnMouseMove(e); if (editing && mouseEdit) MovePointer(e.Y); }
+        { base.OnMouseMove(e); if (editing && mouseEdit) MovePointer(e.X, e.Y); }
         protected override void OnMouseUp(MouseEventArgs e)
-        { if (e.Button == MouseButtons.Left && editing && mouseEdit) { MovePointer(e.Y); FinishEdit(); } base.OnMouseUp(e); }
+        { if (e.Button == MouseButtons.Left && editing && mouseEdit) { MovePointer(e.X, e.Y); FinishEdit(); } base.OnMouseUp(e); }
         protected override bool IsInputKey(Keys keyData)
         {
             Keys key = keyData & Keys.KeyCode;

@@ -28,7 +28,7 @@ namespace Tk75.App
                     settings.EndEdit();
                     string[] ids = SelectedSettingsBindings();
                     if (ids.Length == 0) return;
-                    try { Commit(KeyEditing.ApplyProperty(history.Current, ids, "Curve", option.Value)); }
+                    try { Commit(PrepareCurveShape(ids, option.Value)); }
                     finally { RefreshSettings(); }
                 });
             };
@@ -66,6 +66,22 @@ namespace Tk75.App
             var paste = new SleekButton { Text = "Einfügen", Dock = DockStyle.Fill }; paste.Click += delegate { Attempt(PasteSettings); }; row.Controls.Add(paste, 2, 1);
             foreach (Control control in row.Controls) if (control is Button) { control.MinimumSize = Size.Empty; control.Margin = new Padding(3); }
             return row;
+        }
+
+        Profile PrepareCurveShape(string[] ids, string value)
+        {
+            Profile before = history.Current;
+            Profile changed = KeyEditing.ApplyProperty(before, ids, "Curve", value);
+            if (value == "Bezier")
+                foreach (Binding binding in changed.Bindings.Where(binding => ids.Contains(binding.BindingId)))
+                {
+                    System.Collections.Generic.List<CurvePoint> points;
+                    if (!CurveBezierEditing.TryCreate(before.Bindings.Single(original => original.BindingId == binding.BindingId).Processing, out points))
+                        throw new InvalidOperationException(Tr("Diese Kurvenform ist für eine genaue Bézier-Umwandlung zu steil. Bitte zuerst die Krümmung reduzieren.",
+                            "This curve is too steep for an accurate Bézier conversion. Reduce curvature first."));
+                    binding.Processing.CustomPoints = points;
+                }
+            return changed;
         }
 
         void ExportCurrentCurveResponse()

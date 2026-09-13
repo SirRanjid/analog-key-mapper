@@ -133,16 +133,18 @@ nach einer übernommenen Profiländerung die betreffenden Signalzustände resett
 `Profile.Inputs` is an optional version-1 member, defaulting to an empty list when
 reading older profiles. An absent key retains its previous continuous-travel
 behavior. A configured `KeyInputSettings` uses its fixed `ActuationPoint` even
-when `RapidTriggerEnabled` is false. All three distances are calibrated fractions
+when `RapidTriggerEnabled` is false. The two active distances are calibrated fractions
 in `(0,1]`; they are not inferred millimeters.
 
 With rapid triggering, the first press reaches `ActuationPoint`. Thereafter the
 largest observed depth is the release reference; backing off by `ReleaseMovement`
 deactivates the key. The smallest subsequent observed depth is the repress
-reference; pressing down by `PressMovement` reactivates it. Returning to calibrated
+reference; pressing down by `ActuationPoint` reactivates it. Returning to calibrated
 zero resets that cycle immediately. Gates do not synthesize movement, schedule
 repeats or change the original depth. Closing a gate resets every target filter
 for that physical key, bypassing minimum output and smoothing.
+
+The legacy `PressMovement` member remains readable and round-trips for profile compatibility, but does not influence the runtime. Activation edits synchronize it to `ActuationPoint` for the selected keys.
 
 Opposite pairs must be reciprocal and have the same `InputOpposedPolicy` on both
 keys. Their gates act before all per-binding curves/output processing. Neutral

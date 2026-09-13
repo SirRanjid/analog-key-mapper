@@ -32,6 +32,8 @@ namespace Tk75.Tests
             var values = new KeyInputSettings { ActuationPoint = amount, ReleaseMovement = amount, PressMovement = amount };
             var expected = KeyInputEditing.ApplyActivation(before, new[] { 9, 14 }, values, field);
             Equal(Json(expected), Json(Current(form)), "Release commits only " + field + " for every selected key, retaining other mixed fields and unselected keys.");
+            Check(Current(form).Inputs.Where(input => input.KeyIndex == 9 || input.KeyIndex == 14).All(input => input.PressMovement == input.ActuationPoint),
+                "A completed option capture preserves a single actuation/retrigger distance for every selected key.");
             Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") == null, "Completed option capture unsubscribes before refreshing the editor.");
             Call(form, "Undo"); Pump(form);
             Equal(Json(before), Json(Current(form)), "One undo restores the whole completed " + field + " measurement.");
@@ -69,7 +71,7 @@ namespace Tk75.Tests
                 {
                     SetPreviewClientSize(form, size); DetailMode(form, "advanced"); RevealCurveSetting(form, Field<Control>(form, "keyBehaviorPanel"));
                     var keyboard = Field<VisualKeyboard>(form, "keyboard"); Rectangle bounds = Relative(form, keyboard);
-                    foreach (string name in new[] { "actuationSlider", "releaseSlider", "repressSlider", "actuationPoint", "releaseMovement", "pressMovement", "calibrateActuation", "calibrateRelease", "calibrateRepress", "applyKeyBehavior", "resetKeyBehavior" })
+                    foreach (string name in new[] { "actuationSlider", "releaseSlider", "actuationPoint", "releaseMovement", "calibrateActuation", "calibrateRelease", "applyKeyBehavior", "resetKeyBehavior" })
                         VisibleInside(form, Field<Control>(form, name), "recording-layout/" + size + "/" + name);
                     CapturePreview(form, artifacts, "input-thresholds-" + size.Width + "x" + size.Height);
                     DetailMode(form, null); Check(Relative(form, keyboard) == bounds, "Switching from advanced pressure controls to Keys retains keyboard bounds.");
@@ -134,9 +136,11 @@ namespace Tk75.Tests
                 PushDialog(input, 9, 60, 100, 20); Call(form, "UpdateLive");
                 CheckCapturedOption(form, before, InputActivationFields.Release, .2); AssertCalibrationUnchanged(form, calibration, path, saved);
 
-                PushDialog(input, 14, 10); ClickInputCalibration(form, "calibrateRepress");
+                // Recording the same shared threshold with another selected
+                // key still respects that key's individual pressure range.
+                PushDialog(input, 14, 10); ClickInputCalibration(form, "calibrateActuation");
                 PushDialog(input, 14, 35, 60, 10); Call(form, "UpdateLive");
-                CheckCapturedOption(form, before, InputActivationFields.Press, .25); AssertCalibrationUnchanged(form, calibration, path, saved);
+                CheckCapturedOption(form, before, InputActivationFields.Actuation, .25); AssertCalibrationUnchanged(form, calibration, path, saved);
 
                 PushDialog(input, 9, 20); ClickInputCalibration(form, "calibrateActuation"); PushDialog(input, 9, 100); Call(form, "UpdateLive");
                 DetailMode(form, null); PushDialog(input, 9, 20); Call(form, "UpdateLive");
@@ -187,7 +191,7 @@ namespace Tk75.Tests
                 Equal(Json(before), Json(Current(form)), "Disconnect never applies an incomplete threshold."); AssertCalibrationUnchanged(form, calibration, path, saved);
                 form.Close();
             }
-            Console.WriteLine("INPUT CAPTURE UI PASS: " + (assertions - started) + " assertions; real synthetic reader, all three options, release/undo, source isolation and cancellation.");
+            Console.WriteLine("INPUT CAPTURE UI PASS: " + (assertions - started) + " assertions; real synthetic reader, both options, shared retrigger distance, release/undo and cancellation.");
         }
     }
 }

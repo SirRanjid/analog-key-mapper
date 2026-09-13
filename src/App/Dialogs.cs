@@ -48,7 +48,8 @@ namespace Tk75.App
 
     public sealed partial class CurveCanvas : Control
     {
-        SignalSettings settings;
+        SignalSettings settings, editableShape;
+        bool shapeFitAttempted, shapeFitUnavailable;
         bool mixed, finishing;
         string contextKey;
         CurvePointEditing edit;
@@ -56,8 +57,6 @@ namespace Tk75.App
         Point dragOrigin, lastMouse;
         double originX, originY;
         int hovered = -1, hoveredPart = -1, selectedPoint = -1, previousSelectedPoint = -1;
-        readonly ToolTip tips = new ToolTip { InitialDelay = 350, ReshowDelay = 100, AutoPopDelay = 8000 };
-        string lastTip;
         double? inspectedInput;
         SignalSettings sampledCurve;
         double[] responseSamples;
@@ -81,10 +80,15 @@ namespace Tk75.App
             var next = CopySettings(value);
             bool contextChanged = contextKey != selectionContext;
             bool changed = contextChanged || mixed != isMixed || !SameSettings(settings, next);
+            bool shapeChanged = settings == null || next == null || settings.Curve != next.Curve || settings.Exponent != next.Exponent ||
+                !CurvePointEditing.Same(settings.CustomPoints, next.CustomPoints);
             if (changed) { CancelEdit(); hovered = hoveredPart = -1; }
+            if (shapeChanged) { editableShape = null; shapeFitAttempted = shapeFitUnavailable = false; }
             if (contextChanged) { inspectedInput = null; activeSetting = null; activeInputField = InputActivationFields.None; }
             settings = next; mixed = isMixed; contextKey = selectionContext;
-            if (!IsEditing && (contextChanged || settings == null || !HasNodes(settings.Curve) || settings.CustomPoints == null || selectedPoint >= settings.CustomPoints.Count)) selectedPoint = -1;
+            var editable = shapeEditing ? EditableShape() : settings;
+            if (shapeEditing && editable == null) shapeEditing = false;
+            if (!IsEditing && (contextChanged || editable == null || !HasNodes(editable.Curve) || editable.CustomPoints == null || selectedPoint >= editable.CustomPoints.Count)) selectedPoint = -1;
             UpdateViewButton(); UpdateTip(); Invalidate();
         }
         static SignalSettings CopySettings(SignalSettings value)
@@ -99,23 +103,44 @@ namespace Tk75.App
         {
             get
             {
-                float width = Math.Max(20, Width - 63), height = Math.Max(20, Height - 88);
+                float width = Math.Max(20, Width - 63), height = Math.Max(20, Height - 98);
                 float side = Math.Min(width, height);
-                return new RectangleF(42 + (width - side) / 2, 36 + (height - side) / 2, side, side);
+                return new RectangleF(42 + (width - side) / 2, 46 + (height - side) / 2, side, side);
             }
         }
         float HitRadius { get { return Math.Max(9, Font.Height * .6f); } }
         static bool HasNodes(CurveKind kind) { return kind == CurveKind.Custom || kind == CurveKind.Bezier; }
+        SignalSettings EditableShape()
+        {
+            if (settings == null || HasNodes(settings.Curve)) return settings;
+            if (!shapeFitAttempted)
+            {
+                // A view-only, detached fit. Merely opening Shape, selecting a
+                // handle, or canceling a drag never converts the saved mapping.
+                shapeFitAttempted = true;
+                List<CurvePoint> points;
+                if (CurveBezierEditing.TryCreate(settings, out points))
+                {
+                    editableShape = CopySettings(settings);
+                    editableShape.CustomPoints = points;
+                    editableShape.Curve = CurveKind.Bezier;
+                }
+                else shapeFitUnavailable = true;
+            }
+            return editableShape;
+        }
+        string ShapeUnavailableText()
+        { return UiText.Get("Form zu steil für Bézier. Krümmung zuerst reduzieren.", "Shape too steep for Bézier. Reduce curvature first."); }
         CurvePointEditing NewEditor()
         {
             if (settings == null) return null;
-            try { return new CurvePointEditing(HasNodes(settings.Curve) ? settings.CustomPoints : new List<CurvePoint> { new CurvePoint(0, 0), new CurvePoint(1, 1) }); }
+            try { var editable = EditableShape(); return editable == null ? null : new CurvePointEditing(editable.CustomPoints); }
             catch (ArgumentException) { return null; }
         }
         int Hit(CurvePointEditing editor, Point location, out int index)
         {
             index = -1; if (editor == null) return -1; RectangleF plot = Plot;
-            return editor.HitPart(settings != null && settings.Curve == CurveKind.Bezier ? selectedPoint : -1,
+            return editor.HitPart(settings != null && EditableShape().Curve == CurveKind.Bezier ? selectedPoint : -1,
                 location.X, location.Y, plot.Left, plot.Top, plot.Width, plot.Height, HitRadius, out index);
         }
         PointF PlotPoint(CurvePoint point)
@@ -143,7 +168,7 @@ namespace Tk75.App
             DrawRangeRailLabels(g);
             using (var grid = new Pen(ModernTheme.Border)) for (int i = 0; i <= 4; i++) { float t = i / 4f; g.DrawLine(grid, plot.Left + t * plot.Width, plot.Top, plot.Left + t * plot.Width, plot.Bottom); g.DrawLine(grid, plot.Left, plot.Bottom - t * plot.Height, plot.Right, plot.Bottom - t * plot.Height); }
             if (settings == null) return;
-            var shown = CopySettings(settings);
+            var shown = CopySettings(shapeEditing ? EditableShape() : settings);
             if (IsEditing) { shown.Curve = editKind; shown.CustomPoints = edit.Preview; }
             double[] samples = CurveSamples(shown); var points = new PointF[samples.Length];
             if (!shapeEditing) DrawResponseGuides(g, shown);
@@ -187,17 +212,8 @@ namespace Tk75.App
             // An inspection cursor is a crosshair, never a hollow draggable node.
             using (var edge = new Pen(ModernTheme.AccentHover, 1.5f))
             { graphics.DrawLine(edge, position.X - 4, position.Y, position.X + 4, position.Y); graphics.DrawLine(edge, position.X, position.Y - 4, position.X, position.Y + 4); }
-            double x = selected == null ? sample / (double)(points.Length - 1) : selected.X, y = selected == null ? responseSamples[sample] : selected.Y;
-            string label = (x * 100).ToString("0.#") + " % → " + (y * 100).ToString("0.#") + " %";
-            Size size = TextRenderer.MeasureText(label, Font, Size.Empty, TextFormatFlags.NoPadding);
-            int width = Math.Min(Width - 12, size.Width + 10);
-            int left = Math.Max(6, Math.Min(Width - width - 6, (int)position.X - width / 2));
-            int top = (int)position.Y - size.Height - 13;
-            if (top < plot.Top) top = (int)position.Y + 11;
-            var area = new Rectangle(left, Math.Min(Height - 46, top), width, size.Height + 4);
-            using (var fill = new SolidBrush(ModernTheme.SurfaceAlt)) graphics.FillRectangle(fill, area);
-            TextRenderer.DrawText(graphics, label, Font, area, ModernTheme.Foreground,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+            // Keep unobtrusive axis guides without covering the curve or its
+            // handles with a floating tooltip-style readout.
         }
         void DrawHandles(Graphics graphics, SignalSettings shown)
         {
@@ -224,10 +240,10 @@ namespace Tk75.App
             if (!shapeEditing || settings == null || IsEditing || (e.Button != MouseButtons.Left && e.Button != MouseButtons.Right)) return;
             Focus(); var candidate = NewEditor(); if (candidate == null) return;
             int hit; int part = Hit(candidate, e.Location, out hit); RectangleF plot = Plot;
-            CurveKind kind = settings.Curve == CurveKind.Custom ? CurveKind.Custom : CurveKind.Bezier;
+            CurveKind kind = EditableShape().Curve;
             if (e.Button == MouseButtons.Right)
             {
-                var changed = part > 0 ? candidate.ResetTangent(hit) : part == 0 && HasNodes(settings.Curve) ? candidate.Remove(hit) : null;
+                var changed = part > 0 ? candidate.ResetTangent(hit) : part == 0 ? candidate.Remove(hit) : null;
                 if (changed != null) { if (part == 0) selectedPoint = -1; CompleteEdit(changed, kind); }
                 hovered = hoveredPart = -1; UpdateTip(); Invalidate(); return;
             }
@@ -258,7 +274,7 @@ namespace Tk75.App
             double? inspected = settings != null && Plot.Contains(e.Location) ? (double?)Math.Round((e.X - Plot.Left) / Plot.Width, 2) : null;
             if (hit != hovered || part != hoveredPart || inspected != inspectedInput) { hovered = hit; hoveredPart = part; inspectedInput = inspected; UpdateTip(); Invalidate(); }
             bool movable = candidate != null && hit > 0 && hit < candidate.Preview.Count - 1;
-            Cursor = part > 0 || movable || part == 0 && settings != null && settings.Curve == CurveKind.Bezier ? Cursors.Hand : settings != null && Plot.Contains(e.Location) ? Cursors.Cross : Cursors.Default;
+            Cursor = part > 0 || movable || part == 0 && settings != null && EditableShape().Curve == CurveKind.Bezier ? Cursors.Hand : settings != null && Plot.Contains(e.Location) ? Cursors.Cross : Cursors.Default;
         }
         protected override void OnMouseUp(MouseEventArgs e)
         {
@@ -294,7 +310,7 @@ namespace Tk75.App
                     UiText.Get("Klicken: eigenen Punkt setzen. Punkt ziehen: verschieben. Rechtsklick direkt auf einen inneren Punkt: löschen. Die Kurve bleibt ansteigend.", "Click to add a custom point. Drag a point to move it. Right-click directly on an interior point to delete it. The curve stays nondecreasing.");
             if (shapeEditing) text += "\n\n" + UiText.Get("Form-Editor: Horizontal Eingabe nach den Totbereichen, vertikal Kurvenergebnis, jeweils 0–100 %. Nur eigene Punkte und Bézier-Griffe lassen sich ziehen. Mit Antwort siehst du wieder das Ergebnis einschließlich der anderen Einstellungen.",
                 "Shape editor: horizontal input after deadzones, vertical curve result, both 0–100%. Only custom points and Bézier handles are draggable. Response returns to the output including the other settings.");
-            if (text != lastTip) { lastTip = text; tips.SetToolTip(this, text); }
+            AccessibleDescription = shapeFitUnavailable ? ShapeUnavailableText() + " " + text : text;
         }
         protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); UpdateTip(); }
         protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); if (!IsEditing) { hovered = hoveredPart = -1; inspectedInput = null; UpdateTip(); Invalidate(); } }
@@ -308,6 +324,6 @@ namespace Tk75.App
             if (IsEditing && keyData == Keys.Escape) { CancelEdit(); UpdateTip(); return true; }
             return base.ProcessCmdKey(ref message, keyData);
         }
-        protected override void Dispose(bool disposing) { if (disposing) { CancelEdit(); tips.Dispose(); } base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing) CancelEdit(); base.Dispose(disposing); }
     }
 }

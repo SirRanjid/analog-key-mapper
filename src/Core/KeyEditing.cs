@@ -104,7 +104,7 @@ namespace Tk75.Mapping
         {
             if ((fields & InputActivationFields.RapidTrigger) != 0) target.RapidTriggerEnabled = source.RapidTriggerEnabled;
             if ((fields & InputActivationFields.Actuation) != 0) target.ActuationPoint = source.ActuationPoint;
-            if ((fields & InputActivationFields.Press) != 0) target.PressMovement = source.PressMovement;
+            target.PressMovement = target.ActuationPoint;
             if ((fields & InputActivationFields.Release) != 0) target.ReleaseMovement = source.ReleaseMovement;
         }
         public static Profile SetPairing(Profile profile, IEnumerable<int> keyIndices, int? opposite, InputOpposedPolicy policy)

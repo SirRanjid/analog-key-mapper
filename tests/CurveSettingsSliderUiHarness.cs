@@ -37,7 +37,11 @@ namespace Tk75.Tests
                 "All ten continuous curve-tab settings offer sliders.");
             foreach (DataGridViewRow row in grid.Rows)
             {
-                Check(row.Cells.Cast<DataGridViewCell>().All(c => c.ToolTipText.Length > 180), "Every setting label, value and slider explains its effect and selection scope.");
+                Check(row.Cells.Cast<DataGridViewCell>().All(c => c.ToolTipText.Length > 20 && c.ToolTipText.Length <= QuietToolTip.MaximumTextLength && c.ToolTipText.IndexOf('\n') < 0),
+                    "Every setting offers a concise single-paragraph hover reminder.");
+                Check(row.Cells.Cast<DataGridViewCell>().All(c => c.AccessibilityObject.Description.Length > 180 && c.AccessibilityObject.Description.Contains("Esc")),
+                    "Full setting effects, gesture help and selection scope remain in each cell's accessible description.");
+                Check(row.Height == Math.Max(32, grid.Font.Height + 14), "Curve setting rows have compact, font-safe height without a duplicate slider readout.");
                 var cell = (CurveSettingSliderCell)row.Cells[2]; if (cell.Range == null) continue;
                 foreach (double boundary in new[] { cell.Range.Minimum, cell.Range.Maximum })
                 {
@@ -45,6 +49,7 @@ namespace Tk75.Tests
                     Check(MappingValidation.ValidateProfile(bounded).Count == 0, "Slider limits preserve every selected mapping's dependent bounds: " + cell.Range.Property);
                 }
             }
+            Check(!grid.ShowCellToolTips, "The grid's intrusive native tooltip is replaced by delayed compact help.");
             string untouched = Json(Current(form));
             SignalSettings originalResponse = canvas.Settings;
             foreach (DataGridViewRow row in grid.Rows)
