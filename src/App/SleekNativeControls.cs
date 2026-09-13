@@ -297,7 +297,24 @@ namespace Tk75.App
         {
             readonly bool standalone, vertical;
             public ScrollSurface(Control owner) : base(owner)
-            { standalone = owner is ScrollBar; vertical = owner is VScrollBar; }
+            {
+                standalone = owner is ScrollBar; vertical = owner is VScrollBar;
+                if (owner is ScrollableControl) owner.Layout += LayoutChanged;
+            }
+            void LayoutChanged(object sender, LayoutEventArgs e)
+            {
+                // PerformLayout also runs directly from managed code, outside
+                // any WM_SIZE/WM_WINDOWPOSCHANGED dispatch. ScrollableControl
+                // synchronizes its native scrollbars before raising Layout;
+                // SetScrollInfo(redraw:true) can overwrite our frame there.
+                // Restore it synchronously at that edge, not on a queued paint.
+                if (Handle != IntPtr.Zero && !Owner.IsDisposed) ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero);
+            }
+            public override void Dispose()
+            {
+                if (Owner is ScrollableControl) Owner.Layout -= LayoutChanged;
+                base.Dispose();
+            }
             protected override void WndProc(ref Message message)
             {
                 if (standalone && NativeControlPaint.TryClientPaint(ref message, Owner.ClientSize, PaintStandalone)) return;

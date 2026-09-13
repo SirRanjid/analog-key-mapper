@@ -139,8 +139,18 @@ namespace Tk75.Tests
                     CheckThemeExistingFrame(panel, true, "AutoScroll frame immediately after native wheel " + i);
                     ThemeSend(panel.Handle, 0x0114, (IntPtr)1, IntPtr.Zero);
                     CheckThemeExistingFrame(panel, false, "AutoScroll frame immediately after horizontal line scroll " + i);
-                    panel.Height = 226 - i * 6; panel.PerformLayout();
+                    panel.Height = 226 - i * 6;
+                    CheckThemeExistingFrame(panel, true, "AutoScroll frame immediately after size change " + i);
+                    // A managed layout is a separate redraw edge; do not pump
+                    // messages or force paint between it and the direct probe.
+                    Point position = panel.AutoScrollPosition;
+                    panel.PerformLayout();
                     CheckThemeExistingFrame(panel, true, "AutoScroll frame immediately after layout " + i);
+                    CheckThemeExistingFrame(panel, false, "Horizontal AutoScroll frame immediately after layout " + i);
+                    ThemeCheck(panel.AutoScrollPosition == position, "The synchronous frame pass preserves the layout's native scroll position at step " + i + ".");
+                    panel.AutoScrollMinSize = new Size(400 + i * 20, 1100 + i * 150);
+                    CheckThemeExistingFrame(panel, true, "AutoScroll frame immediately after content range change " + i);
+                    CheckThemeExistingFrame(panel, false, "Horizontal AutoScroll frame immediately after content range change " + i);
                 }
                 host.Close();
             }

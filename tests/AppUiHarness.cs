@@ -1800,6 +1800,22 @@ namespace Tk75.Tests
             foreach (string failure in layoutFailures) Console.Error.WriteLine("LAYOUT FAILURE: " + failure);
             Check(layoutFailures.Count == 0, "English controls remain usable in every main context at the default and minimum sizes.");
         }
+        static void RunIsolatedFeature(string name, string artifacts, List<string> failures, Action<MainForm, string> check)
+        {
+            string language = UiText.Language;
+            try
+            {
+                using (var preview = new MainForm(Path.Combine(artifacts, "feature-data", name), true))
+                {
+                    preview.ShowInTaskbar = false; preview.StartPosition = FormStartPosition.Manual; preview.Location = new Point(-30000, -30000);
+                    preview.MaximumSize = new Size(2048, 2048); preview.Show(); Pump(preview);
+                    SetPreviewClientSize(preview, DefaultClientSize); Call(preview, "SwitchLanguage", "en");
+                    check(preview, artifacts);
+                }
+            }
+            catch (Exception error) { failures.Add(name); Console.Error.WriteLine("FEATURE FAILURE [" + name + "]: " + error); }
+            finally { UiText.SetLanguage(language); }
+        }
         [STAThread]
         public static int Main(string[] args)
         {
@@ -1833,14 +1849,21 @@ namespace Tk75.Tests
                 RunEnglishContexts(form, data, artifacts);
                 RunKeyboardTabClicks(form);
                 RunControllerModifierUi(artifacts);
-                RunNativeThemeControls(artifacts);
-                CheckCurveShapePicker(form, artifacts);
-                RunCurveDynamicsUi(form, artifacts);
-                RunCurveRangeRailUi(form, artifacts);
-                RunInputThresholdCapture(artifacts);
-                RunKeyAnnotations(form, artifacts);
-                CheckMappingSummaries(form, artifacts);
-                RunSocdDragUi(form, artifacts);
+                // Report independent feature failures together; every section
+                // still has to pass, and each gets a fresh synthetic app so a
+                // failed draft or focus transition cannot contaminate the next.
+                var featureFailures = new List<string>();
+                RunIsolatedFeature("native-theme", artifacts, featureFailures, delegate(MainForm preview, string output) { RunNativeThemeControls(output); });
+                RunIsolatedFeature("curve-shape", artifacts, featureFailures, CheckCurveShapePicker);
+                RunIsolatedFeature("curve-dynamics", artifacts, featureFailures, RunCurveDynamicsUi);
+                RunIsolatedFeature("curve-ranges", artifacts, featureFailures, RunCurveRangeRailUi);
+                RunIsolatedFeature("threshold-capture", artifacts, featureFailures, delegate(MainForm preview, string output) { RunInputThresholdCapture(output); });
+                RunIsolatedFeature("key-annotations", artifacts, featureFailures, RunKeyAnnotations);
+                RunIsolatedFeature("mapping-summaries", artifacts, featureFailures, CheckMappingSummaries);
+                RunIsolatedFeature("socd-capture", artifacts, featureFailures, RunSocdDragUi);
+                foreach (string failure in layoutFailures) Console.Error.WriteLine("LAYOUT FAILURE: " + failure);
+                Check(featureFailures.Count == 0 && layoutFailures.Count == 0,
+                    "All independent UI features and their layout checks pass. Failed features: " + String.Join(", ", featureFailures.ToArray()));
                 Console.WriteLine("PASS: " + assertions + " assertions; actual MainForm preview, synthetic data, no hardware/controller.");
                 return 0;
             }
