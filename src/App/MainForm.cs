@@ -206,7 +206,10 @@ namespace Tk75.App
                 // Reusing rows must not carry an unfinished numeric draft to
                 // a different key, controller or profile. Cancel under the
                 // refresh guard so CellEndEdit cannot apply it to the new scope.
-                if (curveSettingsContext != null && curveSettingsContext != context && settings.IsCurrentCellInEditMode) settings.CancelEdit();
+                // CancelEdit restores the old text but intentionally keeps the
+                // native editor open. End that restored edit before updating
+                // its reused cell with the next selection's value.
+                if (curveSettingsContext != null && curveSettingsContext != context && settings.IsCurrentCellInEditMode && settings.CancelEdit()) settings.EndEdit();
                 curveSettingsContext = context;
                 // CellEndEdit may run inside SetCurrentCellAddressCore while a
                 // click is moving to another cell. Replacing rows or assigning

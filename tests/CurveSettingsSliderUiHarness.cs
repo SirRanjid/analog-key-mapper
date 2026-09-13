@@ -147,8 +147,16 @@ namespace Tk75.Tests
                 Check(grid.BeginEdit(true), "A numeric draft can start before changing keyboard selection.");
                 ((TextBox)grid.EditingControl).Text = "0.083";
                 SelectKeys(form, 21);
-                Check(!grid.IsCurrentCellInEditMode, "Changing selected keys cancels the old numeric draft even though rows are reused.");
                 Equal(Json(before), Json(Current(form)), "An unfinished numeric draft cannot apply to the newly selected key.");
+                string targetValue = before.Bindings.Single(b => b.KeyIndex == 21).Processing.SmoothingTimeConstant.ToString(CultureInfo.InvariantCulture);
+                string remainingEditor = grid.EditingControl == null ? "<none>" : grid.EditingControl.GetType().Name + ":" + grid.EditingControl.Text;
+                Check(!grid.IsCurrentCellInEditMode, "Changing selected keys closes the canceled numeric draft even though rows are reused. " +
+                    "[editor=" + remainingEditor + "; cell=" + source.Value + "; expected=" + targetValue + "; context=" + Field<string>(form, "curveSettingsContext") + "]");
+                Equal(targetValue, Convert.ToString(source.Value, CultureInfo.InvariantCulture), "The reused numeric cell displays only the new selection's committed value.");
+                Check(grid.BeginEdit(true), "The new key selection can immediately open its own numeric editor.");
+                Equal(targetValue, grid.EditingControl.Text, "The next editor starts with the new key's value, not the canceled selection's value.");
+                grid.EndEdit();
+                Equal(Json(before), Json(Current(form)), "Leaving the new editor unchanged cannot leak either prior numeric draft into the new key.");
                 SelectKeys(form, 9, 14); SelectBindings(form, scope[0]);
                 Check(additions == 0 && removals == 0 && rows.SequenceEqual(grid.Rows.Cast<DataGridViewRow>()), "Keyboard selection changes also preserve the settings row instances.");
             }
