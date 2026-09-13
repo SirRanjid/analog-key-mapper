@@ -171,7 +171,7 @@ namespace Tk75.App
             double minimum = activeHandle == 0 ? rangeMinimum : selectedMinimum + gap;
             double maximum = activeHandle == 0 ? selectedMaximum - gap : rangeMaximum;
             if (pointerDrag.Move(x, y, (rangeMaximum - rangeMinimum) / (TrackRight - TrackLeft), minimum, maximum))
-                MoveHandle(Math.Round(pointerDrag.Value, MidpointRounding.AwayFromZero));
+                MoveHandle(pointerDrag.QuantizedValue(1, minimum, maximum));
         }
         protected override void OnMouseMove(MouseEventArgs e)
         {

@@ -138,8 +138,7 @@ namespace Tk75.App
             Rectangle track = CurveSettingSliderCell.Track(GetCellDisplayRectangle(editingSlider.ColumnIndex, editingSlider.RowIndex, false));
             CurveSettingRange range = editingSlider.Range;
             if (!pointerDrag.Move(x, y, (range.Maximum - range.Minimum) / track.Width, range.Minimum, range.Maximum)) return;
-            double fraction = range.Maximum > range.Minimum ? (pointerDrag.Value - range.Minimum) / (range.Maximum - range.Minimum) : 0;
-            Preview(range.FromFraction(fraction));
+            Preview(pointerDrag.QuantizedValue(range.Step, range.Minimum, range.Maximum));
         }
         protected override void OnMouseMove(MouseEventArgs e)
         { if (editingSlider != null && mouseGesture) MoveSlider(e.X, e.Y); else base.OnMouseMove(e); }

@@ -6,12 +6,12 @@ namespace Tk75.App
     // formatting and a control's permitted value steps never feed back into it.
     internal struct SliderDragPrecision
     {
-        double value, previousAxis, perpendicularAxis, uiScale;
+        double value, originValue, previousAxis, perpendicularAxis, uiScale;
         public double Value { get { return value; } }
 
         public void Begin(double startValue, double axis, double trackPerpendicular, double scale)
         {
-            value = startValue; previousAxis = axis; perpendicularAxis = trackPerpendicular;
+            value = originValue = startValue; previousAxis = axis; perpendicularAxis = trackPerpendicular;
             uiScale = Math.Max(1, scale);
         }
 
@@ -30,6 +30,17 @@ namespace Tk75.App
             value = Math.Max(minimum, Math.Min(maximum,
                 value + delta * unitsPerPixel * Sensitivity(perpendicular - perpendicularAxis, uiScale)));
             return true;
+        }
+
+        public double QuantizedValue(double step, double minimum, double maximum)
+        {
+            // A manually entered value need not lie on a slider's usual step
+            // grid. Quantize the *movement* from its exact pickup value, so a
+            // tiny forward drag can never round an existing value backwards.
+            if (value <= minimum) return minimum;
+            if (value >= maximum) return maximum;
+            return Math.Max(minimum, Math.Min(maximum,
+                originValue + Math.Round((value - originValue) / step) * step));
         }
     }
 }

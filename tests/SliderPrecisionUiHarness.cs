@@ -112,9 +112,45 @@ namespace Tk75.Tests
                     }, "Curve settings");
                 Check(pressureCommits == 4 && thresholdCommits == 4 && railCommits == 4 && gridCommits == 4,
                     "Every control emits one completed edit per changed drag, never for previews or an orthogonal-only gesture.");
+                CheckFractionalPrecision(pressure, false, delegate { return pressure.SelectedMinimum; },
+                    delegate { pressure.SetRange(0, 1000, 200.25, 800); },
+                    delegate { return new Point(PrecisionPosition(pressure, pressure.SelectedMinimum), (int)Math.Round(PrecisionProperty(pressure, "TrackY"))); }, "Pressure range");
+                CheckFractionalPrecision(threshold, true, delegate { return threshold.Value; },
+                    delegate { threshold.SetValue(25.125, false); },
+                    delegate { return new Point((int)Math.Round(PrecisionProperty(threshold, "TrackX")), PrecisionPosition(threshold, threshold.Value)); }, "Actuation/release");
+                CheckFractionalPrecision(rail, true, delegate { return rail.ValueAt(0); },
+                    delegate { rail.Configure(0, .25045, false, 0, .7); rail.Configure(1, .75, false, .3, 1); },
+                    delegate { return new Point(rail.Width / 2, PrecisionPosition(rail, rail.ValueAt(0))); }, "Curve range");
+                CheckFractionalPrecision(grid, false, delegate { return Convert.ToDouble(cell.Value, CultureInfo.InvariantCulture); },
+                    delegate { cell.Value = .25345; }, delegate {
+                        Rectangle track = CurveSettingSliderCell.Track(grid.GetCellDisplayRectangle(0, 0, false));
+                        return new Point((int)Math.Round(track.Left + track.Width * .25345), track.Top);
+                    }, "Curve settings");
                 form.Controls.Remove(host);
             }
             Console.WriteLine("SLIDER PRECISION UI PASS: " + (assertions - started) + " assertions; all four real control gestures and completed edits.");
+        }
+        static void CheckFractionalPrecision(Control control, bool vertical, Func<double> read, Action reset, Func<Point> pickup, string name)
+        {
+            foreach (int direction in new[] { -1, 1 })
+            {
+                reset(); Point start = pickup(); double original = read();
+                int across = (int)Math.Round(3000 * Math.Max(1, control.Font.Height / 15.0));
+                PrecisionMouse(control, "OnMouseDown", start);
+                PrecisionMouse(control, "OnMouseMove", PrecisionPoint(start, vertical, 1 * direction, across));
+                Check(read() == original, name + ": one tiny movement preserves an off-grid fractional pickup.");
+                double previous = read();
+                across = (int)Math.Round(664 * Math.Max(1, control.Font.Height / 15.0));
+                for (int i = 2; i <= 150; i++)
+                {
+                    PrecisionMouse(control, "OnMouseMove", PrecisionPoint(start, vertical, i * direction, across));
+                    Check(direction * (read() - previous) >= 0, name + ": fractional fine movement never changes value against pointer direction.");
+                    previous = read();
+                }
+                Check(direction * (read() - original) > 0, name + ": fractional fine changes accumulate to visible progress.");
+                PrecisionMouse(control, "OnMouseUp", PrecisionPoint(start, vertical, 150 * direction, across));
+                Check(read() == previous, name + ": committing preserves the off-grid gesture's final value.");
+            }
         }
     }
 }

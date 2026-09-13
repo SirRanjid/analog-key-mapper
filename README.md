@@ -32,7 +32,7 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 ## Release candidate
 
-**rc.8** gives the curve more room beside two vertical controls and keeps the settings below compact. **Actuation** also determines Rapid Trigger's renewed press; **Release** sets the release movement. Both have a calibration button. Every preset curve can be refined with Bézier points and handles without changing the saved preset. Sliders share finer dragging away from their track. The graph has no hover popups; other setting hints are brief and delayed. Scrollbar painting also covers native visibility and handle changes. See the [user guide](docs/user-guide.md).
+**rc.8** gives the curve more room beside two vertical controls and keeps the settings below compact. **Actuation** also determines Rapid Trigger's renewed press; **Release** sets the release movement. Both have a calibration button. Every built-in preset curve can be refined with Bézier points and handles without changing the saved preset. Sliders share finer dragging away from their track. The graph has no hover popups; other setting hints are brief and delayed. Scrollbar painting also covers native visibility and handle changes. See the [user guide](docs/user-guide.md).
 
 The release candidate also includes these connection and lifecycle safeguards:
 

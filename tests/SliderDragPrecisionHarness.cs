@@ -68,6 +68,34 @@ public static class SliderDragPrecisionHarness
         gesture.Begin(37.125, 700, 50, 1);
         Check(!gesture.Move(700, -900, 1, 0, 100), "A new gesture clears prior pointer history.");
         Near(gesture.Value, 37.125, "A no-op gesture never rounds a saved fractional setting");
+        foreach (double[] values in new[] {
+            new[] { 200.25, 1.0, 0.0, 1000.0 }, new[] { 25.125, .01, .01, 100.0 },
+            new[] { .12345, .01, 0.0, 2.0 }, new[] { .25045, .001, 0.0, 1.0 }
+        })
+        {
+            double origin = values[0], step = values[1], low = values[2], high = values[3];
+            foreach (int direction in new[] { -1, 1 })
+            {
+                gesture.Begin(origin, 0, 0, 1);
+                gesture.Move(1, 3000, direction * step / 2, low, high);
+                Near(gesture.QuantizedValue(step, low, high), origin,
+                    "A first sub-step gesture preserves an off-grid pickup instead of rounding it in either direction");
+                double displayedPrevious = origin;
+                gesture.Begin(origin, 0, 0, 1);
+                for (int axis = 1; axis <= 200; axis++)
+                {
+                    gesture.Move(axis, 664, direction * step / 2, low, high);
+                    double quantized = gesture.QuantizedValue(step, low, high);
+                    Check(direction * (quantized - displayedPrevious) >= 0, "Fine movement never rounds an off-grid value against pointer direction.");
+                    displayedPrevious = quantized;
+                }
+                Near(displayedPrevious, origin + direction * step, "Accumulated fine movement retains one whole step relative to the exact pickup");
+            }
+            gesture.Begin(origin, 0, 0, 1); gesture.Move(100000, 0, step, low, high);
+            Near(gesture.QuantizedValue(step, low, high), high, "An off-grid pickup can still reach the exact upper limit");
+            gesture.Move(-100000, 0, step, low, high);
+            Near(gesture.QuantizedValue(step, low, high), low, "An off-grid pickup can still reach the exact lower limit");
+        }
         Console.WriteLine("SLIDER PRECISION PASS: " + assertions + " assertions; relative fine control, DPI, symmetry, accumulation and bounds.");
     }
 }

@@ -55,9 +55,11 @@ namespace Tk75.App
             editing = true; mouseGesture = mouse;
         }
         void Preview(double value)
+        { PreviewExact(Math.Round(value, 3)); }
+        void PreviewExact(double value)
         {
             if (!editing) return;
-            value = Math.Max(minimum[active], Math.Min(maximum[active], Math.Round(value, 3)));
+            value = Math.Max(minimum[active], Math.Min(maximum[active], value));
             if (values[active] == value && !mixed[active]) return;
             values[active] = value; mixed[active] = false; changed = true; Invalidate();
             if (Previewed != null) Previewed(active, value);
@@ -81,7 +83,7 @@ namespace Tk75.App
         void MovePointer(int x, int y)
         {
             if (!pointerDrag.Move(y, x, (Reversed ? -1.0 : 1.0) / TrackHeight, minimum[active], maximum[active])) return;
-            Preview(pointerDrag.Value);
+            PreviewExact(pointerDrag.QuantizedValue(.001, minimum[active], maximum[active]));
         }
         protected override void OnMouseDown(MouseEventArgs e)
         {

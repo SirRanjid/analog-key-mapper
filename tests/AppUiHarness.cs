@@ -257,11 +257,14 @@ namespace Tk75.Tests
             CheckStableKeyboard(form, baseline, drawing, label + "/input"); CapturePreview(form, artifacts, label + "-input");
             DetailMode(form, "advanced");
             CheckDetailTabState(form, "advanced", label + "/curve tabs");
-            foreach (string name in new[] { "curveShape", "pasteMode", "curve" }) VisibleInside(form, Field<Control>(form, name), label + "/advanced/" + name);
+            foreach (string name in new[] { "curveShape", "pasteMode" }) VisibleInside(form, Field<Control>(form, name), label + "/advanced/" + name);
             LayoutCheck(!Field<Control>(form, "keyTitle").Visible && Field<Control>(form, "keyBehaviorPanel").Visible && !Field<Control>(form, "controllerPreview").Visible, label + ": Curve contains the plot and advanced pressure controls.");
             LayoutCheck(!Field<Control>(form, "preset").Visible, label + ": presets do not create a second visible shape selector.");
             CheckBar(form, Field<Control>(form, "curveShape").Parent, label + "/advanced/signal");
             DataGridView settings = Field<DataGridView>(form, "settings"); Control curve = Field<Control>(form, "curve");
+            // A full-width square and the toolbar need sequential scrolling at
+            // the minimum window height. The entire graph must be reachable.
+            RevealCurveSetting(form, curve); VisibleInside(form, curve, label + "/advanced/curve");
             LayoutCheck(settings.ClientSize.Width >= 180 && settings.ClientSize.Height >= 190, label + ": settings editor too small: " + settings.ClientSize);
             LayoutCheck(curve.ClientSize.Width >= 184 && curve.ClientSize.Height >= 184, label + ": curve editor too small: " + curve.ClientSize);
             LayoutCheck(curve.Width == curve.Height, label + ": curve control remains square: " + curve.Size);

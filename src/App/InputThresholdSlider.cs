@@ -48,7 +48,11 @@ namespace Tk75.App
         }
         void Preview(double next)
         {
-            next = Limit(Math.Round(next, 2));
+            PreviewExact(Math.Round(next, 2));
+        }
+        void PreviewExact(double next)
+        {
+            next = Limit(next);
             if (value == next && !mixed) return;
             value = next; mixed = false; changed = true; Invalidate();
             if (Previewed != null) Previewed(value);
@@ -118,7 +122,7 @@ namespace Tk75.App
         void MovePointer(int x, int y)
         {
             if (!editing || !pointerDrag.Move(y, x, 100 / (TrackBottom - TrackTop), .01, 100)) return;
-            Preview(pointerDrag.Value);
+            PreviewExact(pointerDrag.QuantizedValue(.01, .01, 100));
         }
         protected override void OnMouseMove(MouseEventArgs e)
         { base.OnMouseMove(e); if (editing && mouseEdit) MovePointer(e.X, e.Y); }

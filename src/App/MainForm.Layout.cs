@@ -221,19 +221,30 @@ namespace Tk75.App
             settings.CellEndEdit += delegate(object sender, DataGridViewCellEventArgs e) { if (!updating && e.ColumnIndex == 1) Attempt(delegate { EditProperty(e.RowIndex); }); };
             editorArea.Controls.Add(settings, 0, 2);
             settings.CellFormatting += delegate(object sender, DataGridViewCellFormattingEventArgs e) { if (e.ColumnIndex == 1 && e.Value as string == "Gemischt") { e.Value = UiText.Get("Gemischt"); e.FormattingApplied = true; } };
+            bool arranging = false, arrangeAgain = false;
             EventHandler arrange = delegate {
+                if (arranging) { arrangeAgain = true; return; }
+                arranging = true;
+                try { do {
+                arrangeAgain = false;
                 int width = Math.Max(1, responseArea.ClientSize.Width);
                 const int thresholdWidth = 184, gap = 12, minimumThresholdHeight = 264;
                 bool beside = width >= thresholdWidth + gap + 180;
                 int side = beside ? width - thresholdWidth - gap : width;
                 int responseHeight = beside ? Math.Max(minimumThresholdHeight, side) : side + 8 + minimumThresholdHeight;
-                int settingsHeight = Math.Max(192, curveEditorScroll.ClientSize.Height - 78 - responseHeight);
-                int totalHeight = 78 + responseHeight + settingsHeight;
-                if (editorArea.Height != totalHeight) editorArea.Height = totalHeight;
+                int toolsHeight = (int)Math.Ceiling(editorArea.RowStyles[0].Height);
+                int settingsHeight = Math.Max(198, curveEditorScroll.ClientSize.Height - toolsHeight - responseHeight);
+                int totalHeight = toolsHeight + responseHeight + settingsHeight;
                 if (editorArea.RowStyles[1].Height != responseHeight) editorArea.RowStyles[1].Height = responseHeight;
                 if (editorArea.RowStyles[2].Height != settingsHeight) editorArea.RowStyles[2].Height = settingsHeight;
+                if (editorArea.Height != totalHeight) editorArea.Height = totalHeight;
                 keyBehaviorPanel.Bounds = beside ? new Rectangle(0, 0, thresholdWidth, responseHeight) : new Rectangle(0, side + 8, width, minimumThresholdHeight);
                 curve.Bounds = beside ? new Rectangle(thresholdWidth + gap, 0, side, side) : new Rectangle(0, 0, side, side);
+                // Scrollbar visibility can synchronously resize the child panel.
+                // Finish this pass, then recompute from the new width; an outer
+                // layout must never overwrite its nested pass with stale heights.
+                } while (arrangeAgain); }
+                finally { arranging = false; }
             };
             editorArea.Layout += delegate { arrange(null, EventArgs.Empty); };
             responseArea.SizeChanged += arrange; curveEditorScroll.SizeChanged += arrange;
