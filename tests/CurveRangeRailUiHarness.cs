@@ -147,6 +147,15 @@ namespace Tk75.Tests
                         Check(rail.ClientRectangle.Contains(new Rectangle(point.X - 6, point.Y - 3, 13, 7)), "Every visible range grip is fully contained and can be picked up.");
                     }
                 }
+                // Native focus scrolling must reveal the entire graph without
+                // a preceding manual reveal, including its title/mode button.
+                foreach (Control focusTarget in new Control[] { output, Field<Button>(canvas, "viewButton"), input })
+                {
+                    RevealCurveSetting(form, numericSettings); numericSettings.Focus(); Pump(form);
+                    Check(focusTarget.Focus(), "A graph child accepts focus directly from the numeric settings."); Pump(form);
+                    VisibleInside(form, canvas, "range-rail/focus-reveals-whole-curve/" + focusTarget.AccessibleName + "/" + size);
+                    VisibleInside(form, focusTarget, "range-rail/focused-child/" + focusTarget.AccessibleName + "/" + size);
+                }
                 CapturePreview(form, artifacts, "curve-range-rails-" + (size == DefaultClientSize ? "normal" : "minimum"));
             }
             Call(form, "Commit", original); SelectKeys(form, 14); DetailMode(form, null); SetPreviewClientSize(form, originalSize); Pump(form);

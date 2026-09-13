@@ -21,7 +21,7 @@ namespace Tk75.App
         readonly Dictionary<string, Control> pages = new Dictionary<string, Control>();
         readonly TableLayoutPanel keyboardArea = new TableLayoutPanel();
         readonly Panel advancedPanel = new SleekCard();
-        readonly Panel curveEditorScroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty };
+        readonly Panel curveEditorScroll = new CurveEditorScrollPanel { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty };
         Button addTargetButton, removeTargetButton, toggleTargetButton, advancedToggle;
         bool advancedVisible;
         bool automaticIso = true, automaticLayoutAvailable = true, changingLayout;
