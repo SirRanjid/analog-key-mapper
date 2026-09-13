@@ -61,7 +61,7 @@ Use **Keys** for pressure ranges, assignments and opposite-key handling. Use **C
 
 The single shape selector at the top changes only the shape. **Presets** contains complete response presets, which also replace the other output settings. Preset curves remain editable after applying them; adjusting your selected mappings does not overwrite the saved preset definition. The numeric list has no duplicate shape selector.
 
-![Square curve editor showing mixed settings across selected mappings](images/response-curve.png)
+![Editable Bézier response curve with control points, vertical actuation and release controls, and compact settings](images/response-curve.png)
 
 *When selected mappings have different curves, the editor marks them as mixed and previews the first mapping.*
 

@@ -6,7 +6,7 @@
 
 **[Download Windows rc.9](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.9/AnalogKeyMapper-1.0.0-rc.9-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.9) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
 
-![Analog Key Mapper showing keyboard mappings, controller selection, lighting and USB connection controls](docs/images/controller.png)
+![Analog Key Mapper with WASD, Shift and Space mapped to a controller, beside its lighting and USB connection controls](docs/images/controller.png)
 
 ## Make each key work your way
 
@@ -55,7 +55,7 @@ The earlier hardware test covered **two Xbox plus two DualSense devices** and wi
 
 Individual pressure ranges and output assignments:
 
-![Keys tab with individual pressure ranges and output assignments](docs/images/mapping.png)
+![Keys tab showing a pressure range, controller output assignments and selected-key behavior](docs/images/mapping.png)
 
 Actuation and Rapid Trigger controls, each with its own Calibrate button:
 
@@ -76,13 +76,13 @@ Capture an opposite key directly on the keyboard:
 
 Select unresolved keys, choose the input device and work through the selection. Review all assignments before applying them together.
 
-![Guided input learning for two selected keys, with current-key feedback and a staged assignment list](docs/images/input-learning.png)
+![Input learning review showing two detected controls ready to apply together](docs/images/input-learning.png)
 
 [Input learning guide](docs/input-learning.md)
 
 </details>
 
-Screenshots use synthetic example data. The interface is shown in English; key legends follow the selected physical keyboard layout.
+Screenshots show **1.0.0-rc.9** with synthetic example data, the English interface and QWERTY key legends.
 
 ## Contributing and license
 

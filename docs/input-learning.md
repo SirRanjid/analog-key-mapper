@@ -1,6 +1,6 @@
 # Learn unknown inputs
 
-![Input learning assistant using synthetic example controls](images/input-learning.png)
+![Input learning review with two detected controls ready to apply together](images/input-learning.png)
 
 Input learning connects a hardware control to a logical key in the current profile. That key keeps its controller outputs, curve and behavior settings. For example, an unresolved W key can listen to a supported pedal axis, while an ordinary keyboard W can be identified automatically.
 
