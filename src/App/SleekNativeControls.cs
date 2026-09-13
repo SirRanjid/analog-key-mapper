@@ -243,8 +243,7 @@ namespace Tk75.App
             { standalone = owner is ScrollBar; vertical = owner is VScrollBar; }
             protected override void WndProc(ref Message message)
             {
-                if (standalone && NativeControlPaint.TryClientPaint(ref message, Owner.ClientSize,
-                    delegate(Graphics graphics) { ScrollbarDrawing.Paint(graphics, Handle, 0xFFFFFFFC, vertical, Point.Empty); })) return;
+                if (standalone && NativeControlPaint.TryClientPaint(ref message, Owner.ClientSize, PaintStandalone)) return;
                 if (!standalone && message.Msg == 0x0085)
                 { framePending = false; ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero); message.Result = IntPtr.Zero; return; }
                 base.WndProc(ref message);
@@ -255,6 +254,22 @@ namespace Tk75.App
                     if (standalone) Owner.Invalidate();
                     else if (!framePending) framePending = ScrollbarDrawing.InvalidateFrame(Handle);
                 }
+            }
+            void PaintStandalone(Graphics graphics)
+            {
+                // WinForms can consume WM_SIZE before the system SCROLLBAR
+                // procedure sees it. Let its original paint calculate the real
+                // arrow/thumb geometry inside our existing offscreen buffer.
+                // The dark pass then reads that geometry; native white pixels
+                // are never presented and native input remains untouched.
+                IntPtr dc = graphics.GetHdc();
+                try
+                {
+                    Message nativePaint = Message.Create(Handle, NativeControlPaint.PrintClient, dc, (IntPtr)12);
+                    base.WndProc(ref nativePaint);
+                }
+                finally { graphics.ReleaseHdc(dc); }
+                ScrollbarDrawing.Paint(graphics, Handle, 0xFFFFFFFC, vertical, Point.Empty);
             }
         }
 

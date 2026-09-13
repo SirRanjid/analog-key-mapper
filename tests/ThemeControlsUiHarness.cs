@@ -64,14 +64,25 @@ namespace Tk75.Tests
         }
         static void CheckThemeScrollSurface(Control control, bool standalone, bool vertical, string description)
         {
-            ScrollbarDrawing.ScrollInfo info;
-            bool visible = ScrollbarDrawing.Read(control.Handle, standalone ? 0xFFFFFFFC : vertical ? 0xFFFFFFFB : 0xFFFFFFFA, out info);
-            ThemeCheck(visible, description + " is a real visible native scrollbar (state 0x" + info.State.ToString("X") + "; bounds " + info.Area.Bounds + ").");
-            if (!visible) return;
-            NativeControlPaint.Rect window;
-            Check(NativeControlPaint.GetWindowRect(control.Handle, out window), description + " exposes its real window bounds.");
-            Rectangle area = info.Area.Bounds; area.Offset(-window.Left, -window.Top);
-            using (Bitmap bitmap = ThemeCapture(control)) CheckThemeSurface(bitmap, area, description);
+            // An offscreen window need not receive an onscreen paint first.
+            // The real WM_PRINT path initializes the native scrollbar geometry
+            // just as the first visible paint does; inspect it after that paint.
+            using (Bitmap bitmap = ThemeCapture(control))
+            {
+                ScrollbarDrawing.ScrollInfo info;
+                bool visible = ScrollbarDrawing.Read(control.Handle, standalone ? 0xFFFFFFFC : vertical ? 0xFFFFFFFB : 0xFFFFFFFA, out info);
+                ThemeCheck(visible, description + " is a real visible native scrollbar (state 0x" + info.State.ToString("X") + "; bounds " + info.Area.Bounds + ").");
+                if (!visible) return;
+                NativeControlPaint.Rect window;
+                Check(NativeControlPaint.GetWindowRect(control.Handle, out window), description + " exposes its real window bounds.");
+                Rectangle area = info.Area.Bounds; area.Offset(-window.Left, -window.Top);
+                if (standalone)
+                {
+                    ThemeCheck(area.Size == control.ClientSize, description + " uses its real native client dimensions (native " + area.Size + "; client " + control.ClientSize + ").");
+                    ThemeCheck(info.ThumbEnd > info.ThumbStart, description + " exposes an actual native thumb (start " + info.ThumbStart + "; end " + info.ThumbEnd + ").");
+                }
+                CheckThemeSurface(bitmap, area, description);
+            }
         }
 
         // CI-only synthetic windows: no physical input, hardware or global input
@@ -100,15 +111,12 @@ namespace Tk75.Tests
                 host.Controls.AddRange(new Control[] { combo, number, scroll, list, text, grid });
                 ModernTheme.Apply(host); host.Show(); host.PerformLayout(); Application.DoEvents();
                 ThemeCheck(combo.AccessibilityObject.Role == AccessibleRole.ComboBox, "The themed picker retains its native accessible combo role (actual " + combo.AccessibilityObject.Role + ").");
-                // .NET Framework's legacy compatibility mode reports the parent
-                // as Text; AccessibilityImprovements.Level1 changes it to
-                // SpinButton. Compare with the genuine unthemed framework
-                // control, then verify its edit and two real arrow buttons.
+                // Framework versions and compatibility switches can report
+                // different parent roles. Compare with the genuine unthemed
+                // framework control, then verify its native edit/arrow tree.
                 baselineNumber.CreateControl();
                 AccessibleObject baselineAccessible = baselineNumber.AccessibilityObject;
                 AccessibleObject numberAccessible = number.AccessibilityObject;
-                ThemeCheck(baselineAccessible.Role == AccessibleRole.Text || baselineAccessible.Role == AccessibleRole.SpinButton,
-                    "The original .NET numeric role is Text or SpinButton (actual " + baselineAccessible.Role + ").");
                 ThemeCheck(numberAccessible.GetType() == baselineAccessible.GetType() && numberAccessible.Role == baselineAccessible.Role,
                     "The themed number retains the original framework accessible provider and role (expected " + baselineAccessible.GetType().FullName +
                     "/" + baselineAccessible.Role + "; actual " + numberAccessible.GetType().FullName + "/" + numberAccessible.Role + ").");
@@ -193,8 +201,19 @@ namespace Tk75.Tests
                 VScrollBar gridScroll = grid.Controls.OfType<VScrollBar>().Single(control => control.Visible);
                 ThemeCheck(gridScroll.AccessibilityObject.Role == AccessibleRole.ScrollBar, "The grid scrollbar retains its native accessible scrollbar role (actual " + gridScroll.AccessibilityObject.Role + ").");
                 CheckThemeScrollSurface(gridScroll, true, true, "Grid scrollbar");
+                ScrollbarDrawing.ScrollInfo gridBefore;
+                bool gridBeforeReady = ScrollbarDrawing.Read(gridScroll.Handle, 0xFFFFFFFC, out gridBefore);
                 grid.FirstDisplayedScrollingRowIndex = 25; Application.DoEvents();
                 ThemeCheck(grid.FirstDisplayedScrollingRowIndex == 25, "The styled grid retains its scroll-position contract (actual " + grid.FirstDisplayedScrollingRowIndex + ").");
+                using (Bitmap image = ThemeCapture(gridScroll))
+                {
+                    ScrollbarDrawing.ScrollInfo gridAfter;
+                    bool gridAfterReady = ScrollbarDrawing.Read(gridScroll.Handle, 0xFFFFFFFC, out gridAfter);
+                    ThemeCheck(gridBeforeReady && gridAfterReady && gridAfter.ThumbStart > gridBefore.ThumbStart,
+                        "The painted grid thumb follows its real native scroll position (before " + gridBefore.ThumbStart + "; after " + gridAfter.ThumbStart + ").");
+                    CheckThemeSurface(image, new Rectangle(Point.Empty, image.Size), "Scrolled grid scrollbar");
+                    image.Save(Path.Combine(artifacts, "preview-theme-grid-scrollbar.png"));
+                }
                 using (Bitmap image = ThemeCapture(host)) image.Save(Path.Combine(artifacts, "preview-theme-controls.png"));
                 host.Close();
             }
