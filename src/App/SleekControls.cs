@@ -7,6 +7,7 @@ namespace Tk75.App
 {
     internal sealed class LiveValueLabel : Label
     {
+        bool updatingFixedText;
         protected override void OnTextChanged(EventArgs e)
         {
             // Label.AdjustSize repeats the existing bounds on each Text change,
@@ -15,8 +16,16 @@ namespace Tk75.App
             Control parent = Parent;
             if (AutoSize || Dock != DockStyle.Fill || parent == null) { base.OnTextChanged(e); return; }
             parent.SuspendLayout();
+            bool previous = updatingFixedText; updatingFixedText = true;
             try { base.OnTextChanged(e); }
-            finally { parent.ResumeLayout(false); }
+            finally { updatingFixedText = previous; parent.ResumeLayout(false); }
+        }
+        protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
+        {
+            // AdjustSize also temporarily restores the Label's requested size.
+            // Keep the docked bounds throughout the text update, not just after it.
+            if (updatingFixedText && !AutoSize && Dock == DockStyle.Fill) return;
+            base.SetBoundsCore(x, y, width, height, specified);
         }
     }
 
