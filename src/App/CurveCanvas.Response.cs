@@ -74,6 +74,7 @@ namespace Tk75.App
         void BuildViewButton()
         {
             Controls.Add(viewButton);
+            viewButton.SizeChanged += delegate { PositionRangeRails(); Invalidate(); };
             viewButton.Click += delegate {
                 if (DynamicPreviewVisible) { activeSetting = null; activeInputField = InputActivationFields.None; UpdateViewButton(); UpdateTip(); Invalidate(); }
                 else ShapeEditing = !ShapeEditing;

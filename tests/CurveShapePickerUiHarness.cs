@@ -66,8 +66,8 @@ namespace Tk75.Tests
                         Check(plot.Top - view.Bottom >= 17 && plot.Top - 6 - view.Bottom >= 11,
                             "The Response/Edit shape button has visible clearance above both the plot and the taller range handles.");
                         if (size == DefaultClientSize)
-                            Check(grid.ClientSize.Height >= grid.ColumnHeadersHeight + grid.Rows[0].Height * 4,
-                                "At the normal window size at least four complete curve-setting rows fit below the plot.");
+                            Check(grid.ClientSize.Height >= grid.ColumnHeadersHeight + grid.Rows[0].Height * 5,
+                                "At the normal window size at least five complete curve-setting rows fit below the plot.");
                     }
                     Equal(Json(before), Json(Current(form)), "Opening and translating the mixed picker changes no mapping.");
                 }

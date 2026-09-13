@@ -225,7 +225,7 @@ namespace Tk75.App
                 arranging = true;
                 try { do {
                 arrangeAgain = false;
-                int toolsHeight = Math.Max(78, (int)Math.Ceiling(78 * Font.Height / 15.0));
+                const int toolsHeight = 78;
                 // This borderless viewport's outer bounds remain stable while
                 // Windows reserves or releases its native scrollbar space.
                 var layout = CurveEditorGeometry.Create(curveEditorScroll.Width, curveEditorScroll.Height, toolsHeight, SystemInformation.VerticalScrollBarWidth);

@@ -103,9 +103,10 @@ namespace Tk75.App
         {
             get
             {
-                float width = Math.Max(20, Width - 63), height = Math.Max(20, Height - 98);
+                float top = Math.Max(46, viewButton.Bottom + 17);
+                float width = Math.Max(20, Width - 63), height = Math.Max(20, Height - top - 52);
                 float side = Math.Min(width, height);
-                return new RectangleF(42 + (width - side) / 2, 46 + (height - side) / 2, side, side);
+                return new RectangleF(42 + (width - side) / 2, top + (height - side) / 2, side, side);
             }
         }
         float HitRadius { get { return Math.Max(9, Font.Height * .6f); } }

@@ -255,7 +255,7 @@ namespace Tk75.App
             grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = Foreground;
             grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(8, 5, 8, 5);
             grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
-            grid.ColumnHeadersHeight = 36;
+            grid.ColumnHeadersHeight = grid is CurveSettingsGrid ? 32 : 36;
             grid.RowTemplate.Height = 30;
             grid.RowTemplate.MinimumHeight = 30;
             foreach (DataGridViewRow row in grid.Rows) { row.MinimumHeight = 30; if (row.Height < 30) row.Height = 30; }
