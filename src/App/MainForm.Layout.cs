@@ -207,19 +207,17 @@ namespace Tk75.App
 
         void BuildAdvancedEditor()
         {
-            var editorArea = new TableLayoutPanel { Dock = DockStyle.Top, RowCount = 3, ColumnCount = 1, Margin = Padding.Empty };
-            editorArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            editorArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 78)); editorArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 264)); editorArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 220));
+            var editorArea = new Panel { Dock = DockStyle.Top, Margin = Padding.Empty };
             advancedPanel.Controls.Add(curveEditorScroll); curveEditorScroll.Controls.Add(editorArea);
-            editorArea.Controls.Add(BuildCurveTools(), 0, 0);
-            var responseArea = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
-            editorArea.Controls.Add(responseArea, 0, 1);
+            Control tools = BuildCurveTools(); tools.Dock = DockStyle.None; editorArea.Controls.Add(tools);
+            var responseArea = new Panel { Margin = Padding.Empty };
+            editorArea.Controls.Add(responseArea);
             keyBehaviorPanel.Dock = DockStyle.None; responseArea.Controls.Add(keyBehaviorPanel);
             curve.Dock = DockStyle.None; curve.EditCompleted += ApplyCurve; responseArea.Controls.Add(curve);
             settings.MultiSelect = false; settings.SelectionMode = DataGridViewSelectionMode.CellSelect; settings.ReadOnly = false; settings.Columns.Add("property", "Parameter"); settings.Columns.Add("value", "Wert"); settings.Columns[0].ReadOnly = true;
             BuildCurveSettingsSliders();
             settings.CellEndEdit += delegate(object sender, DataGridViewCellEventArgs e) { if (!updating && e.ColumnIndex == 1) Attempt(delegate { EditProperty(e.RowIndex); }); };
-            editorArea.Controls.Add(settings, 0, 2);
+            settings.Dock = DockStyle.None; editorArea.Controls.Add(settings);
             settings.CellFormatting += delegate(object sender, DataGridViewCellFormattingEventArgs e) { if (e.ColumnIndex == 1 && e.Value as string == "Gemischt") { e.Value = UiText.Get("Gemischt"); e.FormattingApplied = true; } };
             bool arranging = false, arrangeAgain = false;
             EventHandler arrange = delegate {
@@ -227,22 +225,16 @@ namespace Tk75.App
                 arranging = true;
                 try { do {
                 arrangeAgain = false;
-                int width = Math.Max(1, responseArea.ClientSize.Width);
-                const int thresholdWidth = 184, gap = 12, minimumThresholdHeight = 264;
-                bool beside = width >= thresholdWidth + gap + 180;
-                int side = beside ? width - thresholdWidth - gap : width;
-                int responseHeight = beside ? Math.Max(minimumThresholdHeight, side) : side + 8 + minimumThresholdHeight;
-                int toolsHeight = (int)Math.Ceiling(editorArea.RowStyles[0].Height);
-                int settingsHeight = Math.Max(198, curveEditorScroll.ClientSize.Height - toolsHeight - responseHeight);
-                int totalHeight = toolsHeight + responseHeight + settingsHeight;
-                if (editorArea.RowStyles[1].Height != responseHeight) editorArea.RowStyles[1].Height = responseHeight;
-                if (editorArea.RowStyles[2].Height != settingsHeight) editorArea.RowStyles[2].Height = settingsHeight;
-                if (editorArea.Height != totalHeight) editorArea.Height = totalHeight;
-                keyBehaviorPanel.Bounds = beside ? new Rectangle(0, 0, thresholdWidth, responseHeight) : new Rectangle(0, side + 8, width, minimumThresholdHeight);
-                curve.Bounds = beside ? new Rectangle(thresholdWidth + gap, 0, side, side) : new Rectangle(0, 0, side, side);
-                // Scrollbar visibility can synchronously resize the child panel.
-                // Finish this pass, then recompute from the new width; an outer
-                // layout must never overwrite its nested pass with stale heights.
+                int toolsHeight = Math.Max(78, (int)Math.Ceiling(78 * Font.Height / 15.0));
+                // This borderless viewport's outer bounds remain stable while
+                // Windows reserves or releases its native scrollbar space.
+                var layout = CurveEditorGeometry.Create(curveEditorScroll.Width, curveEditorScroll.Height, toolsHeight, SystemInformation.VerticalScrollBarWidth);
+                tools.Bounds = new Rectangle(0, 0, layout.Width, toolsHeight);
+                responseArea.Bounds = new Rectangle(0, toolsHeight, layout.Width, layout.ResponseHeight);
+                settings.Bounds = new Rectangle(3, toolsHeight + layout.ResponseHeight + 3, Math.Max(1, layout.Width - 6), layout.SettingsHeight - 6);
+                keyBehaviorPanel.Bounds = layout.Beside ? new Rectangle(0, 0, 184, layout.ResponseHeight) : new Rectangle(0, layout.Side + 8, layout.Width, 264);
+                curve.Bounds = layout.Beside ? new Rectangle(196, 0, layout.Side, layout.Side) : new Rectangle(0, 0, layout.Side, layout.Side);
+                if (editorArea.Height != layout.TotalHeight) editorArea.Height = layout.TotalHeight;
                 } while (arrangeAgain); }
                 finally { arranging = false; }
             };

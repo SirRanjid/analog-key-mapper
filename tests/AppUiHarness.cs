@@ -279,7 +279,7 @@ namespace Tk75.Tests
                 LayoutCheck(thresholds.Right <= curve.Left && thresholds.Top <= curve.Top, label + ": vertical pressure controls sit to the left of the square curve.");
                 LayoutCheck(!Field<Panel>(form, "curveEditorScroll").VerticalScroll.Visible, label + ": the normal Curve view scrolls only the lower settings grid.");
             }
-            else if (curve.Parent.ClientSize.Width < 376)
+            else if (curve.Parent.ClientSize.Width < 380)
                 LayoutCheck(thresholds.Top >= curve.Bottom + 8, label + ": the minimum layout puts usable vertical sliders below the plot.");
             CheckStableKeyboard(form, baseline, drawing, label + "/advanced"); CapturePreview(form, artifacts, label + "-advanced");
             RevealCurveSetting(form, thresholds);
@@ -1760,7 +1760,8 @@ namespace Tk75.Tests
             CheckLayout(form, new Size(SupportedMinimumSize.Width - chrome.Width, SupportedMinimumSize.Height - chrome.Height), artifacts);
             AssertPassive(form);
             foreach (string failure in layoutFailures) Console.Error.WriteLine("LAYOUT FAILURE: " + failure);
-            Check(layoutFailures.Count == 0, "Critical controls visible without overlap at the default, compact and true minimum window sizes (see layout diagnostics).");
+            // The final aggregate fails on these diagnostics after independent
+            // feature suites have also run, so one layout error cannot hide them.
         }
         static void RunEnglishContexts(MainForm form, string data, string artifacts)
         {
@@ -1804,7 +1805,7 @@ namespace Tk75.Tests
             Equal(original, Json(Current(form)), "Language changes preserve user profile values and names.");
             AssertPassive(form);
             foreach (string failure in layoutFailures) Console.Error.WriteLine("LAYOUT FAILURE: " + failure);
-            Check(layoutFailures.Count == 0, "English controls remain usable in every main context at the default and minimum sizes.");
+            // Layout failures remain in the shared final aggregate.
         }
         static void RunIsolatedFeature(string name, string artifacts, List<string> failures, Action<MainForm, string> check)
         {

@@ -54,7 +54,7 @@ namespace Tk75.Tests
                         }
                         var graph = Field<CurveCanvas>(form, "curve"); var grid = Field<DataGridView>(form, "settings");
                         int availableWidth = graph.Parent.ClientSize.Width;
-                        bool beside = availableWidth >= 376;
+                        bool beside = availableWidth >= 380;
                         int curveWidth = beside ? availableWidth - 184 - 12 : availableWidth;
                         var thresholds = Field<Control>(form, "keyBehaviorPanel");
                         Check(graph.Width == graph.Height && graph.Width == curveWidth,
