@@ -35,7 +35,7 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 **rc.9** adds guided input learning for unresolved keys. It recognizes standard keyboard positions automatically and can route supported standard HID controls into selected logical keys. A review step applies the selection together, with one undo; existing assignments and curve settings stay intact. The new routes are saved per profile and reconnect only to their matching device identity. [What's new](docs/release-notes-1.0.0-rc.9.md) · [How learning works](docs/input-learning.md).
 
-The new source backends are implemented, with automated release validation pending. Their physical hardware and game acceptance remains open. Analog keyboard pressure still needs a supported protocol: the existing wired TK75 TMR path is included, while a standard keyboard's on/off events cannot supply pressure values. This is not universal HID or analog-keyboard compatibility.
+The Windows checks cover 59 offline suites, including the real learning dialog, profile routing, device loss, lighting and shutdown. Physical hardware and game acceptance of the new input backends remains open. Analog keyboard pressure still needs a supported protocol: the existing wired TK75 TMR path is included, while a standard keyboard's on/off events cannot supply pressure values. This is not universal HID or analog-keyboard compatibility.
 
 The rc.8 curve improvements remain: a larger square graph beside actuation/release controls, compact settings, editable Bézier presets, and finer slider adjustment when dragging away from the track. See the [user guide](docs/user-guide.md).
 
@@ -68,6 +68,17 @@ Editable preset shapes with Bézier points, range handles and compact settings:
 Capture an opposite key directly on the keyboard:
 
 ![Opposite-key capture in the Keys behavior panel](docs/images/socd-opposite-drop.png)
+
+</details>
+
+<details>
+<summary>Learn missing inputs</summary>
+
+Select unresolved keys, choose the input device and work through the selection. Review all assignments before applying them together.
+
+![Guided input learning for two selected keys, with current-key feedback and a staged assignment list](docs/images/input-learning.png)
+
+[Input learning guide](docs/input-learning.md)
 
 </details>
 

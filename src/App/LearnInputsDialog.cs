@@ -186,7 +186,7 @@ namespace Tk75.App
         {
             if (contextLost) return;
             failure = null; duplicate = false;
-            if (source == null || current >= targets.Length) { capture = null; UpdateButtons(); return; }
+            if (source == null || current >= targets.Length) { capture = null; RefreshCapture(); return; }
             lock (gate)
             {
                 pending.Clear(); overflow = false;

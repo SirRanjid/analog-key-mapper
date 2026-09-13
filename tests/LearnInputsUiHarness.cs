@@ -123,6 +123,8 @@ namespace Tk75.Tests
                 Check(Field<bool>(dialog, "duplicate") && dialog.Bindings.Length == 1 && Field<int>(dialog, "current") == 1, "A duplicate source cannot silently replace or reuse the earlier assignment.");
                 Field<Button>(dialog, "retry").PerformClick(); LearningGesture(dialog, source, "button-2");
                 Check(dialog.Bindings.Length == 2 && Field<Button>(dialog, "apply").Enabled, "Distinct inputs reach a single final review.");
+                Equal("2 inputs ready", Field<Label>(dialog, "title").Text, "Completing a selection immediately displays its review state without waiting for another timer tick.");
+                Equal("Not saved yet", Field<Label>(dialog, "reading").Text, "The review clearly distinguishes staged assignments from a saved profile.");
                 Field<Button>(dialog, "back").PerformClick();
                 Check(dialog.Bindings.Length == 1 && Field<int>(dialog, "current") == 1, "Back retains the previous key and reopens only the last assignment.");
                 Field<Button>(dialog, "skip").PerformClick();

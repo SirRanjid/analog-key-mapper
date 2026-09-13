@@ -14,8 +14,8 @@ Existing pressure calibration, controller assignments, curves, lighting restorat
 
 ## Validation
 
-**Complete Windows CI and checked release packaging: pending.** Targeted synthetic tests and a compilation check have been performed during implementation; they do not establish native device compatibility. The new input backends have not yet completed physical hardware or game acceptance.
+The [recorded Windows validation](https://github.com/SirRanjid/analog-key-mapper/actions/runs/34781600962) passed the application/helper build, all **59 offline suites**, helper tests and version-checked packaging. Coverage includes real modal dialog controls, staged Apply/Cancel ownership, automatic keyboard positions, profile isolation, source loss and reconnect races. These checks use synthetic inputs and do not establish native device compatibility. The new input backends have not yet completed physical hardware or game acceptance. The published release links its final package validation separately.
 
 This is an unsigned Windows x64 release candidate. Checksums establish file integrity, not a code signature. Vendor-specific protocols still need a supported decoder; binary keyboard events do not contain pressure. E1/Pause, unidentified scan codes, HID usage value arrays and unsupported usages are excluded.
 
-Download artifacts will include the Windows package, a complete source package and SHA-256 checksums after release validation. The existing [build and verification instructions](building.md) apply.
+Download artifacts include the Windows package, a complete source package and SHA-256 checksums. The existing [build and verification instructions](building.md) apply.

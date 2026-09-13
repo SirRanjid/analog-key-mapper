@@ -20,6 +20,7 @@ The successful two-Xbox/two-DualSense observations below apply to the preceding 
 | --- | --- | --- |
 | Platform | Native Windows x64 application using .NET Framework 4.x and WinForms. | No complete Windows-version, display-scaling or accessibility compatibility matrix. |
 | Keyboard input | Wired TK75 TMR protocol; model 3591 ISO input was observed on hardware. The tested cable device used VID `3151`, PID `5030`. | Shared VID/PID alone does not prove a model. Other keyboards, wireless operation and every firmware are not validated. |
+| Learned inputs | Guided assignment of unresolved logical keys from standard keyboard on/off events and supported HID buttons, axes, hats and relative controls. Profiles retain source/control identity. | Native backends are implemented and synthetically tested; physical devices and games still require acceptance. Unknown vendor protocols and arbitrary wrapping counters are not decoded by learning. |
 | Layouts | Manufacturer-derived model 3590 ANSI and 3591 ISO layouts, with separate QWERTY/QWERTZ legends. | An illustrated key does not establish analog reports for it. Fn, knob and special-key pressure support is not fully verified. |
 | Pressure processing | Per-key min/max ranges, calibration for selected keys, a keyboard-wide scale, response curves, Rapid Trigger and opposite-key handling. | The default raw range 0–385 is an estimate. It is not a measured travel distance or factory calibration. |
 | Xbox output | VIIPER-derived helper with usbip-win2 0.9.8.0; distinct Windows XInput packets were verified with two Xbox and two DualSense devices on a preceding build. | Windows exposes at most four XInput controllers, including physical ones. The final optimized helper is not live-validated. |
@@ -30,6 +31,8 @@ The successful two-Xbox/two-DualSense observations below apply to the preceding 
 Profiles offer **32 output-capable slots in total**, each freely assigned to Xbox or DualSense, subject to the Xbox/XInput limit. This is the software's supported configuration limit; the recorded mixed-device acceptance used **two Xbox plus two DualSense**, not 32 connected devices. Larger configurations remain to be load-tested.
 
 ## Recorded automated checks
+
+The [recorded rc.9 validation](https://github.com/SirRanjid/analog-key-mapper/actions/runs/34781600962) passed **59 offline suites**, the Windows application/helper build, helper tests and checked packaging. Input learning adds 40,895 pure capture assertions, 145 profile checks, 1,048 routing checks, 121 HID parsing checks and 777 keyboard control checks. Native UI fixtures cover the actual modal assistant, Apply/Cancel ownership, selected-key scope, generic profile pressure isolation, source disconnection and reconnect races. Screenshots use synthetic devices. Physical hardware, game compatibility and native input timing remain unverified for these new sources.
 
 The completed [rc.8 editor validation](https://github.com/SirRanjid/analog-key-mapper/actions/runs/34778891037) passed all **54 offline suites**, including **13,806 application UI assertions**, **778 native theme checks** and **1,253 real-control precision-drag checks**. The controller-helper tests and version-checked packaging also passed. These checks use synthetic inputs and do not establish hardware or game acceptance.
 

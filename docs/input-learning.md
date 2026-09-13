@@ -1,5 +1,7 @@
 # Learn unknown inputs
 
+![Input learning assistant using synthetic example controls](images/input-learning.png)
+
 Input learning connects a hardware control to a logical key in the current profile. That key keeps its controller outputs, curve and behavior settings. For example, an unresolved W key can listen to a supported pedal axis, while an ordinary keyboard W can be identified automatically.
 
 This feature fills missing input assignments. It does not replace inputs that are already known. An empty controller-output list does not make a key's physical input unknown.
@@ -45,7 +47,7 @@ To remove a learned route, select its key and choose **Forget learned inputs** f
 
 ## Scope and validation
 
-The rc.9 implementation and synthetic tests are prepared; complete Windows CI and release validation are pending. The new HID and Raw Input source backends have not yet completed physical hardware or game acceptance. Existing TK75 hardware observations remain tied to the older builds documented in [validation status](status.md).
+The rc.9 Windows checks cover 59 offline suites, including the actual modal assistant, staged Apply/Cancel ownership, profile routing, disconnection and reconnect races. Build and package verification passed in the [recorded validation](https://github.com/SirRanjid/analog-key-mapper/actions/runs/34781600962). The new HID and Raw Input source backends have not yet completed physical hardware or game acceptance. Existing TK75 hardware observations remain tied to the older builds documented in [validation status](status.md).
 
 Limits of this release:
 

@@ -2,7 +2,7 @@
 
 ## 1.0.0-rc.9
 
-Implementation prepared; full release validation is pending.
+Windows build, 59 offline test suites and version-checked packaging validated. See the release notes for the validation record and remaining hardware limits.
 
 - Add **Learn unknown inputs…** to the active key selection's context menu, with sequential capture and one reviewed, undoable apply.
 - Automatically identify matching standard keyboard positions; retain existing known assignments.
