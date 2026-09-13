@@ -56,9 +56,9 @@ Actuation and Rapid Trigger controls, each with its own Calibrate button:
 
 ![Vertical actuation and release controls with per-option calibration beside the square graph](docs/images/key-behavior.png)
 
-Response settings with sliders and a square curve editor:
+Editable preset shapes with Bézier points, range handles and compact settings:
 
-![Response sliders and square curve editor beside the keyboard](docs/images/response-curve.png)
+![Editable Bézier preset shape with vertical ranges and compact settings beside the keyboard](docs/images/response-curve.png)
 
 Capture an opposite key directly on the keyboard:
 
