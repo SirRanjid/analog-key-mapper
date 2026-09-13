@@ -105,6 +105,7 @@ namespace Tk75.App
             {
                 RestoreSocdSelection(new[] { target }); SetDetailMode("input", true, false);
             }
+            ScrollKeySettingsTo(keySocdPanel);
             RefreshSocdDropTarget();
             SetDragHint(string.Format(Tr("{0} als Gegentaste für {1} im markierten Feld ablegen.", "Drop {0} in the marked area as the opposite of {1}."), Label(activeMappingDrag.Keys[0]), Label(target)));
         }

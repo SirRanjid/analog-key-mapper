@@ -155,33 +155,7 @@ namespace Tk75.App
             base.WndProc(ref message);
         }
         void PaintFace(Graphics graphics)
-        {
-            graphics.Clear(Parent == null ? ModernTheme.Surface : Parent.BackColor);
-            if (Width < 3 || Height < 3) return;
-            graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Color border = Enabled && (Focused || DroppedDown) ? ModernTheme.Accent : hovered && Enabled ? ModernTheme.Muted : ModernTheme.Border;
-            using (GraphicsPath path = SurfaceDrawing.Round(new RectangleF(.5f, .5f, Width - 1.5f, Height - 1.5f), 7))
-            using (Brush fill = new SolidBrush(ModernTheme.SurfaceAlt))
-            using (Pen pen = new Pen(border)) { graphics.FillPath(fill, path); graphics.DrawPath(pen, path); }
-            NativeControlPaint.ComboInfo info = new NativeControlPaint.ComboInfo();
-            info.Size = System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeControlPaint.ComboInfo));
-            bool nativeBounds = NativeControlPaint.GetComboBoxInfo(Handle, ref info);
-            Rectangle button = nativeBounds ? info.Button.Bounds : new Rectangle(Width - SystemInformation.VerticalScrollBarWidth - 2, 2, SystemInformation.VerticalScrollBarWidth, Height - 4);
-            NativeControlPaint.Chevron(graphics, button, true, !DroppedDown, Enabled ? ModernTheme.Accent : ModernTheme.Muted);
-            if (DropDownStyle == ComboBoxStyle.DropDownList)
-            {
-                Rectangle area = nativeBounds ? info.Item.Bounds : new Rectangle(3, 2, Math.Max(1, button.Left - 5), Height - 4);
-                area.Inflate(-7, 0);
-                string label = SelectedIndex >= 0 ? GetItemText(SelectedItem) : Text;
-                if (SelectedItem is string) label = UiText.Get(label);
-                if (String.IsNullOrEmpty(label)) label = UiText.Get("Auswählen");
-                TextRenderer.DrawText(graphics, label, Font, area, Enabled ? ModernTheme.Foreground : ModernTheme.Muted,
-                    TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine |
-                    (RightToLeft == RightToLeft.Yes ? TextFormatFlags.RightToLeft | TextFormatFlags.Right : TextFormatFlags.Left));
-                if (Focused && ShowFocusCues && !DroppedDown)
-                    ControlPaint.DrawFocusRectangle(graphics, Rectangle.Inflate(area, -1, -5), ModernTheme.Accent, ModernTheme.SurfaceAlt);
-            }
-        }
+        { ComboSurfaceDrawing.Face(this, hovered, ShowFocusCues, graphics); }
         protected override void OnKeyPress(KeyPressEventArgs e)
         {
             bool ignore = IgnoreClosedTextInput && DropDownStyle == ComboBoxStyle.DropDownList &&
@@ -191,26 +165,7 @@ namespace Tk75.App
             if (ignore) e.Handled = true;
         }
         protected override void OnDrawItem(DrawItemEventArgs e)
-        {
-            if (e.Bounds.Width <= 0 || e.Bounds.Height <= 0) return;
-            bool listSelection = (e.State & DrawItemState.Selected) != 0 && (e.State & DrawItemState.ComboBoxEdit) == 0;
-            Color fill = listSelection ? ModernTheme.AccentSoft : ModernTheme.SurfaceAlt;
-            string label = e.Index >= 0 && e.Index < Items.Count ? GetItemText(Items[e.Index]) : Text;
-            if (e.Index >= 0 && e.Index < Items.Count && Items[e.Index] is string) label = UiText.Get(label);
-            if (String.IsNullOrEmpty(label)) label = UiText.Get("Auswählen");
-            // Popup rows use the native owner's supplied area and preserve native
-            // selection. The closed face is painted by its single WM_PAINT pass.
-            using (BufferedGraphics buffer = BufferedGraphicsManager.Current.Allocate(e.Graphics, e.Bounds))
-            {
-                using (var brush = new SolidBrush(fill)) buffer.Graphics.FillRectangle(brush, e.Bounds);
-                TextRenderer.DrawText(buffer.Graphics, label, Font, Rectangle.Inflate(e.Bounds, -10, 0),
-                    Enabled ? ModernTheme.Foreground : ModernTheme.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis |
-                    TextFormatFlags.NoPrefix | TextFormatFlags.PreserveGraphicsTranslateTransform | TextFormatFlags.PreserveGraphicsClipping);
-                if ((e.State & DrawItemState.Focus) != 0 && (e.State & (DrawItemState.ComboBoxEdit | DrawItemState.NoFocusRect)) == 0)
-                    ControlPaint.DrawFocusRectangle(buffer.Graphics, e.Bounds, ModernTheme.Foreground, fill);
-                buffer.Render(e.Graphics);
-            }
-        }
+        { ComboSurfaceDrawing.Item(this, e); }
     }
 
     // Keep the existing Value/Maximum contract while drawing a quiet, static

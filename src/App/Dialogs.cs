@@ -46,7 +46,7 @@ namespace Tk75.App
         void Feed(TravelSample sample, double elapsed) { lock (gate) { learner.Feed(sample, elapsed); if (sample.KeyIndex == learner.KeyIndex) latest = sample.RawValue; } }
     }
 
-    public sealed class CurveCanvas : Control
+    public sealed partial class CurveCanvas : Control
     {
         SignalSettings settings;
         bool mixed, finishing;
@@ -61,6 +61,8 @@ namespace Tk75.App
         double? inspectedInput;
         SignalSettings sampledCurve;
         double[] responseSamples;
+        CurveResponsePreview sampledResponse;
+        bool sampledShape;
         public SignalSettings Settings { get { return CopySettings(settings); } set { UpdateCurve(value, mixed, contextKey); } }
         public bool Mixed { get { return mixed; } set { UpdateCurve(settings, value, contextKey); } }
         public bool IsEditing { get { return edit != null && edit.Active; } }
@@ -70,6 +72,7 @@ namespace Tk75.App
         {
             DoubleBuffered = true; BackColor = ModernTheme.Surface; MinimumSize = new Size(140, 120); TabStop = true;
             SetStyle(ControlStyles.Selectable | ControlStyles.ResizeRedraw, true);
+            BuildViewButton();
         }
         // Use one stable context key for profile + selected bindings. Identical
         // cloned settings from a parent refresh must not discard a local drag.
@@ -79,20 +82,18 @@ namespace Tk75.App
             bool contextChanged = contextKey != selectionContext;
             bool changed = contextChanged || mixed != isMixed || !SameSettings(settings, next);
             if (changed) { CancelEdit(); hovered = hoveredPart = -1; }
-            if (contextChanged) inspectedInput = null;
+            if (contextChanged) { inspectedInput = null; activeSetting = null; activeInputField = InputActivationFields.None; }
             settings = next; mixed = isMixed; contextKey = selectionContext;
             if (!IsEditing && (contextChanged || settings == null || !HasNodes(settings.Curve) || settings.CustomPoints == null || selectedPoint >= settings.CustomPoints.Count)) selectedPoint = -1;
-            UpdateTip(); Invalidate();
+            UpdateViewButton(); UpdateTip(); Invalidate();
         }
         static SignalSettings CopySettings(SignalSettings value)
         {
-            return value == null ? null : new SignalSettings { Curve = value.Curve, Exponent = value.Exponent,
-                CustomPoints = value.CustomPoints == null ? null : value.CustomPoints.Select(p => p == null ? null : new CurvePoint(p.X, p.Y) { Tangent = p.Tangent }).ToList() };
+            return CurveResponsePreview.Copy(value);
         }
         static bool SameSettings(SignalSettings first, SignalSettings second)
         {
-            return first == null || second == null ? first == null && second == null :
-                first.Curve == second.Curve && first.Exponent == second.Exponent && CurvePointEditing.Same(first.CustomPoints, second.CustomPoints);
+            return CurveResponsePreview.Same(first, second);
         }
         RectangleF Plot
         {
@@ -121,41 +122,39 @@ namespace Tk75.App
         { RectangleF plot = Plot; return new PointF(plot.Left + (float)point.X * plot.Width, plot.Bottom - (float)point.Y * plot.Height); }
         double[] CurveSamples(SignalSettings shown)
         {
-            if (responseSamples != null && SameSettings(sampledCurve, shown)) return responseSamples;
-            sampledCurve = CopySettings(shown); responseSamples = new double[101];
-            // Cache the static curve stage: hover and selection paints should not
-            // recompute a hundred processed samples or affect the runtime.
-            var shape = CopySettings(shown);
-            for (int i = 0; i <= 100; i++) responseSamples[i] = SignalProcessor.Process(i / 100.0, new Calibration(0, 1), shape, new SignalState(), 1).Final;
+            if (responseSamples != null && sampledShape == shapeEditing && CurveResponsePreview.SameResponse(sampledCurve, shown)) return responseSamples;
+            sampledCurve = CopySettings(shown); sampledShape = shapeEditing;
+            var displayed = shapeEditing ? new SignalSettings { Curve = shown.Curve, Exponent = shown.Exponent, CustomPoints = shown.CustomPoints } : shown;
+            sampledResponse = CurveResponsePreview.Create(displayed, 256); responseSamples = sampledResponse.Press;
             return responseSamples;
         }
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e); var g = e.Graphics; g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias; RectangleF plot = Plot;
+            if (DrawDynamicPreview(g)) return;
             using (var muted = new SolidBrush(ModernTheme.Muted))
             {
-                TextRenderer.DrawText(g, UiText.Get(Mixed ? "Gemischt · erste Zuordnung" : "Antwortkurve"), Font,
-                    new Rectangle(8, 5, Math.Max(1, Width - 16), 24), ModernTheme.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-                g.DrawString("0", Font, muted, 24, plot.Bottom - 8); g.DrawString("100 %", Font, muted, 1, plot.Top - 6); g.DrawString("100 %", Font, muted, plot.Right - 39, plot.Bottom + 7);
-                if (plot.Width >= 110) { g.DrawString("50", Font, muted, plot.Left + plot.Width / 2 - 8, plot.Bottom + 7); g.DrawString("50", Font, muted, plot.Left - 25, plot.Top + plot.Height / 2 - 8); }
+                TextRenderer.DrawText(g, shapeEditing ? UiText.Get("Form", "Shape") : UiText.Get("Antwort", "Response"), Font,
+                    new Rectangle(8, 5, Math.Max(1, viewButton.Left - 12), 24), ModernTheme.Foreground, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                g.DrawString("0", Font, muted, plot.Left + 3, plot.Bottom - Font.Height - 1); g.DrawString("100 %", Font, muted, plot.Left + 3, plot.Top + 1); g.DrawString("100 %", Font, muted, plot.Right - 45, plot.Bottom + 7);
+                if (plot.Width >= 110) { g.DrawString("50", Font, muted, plot.Left + plot.Width / 2 - 8, plot.Bottom + 7); g.DrawString("50", Font, muted, plot.Left + 3, plot.Top + plot.Height / 2 - 8); }
                 if (settings == null) g.DrawString(UiText.Get("Zuordnung auswählen"), Font, muted, plot.Left, plot.Top + 20);
             }
+            DrawRangeRailLabels(g);
             using (var grid = new Pen(ModernTheme.Border)) for (int i = 0; i <= 4; i++) { float t = i / 4f; g.DrawLine(grid, plot.Left + t * plot.Width, plot.Top, plot.Left + t * plot.Width, plot.Bottom); g.DrawLine(grid, plot.Left, plot.Bottom - t * plot.Height, plot.Right, plot.Bottom - t * plot.Height); }
             if (settings == null) return;
-            var shown = IsEditing ? new SignalSettings { Curve = editKind, CustomPoints = edit.Preview } : settings;
-            var points = new PointF[101]; double[] samples = CurveSamples(shown);
-            for (int i = 0; i <= 100; i++)
+            var shown = CopySettings(settings);
+            if (IsEditing) { shown.Curve = editKind; shown.CustomPoints = edit.Preview; }
+            double[] samples = CurveSamples(shown); var points = new PointF[samples.Length];
+            if (!shapeEditing) DrawResponseGuides(g, shown);
+            for (int i = 0; i < samples.Length; i++)
             {
-                points[i] = new PointF(plot.Left + i / 100f * plot.Width, plot.Bottom - (float)samples[i] * plot.Height);
+                points[i] = new PointF(plot.Left + i / (float)(samples.Length - 1) * plot.Width, plot.Bottom - (float)samples[i] * plot.Height);
             }
+            if (!shapeEditing && shown.Hysteresis > 0) DrawReleaseResponse(g, sampledResponse.Release);
             using (var pen = new Pen(ModernTheme.Accent, 2.5f)) g.DrawLines(pen, points);
-            if (!HasNodes(shown.Curve))
-                using (var fill = new SolidBrush(ModernTheme.Surface))
-                using (var edge = new Pen(ModernTheme.AccentHover, 1.5f))
-                    foreach (int index in new[] { 0, 25, 50, 75, 100 })
-                    { PointF point = points[index]; g.FillEllipse(fill, point.X - 4, point.Y - 4, 8, 8); g.DrawEllipse(edge, point.X - 4, point.Y - 4, 8, 8); }
-            if (shown.Curve == CurveKind.Bezier) DrawHandles(g, shown);
-            if (HasNodes(shown.Curve) && shown.CustomPoints != null)
+            if (shapeEditing && shown.Curve == CurveKind.Bezier) DrawHandles(g, shown);
+            if (shapeEditing && HasNodes(shown.Curve) && shown.CustomPoints != null)
             {
                 using (var normal = new SolidBrush(ModernTheme.Foreground))
                 using (var selected = new SolidBrush(ModernTheme.Accent))
@@ -170,7 +169,7 @@ namespace Tk75.App
                     }
             }
             DrawInspectedPoint(g, shown, points);
-            string hint = IsEditing ? UiText.Get("Loslassen: übernehmen · Esc: abbrechen", "Release: apply · Esc: cancel") : shown.Curve == CurveKind.Bezier ?
+            string hint = !shapeEditing ? ResponseCaption(shown) : IsEditing ? UiText.Get("Loslassen: übernehmen · Esc: abbrechen", "Release: apply · Esc: cancel") : shown.Curve == CurveKind.Bezier ?
                 UiText.Get("Punkt wählen → Griffe ziehen · Rechtsklick auf Griff: automatisch", "Select a point → drag handles · Right-click handle: automatic") :
                 UiText.Get("Punkt setzen oder ziehen · Rechtsklick: löschen", "Add or drag a point · Right-click: delete");
             TextRenderer.DrawText(g, hint, Font, new Rectangle(8, Height - 24, Math.Max(1, Width - 16), 20), ModernTheme.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
@@ -179,14 +178,16 @@ namespace Tk75.App
         {
             CurvePoint selected = null;
             int index = IsEditing ? selectedPoint : hoveredPart == 0 ? hovered : selectedPoint;
-            if (HasNodes(shown.Curve) && shown.CustomPoints != null && index >= 0 && index < shown.CustomPoints.Count) selected = shown.CustomPoints[index];
+            if (shapeEditing && HasNodes(shown.Curve) && shown.CustomPoints != null && index >= 0 && index < shown.CustomPoints.Count) selected = shown.CustomPoints[index];
             if (selected == null && !inspectedInput.HasValue) return;
-            int sample = inspectedInput.HasValue ? (int)Math.Round(inspectedInput.Value * 100) : 0;
+            int sample = inspectedInput.HasValue ? Math.Max(0, Math.Min(points.Length - 1, (int)Math.Round(inspectedInput.Value * (points.Length - 1)))) : 0;
             PointF position = selected == null ? points[sample] : PlotPoint(selected); RectangleF plot = Plot;
             using (var guide = new Pen(ModernTheme.Muted, 1))
             { guide.DashStyle = System.Drawing.Drawing2D.DashStyle.Dot; graphics.DrawLine(guide, plot.Left, position.Y, position.X, position.Y); graphics.DrawLine(guide, position.X, position.Y, position.X, plot.Bottom); }
-            using (var edge = new Pen(ModernTheme.AccentHover, 1.5f)) graphics.DrawEllipse(edge, position.X - 7, position.Y - 7, 14, 14);
-            double x = selected == null ? sample / 100.0 : selected.X, y = selected == null ? responseSamples[sample] : selected.Y;
+            // An inspection cursor is a crosshair, never a hollow draggable node.
+            using (var edge = new Pen(ModernTheme.AccentHover, 1.5f))
+            { graphics.DrawLine(edge, position.X - 4, position.Y, position.X + 4, position.Y); graphics.DrawLine(edge, position.X, position.Y - 4, position.X, position.Y + 4); }
+            double x = selected == null ? sample / (double)(points.Length - 1) : selected.X, y = selected == null ? responseSamples[sample] : selected.Y;
             string label = (x * 100).ToString("0.#") + " % → " + (y * 100).ToString("0.#") + " %";
             Size size = TextRenderer.MeasureText(label, Font, Size.Empty, TextFormatFlags.NoPadding);
             int width = Math.Min(Width - 12, size.Width + 10);
@@ -220,7 +221,7 @@ namespace Tk75.App
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
-            if (settings == null || IsEditing || (e.Button != MouseButtons.Left && e.Button != MouseButtons.Right)) return;
+            if (!shapeEditing || settings == null || IsEditing || (e.Button != MouseButtons.Left && e.Button != MouseButtons.Right)) return;
             Focus(); var candidate = NewEditor(); if (candidate == null) return;
             int hit; int part = Hit(candidate, e.Location, out hit); RectangleF plot = Plot;
             CurveKind kind = settings.Curve == CurveKind.Custom ? CurveKind.Custom : CurveKind.Bezier;
@@ -251,8 +252,9 @@ namespace Tk75.App
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
+            if (DynamicPreviewVisible) { Cursor = Cursors.Default; return; }
             if (IsEditing) { MovePreview(e.Location); return; }
-            var candidate = NewEditor(); int hit; int part = Hit(candidate, e.Location, out hit);
+            var candidate = shapeEditing ? NewEditor() : null; int hit; int part = Hit(candidate, e.Location, out hit);
             double? inspected = settings != null && Plot.Contains(e.Location) ? (double?)Math.Round((e.X - Plot.Left) / Plot.Width, 2) : null;
             if (hit != hovered || part != hoveredPart || inspected != inspectedInput) { hovered = hit; hoveredPart = part; inspectedInput = inspected; UpdateTip(); Invalidate(); }
             bool movable = candidate != null && hit > 0 && hit < candidate.Preview.Count - 1;
@@ -270,7 +272,7 @@ namespace Tk75.App
         }
         void CompleteEdit(List<CurvePoint> points, CurveKind kind)
         {
-            var result = new SignalSettings { Curve = kind, CustomPoints = points };
+            var result = CopySettings(settings); result.Curve = kind; result.CustomPoints = points;
             // Prefer the atomic kind+points contract; the old event is fallback
             // only, so a consumer subscribing to both never commits twice.
             if (EditCompleted != null) EditCompleted(result);
@@ -284,14 +286,14 @@ namespace Tk75.App
         }
         void UpdateTip()
         {
-            string text = IsEditing ? UiText.Get("Ziehe den Punkt oder Griff. Loslassen übernimmt die ganze Bewegung einmal. Esc verwirft sie.", "Drag the point or handle. Releasing applies the whole movement once. Esc cancels it.") :
+            string text = DynamicPreviewVisible ? DynamicPreviewHelp() : !shapeEditing ? ResponseHelp(settings) : IsEditing ? UiText.Get("Ziehe den Punkt oder Griff. Loslassen übernimmt die ganze Bewegung einmal. Esc verwirft sie.", "Drag the point or handle. Releasing applies the whole movement once. Esc cancels it.") :
                 settings == null ? UiText.Get("Zuerst eine Zuordnung auswählen.", "Select a mapping first.") :
                 settings.Curve == CurveKind.Bezier ? UiText.Get("Punkt anklicken: verbundene Griffe zeigen. Griff ziehen: Krümmung ändern. Rechtsklick auf Griff: automatisch glätten. Innere Punkte lassen sich ziehen und per Rechtsklick löschen; Endpunkte bleiben fest.", "Click a point to show linked handles. Drag a handle to shape the curve. Right-click a handle for automatic smoothing. Drag or right-click interior points to move or delete them; endpoints stay fixed.") :
                 hovered == 0 || HasNodes(settings.Curve) && settings.CustomPoints != null && hovered == settings.CustomPoints.Count - 1 ?
                     UiText.Get("Die Endpunkte (0 %, 0 %) und (100 %, 100 %) bleiben fest.", "Endpoints (0%, 0%) and (100%, 100%) stay fixed.") :
                     UiText.Get("Klicken: eigenen Punkt setzen. Punkt ziehen: verschieben. Rechtsklick direkt auf einen inneren Punkt: löschen. Die Kurve bleibt ansteigend.", "Click to add a custom point. Drag a point to move it. Right-click directly on an interior point to delete it. The curve stays nondecreasing.");
-            text += "\n\n" + UiText.Get("Horizontal: Eingabe nach den Totbereichen. Vertikal: Ergebnis der Kurvenform, jeweils 0–100 %. Ausgabegrenzen, Ausgabestärke und Filter werden anschließend berechnet. Die Markierungen bei 25/50/75 % helfen beim Vergleichen; darüberfahren zeigt die Werte.",
-                "Horizontal: input after deadzones. Vertical: curve result, both 0–100%. Output range, output strength and filters are applied afterward. The 25/50/75% markers help compare shapes; hover to inspect values.");
+            if (shapeEditing) text += "\n\n" + UiText.Get("Form-Editor: Horizontal Eingabe nach den Totbereichen, vertikal Kurvenergebnis, jeweils 0–100 %. Nur eigene Punkte und Bézier-Griffe lassen sich ziehen. Mit Antwort siehst du wieder das Ergebnis einschließlich der anderen Einstellungen.",
+                "Shape editor: horizontal input after deadzones, vertical curve result, both 0–100%. Only custom points and Bézier handles are draggable. Response returns to the output including the other settings.");
             if (text != lastTip) { lastTip = text; tips.SetToolTip(this, text); }
         }
         protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); UpdateTip(); }
@@ -300,7 +302,7 @@ namespace Tk75.App
         protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); if (IsEditing) { CancelEdit(); UpdateTip(); } }
         protected override void OnEnabledChanged(EventArgs e) { base.OnEnabledChanged(e); if (!Enabled) CancelEdit(); }
         protected override void OnVisibleChanged(EventArgs e) { base.OnVisibleChanged(e); if (!Visible) CancelEdit(); }
-        protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); if (IsEditing) CancelEdit(); }
+        protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); if (IsEditing) CancelEdit(); UpdateViewButton(); PositionRangeRails(); }
         protected override bool ProcessCmdKey(ref Message message, Keys keyData)
         {
             if (IsEditing && keyData == Keys.Escape) { CancelEdit(); UpdateTip(); return true; }

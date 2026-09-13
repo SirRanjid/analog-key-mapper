@@ -197,34 +197,38 @@ namespace Tk75.App
         }
         void RefreshSettings()
         {
+            CancelCurveRangeGestures();
             ((CurveSettingsGrid)settings).CancelSlider();
-            string selectedProperty = settings.CurrentRow == null ? null : settings.CurrentRow.Tag as string;
-            int selectedColumn = settings.CurrentCell == null ? 1 : settings.CurrentCell.ColumnIndex;
-            int firstVisible = settings.FirstDisplayedScrollingRowIndex;
             string[] ids = SelectedSettingsBindings(); var chosen = history.Current.Bindings.Where(b => ids.Contains(b.BindingId)).ToArray(); bool previousUpdating = updating; updating = true;
             try
             {
-                settings.Rows.Clear(); foreach (var property in propertyLabels)
+                string context = CurveSelectionContext(ids);
+                // Reusing rows must not carry an unfinished numeric draft to
+                // a different key, controller or profile. Cancel under the
+                // refresh guard so CellEndEdit cannot apply it to the new scope.
+                if (curveSettingsContext != null && curveSettingsContext != context && settings.IsCurrentCellInEditMode) settings.CancelEdit();
+                curveSettingsContext = context;
+                // CellEndEdit may run inside SetCurrentCellAddressCore while a
+                // click is moving to another cell. Replacing rows or assigning
+                // CurrentCell here reenters that transition. Keep the row/cell
+                // instances, selection and scroll position owned by the grid.
+                foreach (DataGridViewRow row in settings.Rows)
                 {
-                    var field = typeof(SignalSettings).GetField(property.Key); string[] values = chosen.Select(b => Convert.ToString(field.GetValue(b.Processing), CultureInfo.InvariantCulture)).Distinct().ToArray();
-                    string caption = CurveSettingCaption(property.Key);
-                    int index = settings.Rows.Add(caption, values.Length == 0 ? "—" : values.Length == 1 ? values[0] : "Gemischt"); settings.Rows[index].Tag = property.Key;
-                    if (property.Key == "Curve")
-                    {
-                        var cell = new DataGridViewComboBoxCell { DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox, FlatStyle = FlatStyle.Flat, ValueMember = "Value", DisplayMember = "Text" };
-                        cell.DataSource = new[] { "—", "Gemischt", "Linear", "Exponential", "Logarithmic", "Smoothstep", "Custom", "Bezier" }.Select(v => new SettingOption(v)).ToArray(); cell.Value = values.Length == 0 ? "—" : values.Length == 1 ? values[0] : "Gemischt"; settings.Rows[index].Cells[1] = cell;
-                    }
-                    RefreshCurveSettingRow(settings.Rows[index], property.Key, chosen, values);
+                    string property = (string)row.Tag;
+                    var field = typeof(SignalSettings).GetField(property); string[] values = chosen.Select(b => Convert.ToString(field.GetValue(b.Processing), CultureInfo.InvariantCulture)).Distinct().ToArray();
+                    SetCurveCellValue(row.Cells[0], CurveSettingCaption(property));
+                    SetCurveCellValue(row.Cells[1], values.Length == 0 ? "—" : values.Length == 1 ? values[0] : "Gemischt");
+                    RefreshCurveSettingRow(row, property, chosen, values);
                 }
+                RefreshCurveShapePicker(chosen);
                 settings.Columns[2].HeaderText = Tr("Regler", "Adjust");
-                foreach (DataGridViewRow row in settings.Rows) if ((string)row.Tag == selectedProperty) settings.CurrentCell = row.Cells[selectedColumn];
-                if (firstVisible >= 0 && firstVisible < settings.Rows.Count) settings.FirstDisplayedScrollingRowIndex = firstVisible;
                 curve.UpdateCurve(chosen.Length == 0 ? null : chosen[0].Processing, chosen.Length > 1 && chosen.Skip(1).Any(b => !SameCurve(chosen[0].Processing, b.Processing)),
                     CurveSelectionContext(ids));
+                RefreshCurveRangeRails(chosen);
             }
             finally { updating = previousUpdating; }
         }
-        static bool SameCurve(SignalSettings a, SignalSettings b) { return a.Curve == b.Curve && a.Exponent == b.Exponent && CurvePointEditing.Same(a.CustomPoints, b.CustomPoints); }
+        static bool SameCurve(SignalSettings a, SignalSettings b) { return CurveResponsePreview.Same(a, b); }
         void EditProperty(int row)
         {
             if (row < 0 || row >= settings.Rows.Count) return; string property = (string)settings.Rows[row].Tag; string value = Convert.ToString(settings.Rows[row].Cells[1].Value, CultureInfo.InvariantCulture);

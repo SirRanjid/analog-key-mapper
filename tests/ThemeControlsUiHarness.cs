@@ -15,6 +15,29 @@ namespace Tk75.Tests
         static extern IntPtr ThemeSend(IntPtr window, int message, IntPtr wparam, IntPtr lparam);
         sealed class ThemeCombo : SleekComboBox
         { public void RecreateNativeHandle() { RecreateHandle(); } }
+        sealed class ThemeDcHost : Form
+        { protected override bool ShowWithoutActivation { get { return true; } } }
+        [StructLayout(LayoutKind.Sequential)]
+        struct ThemeNativeScrollInfo
+        {
+            public int Size;
+            public uint Mask;
+            public int Minimum, Maximum;
+            public uint Page;
+            public int Position, TrackPosition;
+        }
+        [DllImport("user32.dll", ExactSpelling = true)]
+        static extern int SetScrollInfo(IntPtr window, int bar, ref ThemeNativeScrollInfo info, bool redraw);
+        [DllImport("user32.dll", ExactSpelling = true)]
+        static extern bool GetScrollInfo(IntPtr window, int bar, ref ThemeNativeScrollInfo info);
+        [DllImport("user32.dll", ExactSpelling = true)]
+        static extern int SetScrollPos(IntPtr window, int bar, int position, bool redraw);
+        [DllImport("user32.dll", ExactSpelling = true)]
+        static extern bool SetScrollRange(IntPtr window, int bar, int minimum, int maximum, bool redraw);
+        [DllImport("gdi32.dll", ExactSpelling = true)]
+        static extern bool BitBlt(IntPtr destination, int x, int y, int width, int height, IntPtr source, int sourceX, int sourceY, uint operation);
+        [DllImport("gdi32.dll", ExactSpelling = true)]
+        static extern bool GdiFlush();
         static List<string> themeFailures;
         static void ThemeCheck(bool value, string description)
         {
@@ -29,6 +52,98 @@ namespace Tk75.Tests
             Bitmap bitmap = new Bitmap(control.Width, control.Height);
             control.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
             return bitmap;
+        }
+        static Bitmap ThemeCaptureExistingDc(Control control)
+        {
+            // No WM_PAINT/WM_PRINT/Update/DoEvents here: read only the pixels
+            // already drawn to our own test window at this exact message edge.
+            Bitmap bitmap = new Bitmap(control.Width, control.Height);
+            IntPtr source = NativeControlPaint.GetWindowDC(control.Handle);
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                IntPtr destination = graphics.GetHdc();
+                try { GdiFlush(); Check(source != IntPtr.Zero && BitBlt(destination, 0, 0, bitmap.Width, bitmap.Height, source, 0, 0, 0x00CC0020), "The direct native DC probe copies existing pixels without causing a paint."); }
+                finally { graphics.ReleaseHdc(destination); if (source != IntPtr.Zero) NativeControlPaint.ReleaseDC(control.Handle, source); }
+            }
+            return bitmap;
+        }
+        static int ThemeBrightPixels(Bitmap bitmap)
+        {
+            int bright = 0;
+            for (int y = 0; y < bitmap.Height; y++) for (int x = 0; x < bitmap.Width; x++)
+            { Color pixel = bitmap.GetPixel(x, y); if (pixel.R > 205 && pixel.G > 205 && pixel.B > 205) bright++; }
+            return bright;
+        }
+        static void CheckThemeExistingFrame(Control control, bool vertical, string description)
+        {
+            ScrollbarDrawing.ScrollInfo info;
+            ThemeCheck(ScrollbarDrawing.Read(control.Handle, vertical ? 0xFFFFFFFB : 0xFFFFFFFA, out info), description + " has a real native scrollbar.");
+            NativeControlPaint.Rect window;
+            Check(NativeControlPaint.GetWindowRect(control.Handle, out window), description + " has native window bounds.");
+            Rectangle area = info.Area.Bounds; area.Offset(-window.Left, -window.Top);
+            using (Bitmap image = ThemeCaptureExistingDc(control)) CheckThemeSurface(image, area, description);
+        }
+        static void RunImmediateScrollDrawing(string artifacts)
+        {
+            // CI-only, app-owned, nonactivating window. Offscreen windows have
+            // clipped DCs, so this small fixture must have drawable pixels.
+            // Never a screen capture or input injection into another app.
+            using (Form host = new ThemeDcHost { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual,
+                Location = new Point(24, 24), ClientSize = new Size(260, 260), BackColor = ModernTheme.Surface,
+                TopMost = true, FormBorderStyle = FormBorderStyle.None })
+            using (VScrollBar themed = new VScrollBar { Left = 15, Top = 12, Height = 232, Width = 22, Minimum = 0, Maximum = 1000, LargeChange = 40 })
+            using (VScrollBar baseline = new VScrollBar { Left = 60, Top = 12, Height = 232, Width = 22, Minimum = 0, Maximum = 1000, LargeChange = 40 })
+            using (Panel panel = new Panel { Left = 110, Top = 12, Width = 130, Height = 232, AutoScroll = true, AutoScrollMinSize = new Size(400, 1000) })
+            {
+                host.Controls.AddRange(new Control[] { themed, baseline, panel });
+                ModernTheme.Apply(themed); ModernTheme.Apply(panel); host.Show(); host.Update(); themed.Refresh(); baseline.Refresh(); panel.Refresh();
+                IntPtr dc = NativeControlPaint.GetWindowDC(baseline.Handle);
+                try { using (Graphics graphics = Graphics.FromHdc(dc)) graphics.Clear(ModernTheme.SurfaceAlt); GdiFlush(); }
+                finally { NativeControlPaint.ReleaseDC(baseline.Handle, dc); }
+                using (Bitmap image = ThemeCaptureExistingDc(baseline))
+                    CheckThemeSurface(image, new Rectangle(Point.Empty, image.Size), "Seeded baseline direct DC");
+                var change = new ThemeNativeScrollInfo { Size = Marshal.SizeOf(typeof(ThemeNativeScrollInfo)), Mask = 7, Minimum = 0, Maximum = 1000, Page = 40, Position = 400 };
+                SetScrollInfo(baseline.Handle, 2, ref change, true);
+                using (Bitmap image = ThemeCaptureExistingDc(baseline))
+                    ThemeCheck(ThemeBrightPixels(image) > image.Width * image.Height / 8,
+                        "The unthemed baseline demonstrates a synchronous light redraw, so this probe can detect the reported flash.");
+                for (int i = 0; i < 8; i++)
+                {
+                    change.Maximum = 1000 + i * 50; change.Page = (uint)(40 + i); change.Position = i * 73 + 10;
+                    int actual = SetScrollInfo(themed.Handle, 2, ref change, true);
+                    var read = new ThemeNativeScrollInfo { Size = Marshal.SizeOf(typeof(ThemeNativeScrollInfo)), Mask = 7 };
+                    ThemeCheck(GetScrollInfo(themed.Handle, 2, ref read) && actual == change.Position && read.Position == change.Position && read.Maximum == change.Maximum && read.Page == change.Page,
+                        "The immediate-redraw guard preserves the actual native position/range/page and return value at step " + i + ".");
+                    using (Bitmap image = ThemeCaptureExistingDc(themed))
+                        CheckThemeSurface(image, new Rectangle(Point.Empty, image.Size), "Existing scrollbar DC immediately after SetScrollInfo " + i);
+                    SetScrollPos(themed.Handle, 2, change.Position + 4, true);
+                    using (Bitmap image = ThemeCaptureExistingDc(themed))
+                        CheckThemeSurface(image, new Rectangle(Point.Empty, image.Size), "Existing scrollbar DC immediately after SetScrollPos " + i);
+                    SetScrollRange(themed.Handle, 2, 0, change.Maximum + 20, true);
+                    using (Bitmap image = ThemeCaptureExistingDc(themed))
+                        CheckThemeSurface(image, new Rectangle(Point.Empty, image.Size), "Existing scrollbar DC immediately after SetScrollRange " + i);
+                    themed.Update();
+                    using (Bitmap image = ThemeCaptureExistingDc(themed))
+                    {
+                        CheckThemeSurface(image, new Rectangle(Point.Empty, image.Size), "Updated scrollbar DC " + i);
+                        if (i == 7) image.Save(Path.Combine(artifacts, "preview-theme-scrollbar-live-dc.png"));
+                    }
+                }
+                for (int i = 0; i < 4; i++)
+                {
+                    int beforeY = panel.AutoScrollPosition.Y;
+                    ThemeSend(panel.Handle, 0x0115, (IntPtr)3, IntPtr.Zero);
+                    ThemeCheck(panel.AutoScrollPosition.Y < beforeY, "The themed AutoScroll panel still handles native page-down input at step " + i + ".");
+                    CheckThemeExistingFrame(panel, true, "AutoScroll frame immediately after native page-down " + i);
+                    ThemeSend(panel.Handle, 0x020A, new IntPtr(unchecked((int)0xFF880000)), IntPtr.Zero);
+                    CheckThemeExistingFrame(panel, true, "AutoScroll frame immediately after native wheel " + i);
+                    ThemeSend(panel.Handle, 0x0114, (IntPtr)1, IntPtr.Zero);
+                    CheckThemeExistingFrame(panel, false, "AutoScroll frame immediately after horizontal line scroll " + i);
+                    panel.Height = 226 - i * 6; panel.PerformLayout();
+                    CheckThemeExistingFrame(panel, true, "AutoScroll frame immediately after layout " + i);
+                }
+                host.Close();
+            }
         }
         static Bitmap ThemeCapturePopup(IntPtr window)
         {
@@ -107,7 +222,10 @@ namespace Tk75.Tests
                 for (int i = 0; i < 80; i++) { combo.Items.Add("Item " + i); list.Items.Add("Item " + i); text.AppendText("Line " + i + "\r\n"); }
                 combo.SelectedIndex = 0;
                 grid.Columns.Add("Name", "Name"); grid.Columns.Add("Value", "Value");
-                for (int i = 0; i < 80; i++) grid.Rows.Add("Item " + i, i);
+                var pickerColumn = new DataGridViewComboBoxColumn { Name = "Choice", HeaderText = "Choice", FlatStyle = FlatStyle.Flat };
+                for (int i = 0; i < 80; i++) pickerColumn.Items.Add("Choice " + i);
+                grid.Columns.Add(pickerColumn);
+                for (int i = 0; i < 80; i++) grid.Rows.Add("Item " + i, i, "Choice " + i);
                 host.Controls.AddRange(new Control[] { combo, number, scroll, list, text, grid });
                 ModernTheme.Apply(host); host.Show(); host.PerformLayout(); Application.DoEvents();
                 ThemeCheck(combo.AccessibilityObject.Role == AccessibleRole.ComboBox, "The themed picker retains its native accessible combo role (actual " + combo.AccessibilityObject.Role + ").");
@@ -187,6 +305,45 @@ namespace Tk75.Tests
                 combo.RecreateNativeHandle(); Application.DoEvents();
                 ThemeCheck(combo.Items.Count == 80 && combo.SelectedIndex == 1, "Theme attachment survives native combo handle recreation without changing its items or value (items " + combo.Items.Count + "; index " + combo.SelectedIndex + ").");
 
+                using (Bitmap image = ThemeCapture(grid))
+                {
+                    Rectangle cell = grid.GetCellDisplayRectangle(2, 0, false);
+                    Rectangle arrow = new Rectangle(cell.Right - SystemInformation.VerticalScrollBarWidth - 7, cell.Top + 5, SystemInformation.VerticalScrollBarWidth, cell.Height - 10);
+                    CheckThemeSurface(image, arrow, "Unedited grid picker arrow");
+                    image.Save(Path.Combine(artifacts, "preview-theme-grid-combo-cell.png"));
+                }
+                ComboBox firstEditor = null;
+                for (int row = 0; row < 2; row++)
+                {
+                    grid.CurrentCell = grid.Rows[row].Cells[2];
+                    Check(grid.BeginEdit(true), "The native grid combo enters editing for row " + row + ".");
+                    ComboBox editor = grid.EditingControl as ComboBox;
+                    Check(editor != null && editor is IDataGridViewEditingControl, "The picker retains the grid's real editing control contract.");
+                    if (row == 0) firstEditor = editor;
+                    else ThemeCheck(Object.ReferenceEquals(firstEditor, editor), "The fixture exercises a recycled grid editing combo.");
+                    ThemeCheck(editor.DrawMode == DrawMode.OwnerDrawFixed && editor.AccessibilityObject.Role == AccessibleRole.ComboBox,
+                        "The recycled grid editor uses shared picker drawing with its native accessible role.");
+                    using (Bitmap image = ThemeCapture(editor))
+                    {
+                        NativeControlPaint.ComboInfo info = new NativeControlPaint.ComboInfo(); info.Size = Marshal.SizeOf(typeof(NativeControlPaint.ComboInfo));
+                        Check(NativeControlPaint.GetComboBoxInfo(editor.Handle, ref info), "The grid editor still exposes its own native arrow and list.");
+                        CheckThemeSurface(image, info.Button.Bounds, "Grid editing combo arrow " + row);
+                    }
+                    ThemeSend(editor.Handle, 0x0100, (IntPtr)Keys.F4, IntPtr.Zero); Application.DoEvents();
+                    ThemeCheck(editor.DroppedDown, "Native F4 opens the grid editor's themed popup.");
+                    NativeControlPaint.ComboInfo infoPopup = new NativeControlPaint.ComboInfo(); infoPopup.Size = Marshal.SizeOf(typeof(NativeControlPaint.ComboInfo));
+                    Check(NativeControlPaint.GetComboBoxInfo(editor.Handle, ref infoPopup), "The editing popup has a real owned native handle.");
+                    using (Bitmap image = ThemeCapturePopup(infoPopup.List))
+                    {
+                        CheckThemeSurface(image, new Rectangle(3, 3, image.Width - 6, image.Height - 6), "Grid editing combo popup " + row);
+                        if (row == 0) image.Save(Path.Combine(artifacts, "preview-theme-grid-combo-popup.png"));
+                    }
+                    editor.DroppedDown = false; editor.SelectedIndex = 4 + row;
+                    grid.NotifyCurrentCellDirty(true); grid.EndEdit();
+                    ThemeCheck(Convert.ToString(grid.Rows[row].Cells[2].Value) == "Choice " + (4 + row),
+                        "The native grid edit commits exactly the chosen value after theme reuse.");
+                }
+
                 ThemeSend(scroll.Handle, 0x0115, (IntPtr)3, IntPtr.Zero); Application.DoEvents();
                 ThemeCheck(scroll.AutoScrollPosition.Y < 0, "A native page-down scroll still moves the panel content (actual " + scroll.AutoScrollPosition + ").");
                 ThemeSend(scroll.Handle, 0x0114, (IntPtr)1, IntPtr.Zero); Application.DoEvents();
@@ -217,6 +374,7 @@ namespace Tk75.Tests
                 using (Bitmap image = ThemeCapture(host)) image.Save(Path.Combine(artifacts, "preview-theme-controls.png"));
                 host.Close();
             }
+            RunImmediateScrollDrawing(artifacts);
             Check(themeFailures.Count == 0, "Native theme failures: " + String.Join(" | ", themeFailures.ToArray()));
             Console.WriteLine("NATIVE THEME PASS: " + (assertions - started) + " assertions; real native arrows, numeric editing, popup lifecycle, accessibility and scrollbar surfaces.");
         }

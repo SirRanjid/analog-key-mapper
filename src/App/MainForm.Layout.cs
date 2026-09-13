@@ -21,6 +21,7 @@ namespace Tk75.App
         readonly Dictionary<string, Control> pages = new Dictionary<string, Control>();
         readonly TableLayoutPanel keyboardArea = new TableLayoutPanel();
         readonly Panel advancedPanel = new SleekCard();
+        readonly Panel curveEditorScroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty };
         Button addTargetButton, removeTargetButton, toggleTargetButton, advancedToggle;
         bool advancedVisible;
         bool automaticIso = true, automaticLayoutAvailable = true, changingLayout;
@@ -101,12 +102,12 @@ namespace Tk75.App
             BuildBehavior(SecondaryPage("behavior", "Profil & Programmregeln"));
             var helpPage = SecondaryPage("help", "Verbindung & Entwicklungsstand");
             helpPage.Controls.Add(new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Tag = "localized", Multiline = true, ScrollBars = ScrollBars.Vertical, BackColor = ModernTheme.Surface, Text = Tr(
-                "Tastatur\r\n\r\nEine eindeutig erkannte Tastatur verbindet sich automatisch. Alle Tasten starten mit dem Druckbereich 0–385. Der Min/Max-Regler gilt für alle Tasten. Zum Kalibrieren eine Taste einmal ganz drücken und loslassen. Die Füllung im Tastenhintergrund steigt mit dem Druck von unten nach oben.\r\n\r\n" +
-                "Zuordnen und einstellen\r\n\r\nWähle eine Taste und füge rechts ein Ziel hinzu. Unter Controller wählst du den Spieler. Tasten und Controller-Ziele lassen sich in beide Richtungen ziehen. Rechts wechseln die Ansichten Tasten, Kurve und Controller. Die Tastatur bleibt dabei gleich groß. Unter Kurve kannst du Punkte setzen und ziehen. Glatt (Bézier) verbindet sie weich: Wähle einen Punkt und ziehe seine Griffe. Rechtsklick auf einen Griff stellt die automatische Rundung wieder her; Rechtsklick auf einen inneren Punkt löscht ihn. Strg+Z macht Änderungen rückgängig.\r\n\r\n" +
+                "Tastatur\r\n\r\nEine eindeutig erkannte Tastatur verbindet sich automatisch. Alle Tasten starten mit dem Druckbereich 0–385. Der Min/Max-Regler gilt für die ausgewählten Tasten; die Skala ist für die Tastatur gemeinsam. Zum Kalibrieren eine ausgewählte Taste einmal ganz drücken und loslassen. Die Füllung im Tastenhintergrund steigt mit dem Druck von unten nach oben.\r\n\r\n" +
+                "Zuordnen und einstellen\r\n\r\nWähle eine Taste und füge rechts ein Ziel hinzu. Unter Controller wählst du den Spieler. Tasten und Controller-Ziele lassen sich in beide Richtungen ziehen. Rechts wechseln die Ansichten Tasten, Kurve und Controller. Die Tastatur bleibt dabei gleich groß. Unter Kurve stellst du Auslösen und Rapid Trigger mit senkrechten Reglern ein. Kalibrieren übernimmt beim Loslassen den gemessenen Wert. Die Kurve zeigt die Antwort und gewählte Einstellungen. Wähle einen Modus zum Bearbeiten, um Kurvenpunkte oder Bereichsgrenzen direkt zu ziehen. Glatt (Bézier) verbindet sie weich: Wähle einen Punkt und ziehe seine Griffe. Rechtsklick auf einen Griff stellt die automatische Rundung wieder her; Rechtsklick auf einen inneren Punkt löscht ihn. Strg+Z macht Änderungen rückgängig.\r\n\r\n" +
                 "Mehrere Controller\r\n\r\nJeder Controller hat eigene Zuordnungen und einen eigenen USB-Anschluss. Klicke auf Stecker oder Buchse oder ziehe den Stecker hinein. Die kleinen Anschlüsse in der Fußleiste bedienen jeden Controller direkt; dort ziehst du vertikal. „Alle aus“ trennt alle Controller; eine zusätzliche Tastenkombination ist optional. Bis zu 32 Controllerplätze können Xbox- und DualSense-Ausgaben mischen. Windows unterstützt insgesamt höchstens vier XInput-Controller, einschließlich physischer Geräte. DualSense belegt keine XInput-Plätze. Spiele können weniger Controller unterstützen. Eigene Namen gelten innerhalb dieser App.\r\n\r\n" +
                 "Aktueller Stand\r\n\r\nDie Druckeingabe wurde an der angeschlossenen TK75 geprüft. Xbox- und DualSense-Ausgabe unterstützen die üblichen Tasten, Sticks und Trigger. Die Erkennung in einem Spiel hängt von dessen Controller-Unterstützung ab. Der Anschluss zeigt daher erst dann Verbunden, wenn der Ausgabeweg die Verbindung bestätigt. Verbindungsfehler stehen unten. Profile und eigene Kalibrierungen werden getrennt im Unterordner data gespeichert.",
-                "Keyboard\r\n\r\nAn unambiguously recognized keyboard connects automatically. All keys start with a pressure range of 0–385. The min/max slider applies to every key. To calibrate, press one key fully once, then release. The background of each key fills from bottom to top as you press.\r\n\r\n" +
-                "Mapping and settings\r\n\r\nChoose a key and add a target on the right. Choose the player under Controller. Drag keys and controller targets in either direction. The right-hand panel switches between Keys, Curve and Controller while the keyboard keeps its size. Under Curve, add points and drag to move them. Smooth (Bézier) joins them smoothly: select a point and drag its handles. Right-click a handle to restore automatic smoothing; right-click an interior point to delete it. Ctrl+Z undoes changes.\r\n\r\n" +
+                "Keyboard\r\n\r\nAn unambiguously recognized keyboard connects automatically. All keys start with a pressure range of 0–385. The min/max slider applies to the selected keys; the scale maximum is shared by the keyboard. To calibrate, press a selected key fully once, then release. The background of each key fills from bottom to top as you press.\r\n\r\n" +
+                "Mapping and settings\r\n\r\nChoose a key and add a target on the right. Choose the player under Controller. Drag keys and controller targets in either direction. The right-hand panel switches between Keys, Curve and Controller while the keyboard keeps its size. Under Curve, vertical sliders configure actuation and Rapid Trigger. Calibrate records a setting and applies it when the key is released. The graph shows the response and selected settings. Choose an editing mode to drag curve points or range limits directly. Smooth (Bézier) joins them smoothly: select a point and drag its handles. Right-click a handle to restore automatic smoothing; right-click an interior point to delete it. Ctrl+Z undoes changes.\r\n\r\n" +
                 "Multiple controllers\r\n\r\nEach controller has its own mappings and USB connection. Click the plug or socket, or slide the plug in. The small footer connectors address each controller directly; drag vertically there. “All off” disconnects every controller; an additional shortcut is optional. Up to 32 controller slots can mix Xbox and DualSense output. Windows supports at most four XInput controllers in total, including physical devices. DualSense does not use XInput slots. Games may support fewer controllers. Custom names apply within this app.\r\n\r\n" +
                 "Current status\r\n\r\nPressure input has been checked on the connected TK75. Xbox and DualSense output support common buttons, sticks and triggers. Recognition in a game depends on its controller support. The connector shows Connected only after the output backend confirms a connection. Connection errors appear at the bottom. Profiles and custom calibrations are stored separately in the data subfolder.") });
 
@@ -151,12 +152,14 @@ namespace Tk75.App
         Control BuildKeyCard()
         {
             UiText.PreserveText(keyTitle);
-            var surface = new SleekCard { Dock = DockStyle.Fill, Padding = new Padding(20, 6, 20, 6), Margin = Padding.Empty };
-            var card = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 12, Padding = Padding.Empty, Margin = Padding.Empty };
-            surface.Controls.Add(card);
+            var surface = new SleekCard { Dock = DockStyle.Fill, Padding = new Padding(12, 6, 12, 6), Margin = Padding.Empty };
+            var card = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 13, Padding = Padding.Empty, Margin = Padding.Empty };
+            surface.Controls.Add(keyCardScroll); keyCardScroll.Controls.Add(card);
             card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            foreach (int height in new[] { 38, 28, 24, 0, 80, 0, 24, 34, 40 }) card.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
-            card.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
+            // The frequently adjusted controls remain in the first viewport. Lower
+            // sections scroll within this fixed card, never moving the keyboard.
+            foreach (int height in new[] { 38, 28, 24, 0, 80, 0, 24, 34, 40, 140, 40, 20, 138 }) card.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+            card.Controls.Add(keySocdPanel, 0, 12);
             keyTitle.Text = "Taste auswählen"; keyTitle.Font = new Font("Segoe UI", 20, FontStyle.Bold); keyTitle.AutoSize = false; keyTitle.AutoEllipsis = true; keyTitle.Dock = DockStyle.Fill; card.Controls.Add(keyTitle, 0, 0);
             keyHint.AutoSize = false; keyHint.AutoEllipsis = true; keyHint.UseMnemonic = false; keyHint.TextAlign = ContentAlignment.TopLeft; keyHint.Margin = new Padding(3, 0, 3, 3); keyHint.Dock = DockStyle.Fill; keyHint.Tag = "muted"; keyHint.Text = "Klicke auf eine Taste in der Abbildung."; card.Controls.Add(keyHint, 0, 1);
             EventHandler resizeHint = delegate { FitKeyHint(card); };
@@ -178,7 +181,7 @@ namespace Tk75.App
             mappingEmpty.Text = "Noch keine Zuordnung\nWähle oben dein erstes Ziel."; mappingEmpty.TextAlign = ContentAlignment.MiddleCenter; mappingEmpty.Tag = "muted"; mappingEmpty.Dock = DockStyle.Fill; mappingEmpty.BackColor = ModernTheme.Surface; bindingsPanel.Controls.Add(mappingEmpty); card.Controls.Add(bindingsPanel, 0, 9);
             var actions = Bar(); actions.Dock = DockStyle.Fill; actions.AutoSize = false; actions.Padding = Padding.Empty; actions.Margin = Padding.Empty;
             removeTargetButton = Add(actions, "Entfernen", RemoveBinding); toggleTargetButton = Add(actions, "Ein / aus", ToggleBindings);
-            keyBehaviorToggle = Add(actions, Tr("Verhalten", "Behavior"), delegate { SetDetailMode("input", true); }); card.Controls.Add(actions, 0, 10);
+            keyBehaviorToggle = Add(actions, Tr("Gegentasten", "Opposite keys"), delegate { SetDetailMode("input", true); ScrollKeySettingsTo(keySocdPanel); }); card.Controls.Add(actions, 0, 10);
             actions.WrapContents = false;
             actions.Layout += delegate {
                 foreach (Control action in actions.Controls)
@@ -197,40 +200,45 @@ namespace Tk75.App
             int width = Math.Max(1, keyHint.ClientSize.Width - keyHint.Padding.Horizontal);
             Size measured = TextRenderer.MeasureText(keyHint.Text, keyHint.Font, new Size(width, Int32.MaxValue), TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
             int height = Math.Max(28, Math.Min(64, measured.Height + keyHint.Padding.Vertical + keyHint.Margin.Vertical + 4));
-            if (Math.Abs(card.RowStyles[1].Height - height) > 0.5f) card.RowStyles[1].Height = height;
+            int row = card.GetRow(keyHint);
+            if (Math.Abs(card.RowStyles[row].Height - height) > 0.5f) card.RowStyles[row].Height = height;
             keyCardTips.SetToolTip(keyHint, keyHint.Text);
         }
 
         void BuildAdvancedEditor()
         {
-            var editorArea = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1, Margin = Padding.Empty };
-            editorArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); editorArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 94)); editorArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 300)); editorArea.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); advancedPanel.Controls.Add(editorArea);
-            var signalBar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2, Padding = Padding.Empty, Margin = Padding.Empty };
-            signalBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40)); signalBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30)); signalBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
-            signalBar.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); signalBar.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-            Combo(preset, 142, new object[] { "Linear", "Soft", "Aggressiv", "Racing", "Präzise Bewegung" }); preset.SelectedIndex = 0; preset.Dock = DockStyle.Fill; preset.DropDownWidth = 220; signalBar.Controls.Add(preset, 0, 0);
-            var applyPresetButton = new SleekButton { Text = "Anwenden", Dock = DockStyle.Fill }; applyPresetButton.Click += delegate { Attempt(ApplyPreset); }; signalBar.Controls.Add(applyPresetButton, 1, 0);
-            var presetMenu = new ContextMenuStrip(); presetMenu.Items.Add("Aus gewählter Zuordnung speichern", null, delegate { Attempt(SaveSignalPreset); }); presetMenu.Items.Add("Importieren", null, delegate { Attempt(ImportSignalPreset); }); presetMenu.Items.Add("Exportieren", null, delegate { Attempt(ExportSignalPreset); }); StyleMenu(presetMenu);
-            var managePresets = new SleekButton { Text = "Presets ▾", Dock = DockStyle.Fill }; managePresets.Click += delegate { presetMenu.Show(managePresets, new Point(0, managePresets.Height)); }; signalBar.Controls.Add(managePresets, 2, 0);
-            Combo(pasteMode, 176, new object[] { "Alles außer Mapping", "Alles", "Nur Deadzones", "Nur Kurve", "Nur Filter", "Nur Output Range", "Nur Mapping" }); pasteMode.SelectedIndex = 0; pasteMode.Dock = DockStyle.Fill; pasteMode.DropDownWidth = 240; signalBar.Controls.Add(pasteMode, 0, 1);
-            var copyButton = new SleekButton { Text = "Kopieren", Dock = DockStyle.Fill }; copyButton.Click += delegate { Attempt(CopySettings); }; signalBar.Controls.Add(copyButton, 1, 1);
-            var pasteButton = new SleekButton { Text = "Einfügen", Dock = DockStyle.Fill }; pasteButton.Click += delegate { Attempt(PasteSettings); }; signalBar.Controls.Add(pasteButton, 2, 1); editorArea.Controls.Add(signalBar, 0, 0);
-            var curveHost = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty }; editorArea.Controls.Add(curveHost, 0, 1);
+            var editorArea = new TableLayoutPanel { Dock = DockStyle.Top, RowCount = 3, ColumnCount = 1, Margin = Padding.Empty };
+            editorArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            editorArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 78)); editorArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 264)); editorArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 220));
+            advancedPanel.Controls.Add(curveEditorScroll); curveEditorScroll.Controls.Add(editorArea);
+            editorArea.Controls.Add(BuildCurveTools(), 0, 0);
+            var responseArea = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+            editorArea.Controls.Add(responseArea, 0, 1);
+            keyBehaviorPanel.Dock = DockStyle.None; responseArea.Controls.Add(keyBehaviorPanel);
+            curve.Dock = DockStyle.None; curve.EditCompleted += ApplyCurve; responseArea.Controls.Add(curve);
             settings.MultiSelect = false; settings.SelectionMode = DataGridViewSelectionMode.CellSelect; settings.ReadOnly = false; settings.Columns.Add("property", "Parameter"); settings.Columns.Add("value", "Wert"); settings.Columns[0].ReadOnly = true;
             BuildCurveSettingsSliders();
-            settings.CellEndEdit += delegate(object sender, DataGridViewCellEventArgs e) { if (!updating && e.ColumnIndex == 1) Attempt(delegate { EditProperty(e.RowIndex); }); }; editorArea.Controls.Add(settings, 0, 2);
+            settings.CellEndEdit += delegate(object sender, DataGridViewCellEventArgs e) { if (!updating && e.ColumnIndex == 1) Attempt(delegate { EditProperty(e.RowIndex); }); };
+            editorArea.Controls.Add(settings, 0, 2);
             settings.CellFormatting += delegate(object sender, DataGridViewCellFormattingEventArgs e) { if (e.ColumnIndex == 1 && e.Value as string == "Gemischt") { e.Value = UiText.Get("Gemischt"); e.FormattingApplied = true; } };
-            curve.Dock = DockStyle.None; curve.EditCompleted += ApplyCurve; curveHost.Controls.Add(curve);
-            editorArea.Layout += delegate {
-                int remaining = Math.Max(0, editorArea.ClientSize.Height - (int)editorArea.RowStyles[0].Height);
-                int side = Math.Max(140, Math.Min(editorArea.ClientSize.Width, (int)(remaining * .62)));
-                if (editorArea.RowStyles[1].Height != side) editorArea.RowStyles[1].Height = side;
+            EventHandler arrange = delegate {
+                int width = Math.Max(1, responseArea.ClientSize.Width);
+                bool beside = width >= 464;
+                int side = beside ? Math.Min(212, width - 278) : Math.Min(212, width);
+                int responseHeight = beside ? 264 : side + 8 + 264;
+                int settingsHeight = Math.Max(220, curveEditorScroll.ClientSize.Height - 78 - responseHeight);
+                int totalHeight = 78 + responseHeight + settingsHeight;
+                if (editorArea.Height != totalHeight) editorArea.Height = totalHeight;
+                if (editorArea.RowStyles[1].Height != responseHeight) editorArea.RowStyles[1].Height = responseHeight;
+                if (editorArea.RowStyles[2].Height != settingsHeight) editorArea.RowStyles[2].Height = settingsHeight;
+                keyBehaviorPanel.Bounds = beside ? new Rectangle(0, 0, 270, 264) : new Rectangle(0, side + 8, width, 264);
+                curve.Bounds = beside ? new Rectangle(278, (264 - side) / 2, side, side) : new Rectangle(Math.Max(0, (width - side) / 2), 0, side, side);
             };
-            curveHost.Layout += delegate {
-                int side = Math.Max(140, Math.Min(curveHost.ClientSize.Width, curveHost.ClientSize.Height));
-                curve.Bounds = new Rectangle(Math.Max(0, (curveHost.ClientSize.Width - side) / 2), 0, side, side);
-            };
+            editorArea.Layout += delegate { arrange(null, EventArgs.Empty); };
+            responseArea.SizeChanged += arrange; curveEditorScroll.SizeChanged += arrange;
         }
+        void ScrollCurveSettingsTo(Control target)
+        { if (target == null || target.IsDisposed || !advancedPanel.Visible) return; curveEditorScroll.ScrollControlIntoView(target); }
 
         void SetAdvancedVisible(bool visible)
         { SetDetailMode(visible ? "advanced" : null, true); }
@@ -253,7 +261,7 @@ namespace Tk75.App
             RefreshInputThresholdCaptureButtons();
             if (one && reader != null && !reader.IsReading) keyHint.Text = Tr("Keine Druckwerte.\nVerbindungsdetails stehen unten.", "No pressure data.\nSee connection details below.");
             inputDetails.Visible = reader != null && (!reader.IsReading || !reader.HasReceivedSamples);
-            ((TableLayoutPanel)inputDetails.Parent).RowStyles[5].Height = inputDetails.Visible ? 22 : 0;
+            var keyRows = (TableLayoutPanel)inputDetails.Parent; keyRows.RowStyles[keyRows.GetRow(inputDetails)].Height = inputDetails.Visible ? 22 : 0;
             targets.Enabled = addTargetButton.Enabled = any; removeTargetButton.Enabled = toggleTargetButton.Enabled = SelectedBindings().Length != 0;
             targetHeader.Text = string.Format(Tr("Ziele · {0}", "Targets · {0}"), ControllerDisplayName); keyCardTips.SetToolTip(targetHeader, targetHeader.Text);
             mappingEmpty.Visible = bindings.Rows.Count == 0; if (mappingEmpty.Visible) mappingEmpty.BringToFront();

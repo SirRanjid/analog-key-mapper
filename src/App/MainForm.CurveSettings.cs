@@ -11,6 +11,7 @@ namespace Tk75.App
     {
         string[] curveSliderBindings;
         string curveSliderContext, curveSliderOriginalProfile;
+        string curveSettingsContext;
         SignalSettings curveSliderSource;
         bool curveSliderMixed;
 
@@ -32,30 +33,41 @@ namespace Tk75.App
             settings.Columns[1].AutoSizeMode = DataGridViewAutoSizeColumnMode.None; settings.Columns[1].Width = 78; settings.Columns[1].MinimumWidth = 65;
             foreach (DataGridViewColumn column in settings.Columns) column.SortMode = DataGridViewColumnSortMode.NotSortable;
             settings.AllowUserToResizeRows = false;
+            // The schema is fixed for this form. Construct rows only once,
+            // before editing can begin; ordinary profile/selection refreshes
+            // update their values without replacing the current-cell objects.
+            foreach (var property in propertyLabels)
+            {
+                if (property.Key == "Curve") continue;
+                int row = settings.Rows.Add(CurveSettingCaption(property.Key), "—");
+                settings.Rows[row].Tag = property.Key;
+            }
             var grid = (CurveSettingsGrid)settings;
             grid.SliderStarted += BeginCurveSettingSlider;
             grid.SliderPreviewed += PreviewCurveSettingSlider;
             grid.SliderCommitted += delegate(string property, double value) { Attempt(delegate { CompleteCurveSettingSlider(property, value); }); };
             grid.SliderCanceled += RestoreCurveSettingSlider;
+            BuildCurveRangeRails();
         }
         void BeginCurveSettingSlider(string property)
         {
+            CancelCurveRangeGestures();
             curveSliderBindings = SelectedSettingsBindings(); var profile = history.Current;
             var chosen = profile.Bindings.Where(b => curveSliderBindings.Contains(b.BindingId)).ToArray();
             if (chosen.Length == 0) { ((CurveSettingsGrid)settings).CancelSlider(); return; }
             curveSliderContext = CurveSelectionContext(curveSliderBindings);
             curveSliderOriginalProfile = ProfileJson.Serialize(profile); curveSliderSource = chosen[0].Processing;
             curveSliderMixed = chosen.Skip(1).Any(b => !SameCurve(chosen[0].Processing, b.Processing));
+            curve.ShapeEditing = false; curve.ActiveSetting = property;
         }
         void PreviewCurveSettingSlider(string property, double value)
         {
             if (curveSliderSource == null) return;
             foreach (DataGridViewRow row in settings.Rows)
                 if ((string)row.Tag == property) row.Cells[1].Value = value.ToString("0.##########", CultureInfo.InvariantCulture);
-            // The plot shows the curve stage. Deadzones, range and time-dependent
-            // filters remain separate stages and do not move its editable nodes.
-            if (property == "Exponent") curve.UpdateCurve(new SignalSettings { Curve = curveSliderSource.Curve, Exponent = value,
-                CustomPoints = curveSliderSource.CustomPoints }, curveSliderMixed, curveSliderContext);
+            var preview = CurveResponsePreview.Copy(curveSliderSource);
+            typeof(SignalSettings).GetField(property).SetValue(preview, value);
+            curve.UpdateCurve(preview, curveSliderMixed, curveSliderContext);
         }
         void CompleteCurveSettingSlider(string property, double value)
         {
@@ -108,11 +120,12 @@ namespace Tk75.App
         }
         void RefreshCurveSettingRow(DataGridViewRow row, string property, Binding[] chosen, string[] values)
         {
-            row.MinimumHeight = row.Height = 44;
-            row.Cells[0].Style.WrapMode = DataGridViewTriState.True;
+            if (row.MinimumHeight != 44) row.MinimumHeight = 44;
+            if (row.Height != 44) row.Height = 44;
+            if (row.Cells[0].Style.WrapMode != DataGridViewTriState.True) row.Cells[0].Style.WrapMode = DataGridViewTriState.True;
             var slider = row.Cells[2] as CurveSettingSliderCell;
             slider.Range = CurveSliderRange(property, chosen);
-            slider.Value = slider.Range != null && values.Length == 1 ? (object)slider.Range.FirstValue : null;
+            SetCurveCellValue(slider, slider.Range != null && values.Length == 1 ? (object)slider.Range.FirstValue : null);
             string description = CurveSettingHelp(property);
             if (slider.Range != null)
             {
@@ -124,8 +137,10 @@ namespace Tk75.App
             }
             description += "\n" + Tr("Gilt für alle ausgewählten Zuordnungen. Gemischt bleibt unverändert, bis du einen Wert festlegst.",
                 "Applies to every selected mapping. Mixed values stay unchanged until you choose a value.");
-            foreach (DataGridViewCell cell in row.Cells) cell.ToolTipText = description;
+            foreach (DataGridViewCell cell in row.Cells) if (cell.ToolTipText != description) cell.ToolTipText = description;
         }
+        static void SetCurveCellValue(DataGridViewCell cell, object value)
+        { if (!Object.Equals(cell.Value, value)) cell.Value = value; }
         static string CurveSettingHelp(string property)
         {
             switch (property)
@@ -138,8 +153,8 @@ namespace Tk75.App
                 case "MaxOutput": return Tr("Maximale Ausgabe begrenzt die Zuordnung, auch bei vollständig gedrückter Taste. 0,8 begrenzt sie auf 80 %. Sie darf nicht unter der kleinsten aktiven Ausgabe liegen.", "Maximum output caps this mapping even when the key is fully pressed. 0.8 limits it to 80%. It cannot be below minimum active output.");
                 case "Scale": return Tr("Ausgabestärke multipliziert das Kurvenergebnis vor dem Ausgabebereich. 0,5 halbiert es; 2 erreicht die Sättigung früher. 0 schaltet die Ausgabe dieser Zuordnung ab.", "Output strength multiplies the curve result before the output range. 0.5 halves it; 2 reaches saturation earlier. Zero suppresses this mapping's output.");
                 case "OutputDeadzone": return Tr("Kleine Ausgaben ignorieren: Kurvenergebnisse bis zu diesem Wert bleiben 0. Der verbleibende Bereich wird wieder auf die Ausgabegrenzen verteilt. 0,1 verwirft die untersten 10 % nach der Ausgabestärke.", "Ignore small outputs: curve results up to this value stay at zero. The remaining range is stretched across the output limits. 0.1 removes the lowest 10% after output strength is applied.");
-                case "Hysteresis": return Tr("Schaltabstand verhindert Flattern: Der Druck muss erst Ruhebereich plus Schaltabstand überschreiten; beim Loslassen endet die Ausgabe schon am Ruhebereich. 0,02 bedeutet 2 % Weg Abstand. Für erneutes Auslösen durch kleine Bewegungen nutze Rapid Trigger unter Tasten.", "Switch gap prevents flicker: pressure must pass top deadzone plus this gap to activate, but releases at the top deadzone. 0.02 adds a 2% travel gap. For retriggering with small movements, use Rapid Trigger under Keys.");
-                case "SmoothingTimeConstant": return Tr("Glättung dämpft schnelle Ausgabeänderungen und erhöht die Verzögerung. Nach einer Zeitkonstante sind etwa 63 % einer Änderung erreicht. 0 = aus; 0,05 Sekunden = 50 ms. Loslassen bleibt sofort. Die statische Kurve zeigt diesen zeitlichen Effekt nicht.", "Smoothing softens quick output changes and adds delay. One time constant reaches about 63% of a change. Zero is off; 0.05 seconds is 50 ms. Release is immediate. The static curve cannot show this time-dependent effect.");
+                case "Hysteresis": return Tr("Schaltabstand verhindert Flattern: Der Druck muss erst Ruhebereich plus Schaltabstand überschreiten; beim Loslassen endet die Ausgabe schon am Ruhebereich. 0,02 bedeutet 2 % Weg Abstand. Für erneutes Auslösen durch kleine Bewegungen nutze die Rapid-Trigger-Regler neben dem Diagramm.", "Switch gap prevents flicker: pressure must pass top deadzone plus this gap to activate, but releases at the top deadzone. 0.02 adds a 2% travel gap. For retriggering with small movements, use the Rapid Trigger controls beside the graph.");
+                case "SmoothingTimeConstant": return Tr("Glättung dämpft schnelle Ausgabeänderungen und erhöht die Verzögerung. Nach einer Zeitkonstante sind etwa 63 % einer Änderung erreicht. 0 = aus; 0,05 Sekunden = 50 ms. Loslassen bleibt sofort. Beim Bearbeiten zeigt das Diagramm den zeitlichen Verlauf einer Sprungantwort.", "Smoothing softens quick output changes and adds delay. One time constant reaches about 63% of a change. Zero is off; 0.05 seconds is 50 ms. Release is immediate. While editing, the graph switches to a step response over time to show this effect.");
                 case "ButtonThreshold": return Tr("Auslösepunkt für digitale Controller-Buttons: Die berechnete Ausgabe muss diesen Wert erreichen. 0,5 bedeutet 50 % Ausgabe. Sticks und analoge Trigger behalten ihre stufenlose Ausgabe; der Punkt beeinflusst nur digitale Buttons.", "Digital button activation point: calculated output must reach this value. 0.5 means 50% output. Sticks and analog triggers retain their continuous values; this threshold affects digital buttons only.");
                 default: return "";
             }

@@ -58,24 +58,24 @@ namespace Tk75.Tests
                     new KeyInputSettings { KeyIndex = 14, RapidTriggerEnabled = true, ActuationPoint = .6, ReleaseMovement = .08, PressMovement = .1 },
                     new KeyInputSettings { KeyIndex = 21, ActuationPoint = .7 }
                 };
-                Call(form, "Commit", fixture); SelectKeys(form, 9, 14); DetailMode(form, "input");
+                Call(form, "Commit", fixture); SelectKeys(form, 9, 14); DetailMode(form, "advanced");
                 string path = store.CalibrationPath(calibration.DeviceIdentity), saved = File.ReadAllText(path);
                 Profile before = Current(form);
                 Check(!input.Reader.HasReceivedSamples, "The first end-to-end recording begins with no prior selected-key snapshot.");
 
-                // Existing Keys/card geometry stays fixed at both supported sizes.
+                // Curve shows usable threshold controls at both supported sizes.
                 Size chrome = new Size(form.Width - form.ClientSize.Width, form.Height - form.ClientSize.Height);
                 foreach (Size size in new[] { DefaultClientSize, new Size(SupportedMinimumSize.Width - chrome.Width, SupportedMinimumSize.Height - chrome.Height) })
                 {
-                    SetPreviewClientSize(form, size); DetailMode(form, "input");
+                    SetPreviewClientSize(form, size); DetailMode(form, "advanced"); RevealCurveSetting(form, Field<Control>(form, "keyBehaviorPanel"));
                     var keyboard = Field<VisualKeyboard>(form, "keyboard"); Rectangle bounds = Relative(form, keyboard);
                     foreach (string name in new[] { "actuationSlider", "releaseSlider", "repressSlider", "actuationPoint", "releaseMovement", "pressMovement", "calibrateActuation", "calibrateRelease", "calibrateRepress", "applyKeyBehavior", "resetKeyBehavior" })
                         VisibleInside(form, Field<Control>(form, name), "recording-layout/" + size + "/" + name);
                     CapturePreview(form, artifacts, "input-thresholds-" + size.Width + "x" + size.Height);
-                    DetailMode(form, "advanced"); Check(Relative(form, keyboard) == bounds, "Switching from the vertical Keys controls to Curve retains keyboard bounds.");
-                    DetailMode(form, "input");
+                    DetailMode(form, null); Check(Relative(form, keyboard) == bounds, "Switching from advanced pressure controls to Keys retains keyboard bounds.");
+                    DetailMode(form, "advanced");
                 }
-                SetPreviewClientSize(form, DefaultClientSize);
+                SetPreviewClientSize(form, DefaultClientSize); DetailMode(form, "advanced"); RevealCurveSetting(form, Field<Control>(form, "keyBehaviorPanel"));
 
                 ClickInputCalibration(form, "calibrateActuation");
                 Call(form, "UpdateLive");
@@ -121,11 +121,33 @@ namespace Tk75.Tests
                 CheckCapturedOption(form, before, InputActivationFields.Press, .25); AssertCalibrationUnchanged(form, calibration, path, saved);
 
                 PushDialog(input, 9, 20); ClickInputCalibration(form, "calibrateActuation"); PushDialog(input, 9, 100); Call(form, "UpdateLive");
+                DetailMode(form, null); PushDialog(input, 9, 20); Call(form, "UpdateLive");
+                Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") == null, "Leaving Curve cancels recording before its progress controls become hidden.");
+                Equal(Json(before), Json(Current(form)), "A release after switching to Keys cannot silently apply a hidden calibration.");
+                DetailMode(form, "advanced"); RevealCurveSetting(form, Field<Control>(form, "keyBehaviorPanel"));
+
+                foreach (bool minimize in new[] { false, true })
+                {
+                    PushDialog(input, 9, 20); ClickInputCalibration(form, "calibrateActuation"); PushDialog(input, 9, 140); Call(form, "UpdateLive");
+                    FormWindowState previousState = form.WindowState;
+                    if (minimize) form.WindowState = FormWindowState.Minimized; else form.Hide();
+                    Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") == null,
+                        "The " + (minimize ? "minimize" : "hide/tray") + " event immediately cancels recording, before another UI tick.");
+                    PushDialog(input, 9, 20); Call(form, "UpdateLive");
+                    Equal(Json(before), Json(Current(form)), "A later release while " + (minimize ? "minimized" : "hidden") + " cannot apply a background calibration.");
+                    AssertCalibrationUnchanged(form, calibration, path, saved);
+                    if (minimize) form.WindowState = previousState; else form.Show();
+                    Pump(form); DetailMode(form, "advanced"); RevealCurveSetting(form, Field<Control>(form, "keyBehaviorPanel"));
+                    Check(form.Visible && Field<ReaderSession>(form, "inputThresholdCaptureReader") == null && Field<Button>(form, "calibrateActuation").Enabled,
+                        "Restoring the offscreen preview re-enables Calibrate without rearming the canceled gesture.");
+                }
+
+                PushDialog(input, 9, 20); ClickInputCalibration(form, "calibrateActuation"); PushDialog(input, 9, 100); Call(form, "UpdateLive");
                 SelectKeys(form, 21); PushDialog(input, 9, 20); Call(form, "UpdateLive");
                 Check(Field<ReaderSession>(form, "inputThresholdCaptureReader") == null, "Changing selected keys cancels the real reader subscription.");
                 Equal(Json(before), Json(Current(form)), "A canceled selection cannot apply a late release to the new key.");
 
-                SelectKeys(form, 9, 14); DetailMode(form, "input"); PushDialog(input, 9, 20); ClickInputCalibration(form, "calibrateActuation");
+                SelectKeys(form, 9, 14); DetailMode(form, "advanced"); PushDialog(input, 9, 20); ClickInputCalibration(form, "calibrateActuation");
                 using (var replacement = new DialogInput())
                 {
                     typeof(MainForm).GetField("reader", Private).SetValue(form, replacement.Reader); Call(form, "UpdateLive");

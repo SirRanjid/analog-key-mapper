@@ -7,8 +7,13 @@ namespace Tk75.App
     {
         void UpdatePreviewVisibility()
         {
-            if (runtime != null && !closing && !deviceDetachInProgress && !IsDisposed && !Disposing)
-                runtime.SetPreviewActive(Visible && WindowState != FormWindowState.Minimized);
+            if (IsDisposed || Disposing) return;
+            bool visible = Visible && WindowState != FormWindowState.Minimized;
+            // Recording is an editor gesture. Once its progress/cancel controls
+            // are hidden, a later release must not silently change a threshold.
+            if (!visible && inputThresholdCaptureReader != null) CancelInputThresholdCapture();
+            if (runtime != null && !closing && !deviceDetachInProgress)
+                runtime.SetPreviewActive(visible);
         }
         protected override void OnVisibleChanged(EventArgs e)
         { base.OnVisibleChanged(e); UpdatePreviewVisibility(); }

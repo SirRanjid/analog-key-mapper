@@ -17,7 +17,7 @@ namespace Tk75.App
     public sealed class KeyboardBehaviorAnnotation
     {
         // Presentation only: no sensor units or input policy are inferred here.
-        public string Compact, Full, Description;
+        public string Compact, Full, Narrow, Description;
     }
     // Own-window rendering only. This component never reads, writes or hooks a device.
     public class VisualKeyboard : Control
@@ -172,9 +172,9 @@ namespace Tk75.App
             { if (previous == null) return; behaviorAnnotations.Remove(keyIndex); }
             else
             {
-                string compact = value.Compact ?? "", full = value.Full ?? compact, description = value.Description ?? "";
-                if (previous != null && previous.Compact == compact && previous.Full == full && previous.Description == description) return;
-                behaviorAnnotations[keyIndex] = new KeyboardBehaviorAnnotation { Compact = compact, Full = full, Description = description };
+                string compact = value.Compact ?? "", full = value.Full ?? compact, narrow = value.Narrow ?? compact, description = value.Description ?? "";
+                if (previous != null && previous.Compact == compact && previous.Full == full && previous.Narrow == narrow && previous.Description == description) return;
+                behaviorAnnotations[keyIndex] = new KeyboardBehaviorAnnotation { Compact = compact, Full = full, Narrow = narrow, Description = description };
             }
             InvalidateKey(keyIndex); RefreshHoverTooltip();
             AccessibilityNotifyClients(AccessibleEvents.DescriptionChange, -1);
@@ -745,7 +745,23 @@ namespace Tk75.App
             if (badgeHeight > 0)
             { int inset = Math.Min(textBounds.Height / 2, (int)Math.Ceiling(badgeHeight)); legendBounds.Y += inset; legendBounds.Height = Math.Max(1, legendBounds.Height - inset); }
             int annotationHeight = DrawBehaviorAnnotation(graphics, key, bounds, legendBounds, keyFont, chosen);
-            if (annotationHeight > 0) legendBounds.Height = Math.Max(1, legendBounds.Height - annotationHeight);
+            Font legendFont = keyFont;
+            if (annotationHeight > 0)
+            {
+                legendBounds.Height = Math.Max(1, legendBounds.Height - annotationHeight);
+                int normalHeight = (int)Math.Ceiling(keyFont.GetHeight(graphics));
+                if (legendBounds.Height < normalHeight)
+                {
+                    // Controller badges occupy the top-right corner, not a
+                    // whole text row. On compact caps, reclaim only enough of
+                    // that inset for the existing smaller legend font rather
+                    // than dropping the settings annotation altogether.
+                    legendFont = valueFont;
+                    int needed = Math.Max(0, (int)Math.Ceiling(valueFont.GetHeight(graphics)) - legendBounds.Height);
+                    int reclaim = Math.Min(needed, legendBounds.Top - textBounds.Top);
+                    legendBounds.Y -= reclaim; legendBounds.Height += reclaim;
+                }
+            }
             bool showPercent = active && state.Depth.HasValue && !state.Estimated && textBounds.Width >= 22 &&
                 legendBounds.Height >= (int)Math.Ceiling(keyFont.GetHeight(graphics) + valueFont.GetHeight(graphics)) + 4;
             if (showPercent)
@@ -757,7 +773,7 @@ namespace Tk75.App
                     chosen ? Color.FromArgb(223, 215, 255) : Color.FromArgb(175, 230, 211),
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
             }
-            TextRenderer.DrawText(graphics, GetKeyLabel(key), keyFont, legendBounds, chosen ? Color.FromArgb(235, 230, 255) : ForeColor,
+            TextRenderer.DrawText(graphics, GetKeyLabel(key), legendFont, legendBounds, chosen ? Color.FromArgb(235, 230, 255) : ForeColor,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
             if (badgeHeight == 0 && state != null && state.Mapped)
             {
@@ -781,19 +797,21 @@ namespace Tk75.App
         {
             KeyboardBehaviorAnnotation annotation;
             if (key.IsKnob || !key.KeyIndex.HasValue || !behaviorAnnotations.TryGetValue(key.KeyIndex.Value, out annotation) || String.IsNullOrEmpty(annotation.Compact)) return 0;
-            float fontSize = Math.Max(6f, Math.Min(8.5f, bounds.Height * .18f));
+            float fontSize = Math.Max(7.5f, Math.Min(9f, bounds.Height * .21f));
             using (Font font = new Font("Segoe UI", fontSize, FontStyle.Regular, GraphicsUnit.Pixel))
             {
-                int height = (int)Math.Ceiling(font.GetHeight(graphics)) + 2;
-                if (available.Height < height + legendFont.GetHeight(graphics) || bounds.Width < 24) return 0;
-                var area = new Rectangle((int)Math.Ceiling(bounds.Left) + 4, available.Bottom - height, Math.Max(1, (int)bounds.Width - 8), height);
+                int height = (int)Math.Ceiling(font.GetHeight(graphics));
+                if (bounds.Height < 27 || bounds.Width < 24 || available.Height < height + 2) return 0;
+                int inset = key.Code == "Enter" && key.Bounds.Height > key.Bounds.Width ? (int)Math.Ceiling(bounds.Width * .24f) + 3 : 3;
+                var area = new Rectangle((int)Math.Ceiling(bounds.Left) + inset, available.Bottom - height, Math.Max(1, (int)bounds.Width - inset - 3), height);
                 const TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
                 string text = annotation.Full;
                 if (TextRenderer.MeasureText(graphics, text, font, Size.Empty, flags).Width > area.Width) text = annotation.Compact;
-                if (TextRenderer.MeasureText(graphics, text, font, Size.Empty, flags).Width > area.Width) return 0;
+                if (TextRenderer.MeasureText(graphics, text, font, Size.Empty, flags).Width > area.Width) text = annotation.Narrow;
+                if (TextRenderer.MeasureText(graphics, text, font, Size.Empty, flags).Width > area.Width) text = "…";
                 GraphicsState saved = graphics.Save();
                 using (GraphicsPath path = KeyPath(key, bounds)) graphics.SetClip(path, CombineMode.Intersect);
-                TextRenderer.DrawText(graphics, text, font, area, chosen ? Color.FromArgb(161, 151, 192) : Color.FromArgb(125, 134, 151),
+                TextRenderer.DrawText(graphics, text, font, area, chosen ? Color.FromArgb(161, 151, 192) : Color.FromArgb(141, 150, 167),
                     flags | TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.PreserveGraphicsClipping);
                 graphics.Restore(saved); return height;
             }

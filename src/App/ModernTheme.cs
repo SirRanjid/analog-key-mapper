@@ -128,7 +128,11 @@ namespace Tk75.App
                 text.ForeColor = Foreground;
             }
             ComboBox combo = control as ComboBox;
-            if (combo != null) { combo.FlatStyle = FlatStyle.Flat; combo.BackColor = SurfaceAlt; combo.ForeColor = Foreground; }
+            if (combo != null)
+            {
+                combo.FlatStyle = FlatStyle.Flat; combo.BackColor = SurfaceAlt; combo.ForeColor = Foreground;
+                NativeSurfaceTheme.AttachCombo(combo);
+            }
             NumericUpDown number = control as NumericUpDown;
             if (number != null) { number.BorderStyle = BorderStyle.FixedSingle; number.BackColor = Surface; number.ForeColor = Foreground; NativeSurfaceTheme.AttachNumber(number); }
             ListBox list = control as ListBox;
@@ -175,6 +179,18 @@ namespace Tk75.App
                     if (current.Fonts != null) ApplyControl(e.Control, current.Fonts, current.InNavigation);
                 };
                 if (tabs != null) tabs.DrawItem += DrawTab;
+                if (grid != null)
+                {
+                    grid.CellPainting += PaintComboCell;
+                    grid.EditingControlShowing += delegate(object sender, DataGridViewEditingControlShowingEventArgs e)
+                    {
+                        ControlStyle current = StyleFor((Control)sender);
+                        // Editing controls are reused. PrepareEditingControl can
+                        // overwrite colors after ControlAdded, so restyle at the
+                        // point the grid has finished preparing each edit.
+                        if (current.Fonts != null) ApplyControl(e.Control, current.Fonts, current.InNavigation);
+                    };
+                }
             }
             foreach (Control child in control.Controls) ApplyControl(child, fonts, navigation);
         }
@@ -242,6 +258,26 @@ namespace Tk75.App
             grid.RowTemplate.Height = 30;
             grid.RowTemplate.MinimumHeight = 30;
             foreach (DataGridViewRow row in grid.Rows) { row.MinimumHeight = 30; if (row.Height < 30) row.Height = 30; }
+        }
+
+        static void PaintComboCell(object sender, DataGridViewCellPaintingEventArgs e)
+        {
+            var grid = (DataGridView)sender;
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+            var cell = grid.Rows[e.RowIndex].Cells[e.ColumnIndex] as DataGridViewComboBoxCell;
+            if (cell == null || cell.DisplayStyle == DataGridViewComboBoxDisplayStyle.Nothing ||
+                cell.DisplayStyleForCurrentCellOnly && grid.CurrentCell != cell) return;
+            e.Paint(e.ClipBounds, e.PaintParts & ~(DataGridViewPaintParts.ContentForeground | DataGridViewPaintParts.Focus));
+            Rectangle bounds = Rectangle.Inflate(e.CellBounds, -3, -3);
+            int arrowWidth = Math.Min(SystemInformation.VerticalScrollBarWidth + 6, bounds.Width / 2);
+            bool rtl = grid.RightToLeft == RightToLeft.Yes;
+            Rectangle button = new Rectangle(rtl ? bounds.Left + 1 : bounds.Right - arrowWidth - 1, bounds.Top + 1, arrowWidth, Math.Max(1, bounds.Height - 2));
+            Rectangle text = new Rectangle(rtl ? button.Right + 4 : bounds.Left + 9, bounds.Top + 1, Math.Max(1, bounds.Width - arrowWidth - 16), Math.Max(1, bounds.Height - 2));
+            var state = e.Graphics.Save();
+            e.Graphics.SetClip(e.ClipBounds, System.Drawing.Drawing2D.CombineMode.Intersect);
+            ComboSurfaceDrawing.Field(e.Graphics, bounds, button, text, e.CellStyle.Font ?? grid.Font,
+                Convert.ToString(e.FormattedValue), grid.Enabled && !cell.ReadOnly, grid.CurrentCell == cell, false, false, rtl);
+            e.Graphics.Restore(state); e.Handled = true;
         }
 
         static void DrawTab(object sender, DrawItemEventArgs e)

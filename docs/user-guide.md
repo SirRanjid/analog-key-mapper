@@ -57,7 +57,9 @@ The recorded mixed-device test is **two Xbox plus two DualSense controllers** on
 
 **Keys**, **Curve** and **Controller** occupy the same right-hand area. Switching tabs keeps the keyboard's size unchanged. Focus a tab and use Left/Right or Home/End to switch it.
 
-In **Curve**, edit deadzones, activation thresholds, minimum/maximum output, smoothing and response shape. Linear, custom segmented and Bézier curves are available. The curve editor remains square.
+Use **Keys** for pressure ranges, assignments and opposite-key handling. Use **Curve** for advanced pressure behavior and output response. Its compact square graph sits beside the vertical actuation and Rapid Trigger controls; narrow windows stack these areas so the controls remain usable.
+
+The single shape selector at the top changes only the shape. **Presets** contains complete response presets, which also replace the other output settings. The numeric list has no duplicate shape selector.
 
 ![Square curve editor showing mixed settings across selected mappings](images/response-curve.png)
 
@@ -69,17 +71,27 @@ The output list in **Keys** outlines its selected row even when the list has onl
 
 ![Keys tab with individual pressure ranges, outlined output rows and response summaries](images/mapping.png)
 
-**Behavior** under Keys controls Rapid Trigger and opposite-key handling (SOCD). These belong to physical keys and are shared by their mappings. Mixed values are marked; editing one field preserves the others. With two selected keys, you can pair them explicitly and choose neutral, first-pressed or last-pressed resolution. Larger selections retain existing pairs and do not offer pair editing.
+The vertical controls in **Curve** configure physical-key actuation and Rapid Trigger. **Keys → Opposite keys** configures SOCD. These settings belong to physical keys and are shared by their mappings. Mixed values are marked; editing one field preserves the others. With two selected keys, you can pair them explicitly and choose neutral, first-pressed or last-pressed resolution. Larger selections retain existing pairs and do not offer pair editing.
 
 The vertical controls beside the numeric fields adjust initial actuation, release movement and repress movement. Their scale is a percentage of each key's pressure range, not a measured distance in millimeters. Faint keycap annotations show the configured actuation point; wider keys also show release and repress values. Hover a key for the complete explanation. A key with no additional actuation setting continues to follow its pressure range.
 
 Each threshold also has **Calibrate**: press one selected key as far as desired, then release it completely to accept the measured value for the selection. For Rapid Trigger, the measured distance becomes the release or repress movement amount. This changes only that behavior setting; it does not recalibrate the key's Min/Max range or the keyboard scale.
 
+Changing tabs, hiding the window to the tray or minimizing cancels an unfinished threshold recording. Returning to the editor does not silently start recording again.
+
+Compact keycap footers mark configured keys: `↕25` is a fixed 25% input gate, `↓18↑3` combines actuation and relative Rapid Trigger release, `●35` is a digital output threshold, and `→10–80` is an analog output range. `→…` marks differing mapped responses; `R12–330` identifies a raw pressure range when that is the key's only custom setting. Hover for exact values and units, including repress movement and all outputs. Unconfigured keys remain uncluttered.
+
 ![Actuation, release and repress controls with a Calibrate button for each option](images/key-behavior.png)
 
-In **Curve**, sliders accompany the editable numbers for deadzones, output range, scale, smoothing and the other response options. A drag previews the curve and becomes one undoable edit when released. Hover a setting or curve point for its explanation or coordinates. Edits apply to all selected keys for the current controller.
+In **Curve**, sliders accompany the editable numbers for deadzones, output range, scale, smoothing and the other response options. A drag previews the response and becomes one undoable edit when released. The normal **Response** view includes deadzones, gain, output deadzone and output limits. The solid line shows pressing; the dashed line shows releasing when hysteresis changes the response. Shading and dotted guides explain the selected setting; they are not draggable points.
 
-To capture an opposite key, select the first key and open **Behavior**, then click **Capture**. Click the desired opposite key on the keyboard illustration. This pairs both keys, keeps the original key's SOCD policy and preserves their actuation settings. Existing partners are unpaired; **Undo** restores the previous pairings. **Cancel** or **Escape** cancels capture. Dragging a key continues to open **Controller** for normal output mapping.
+The vertical **IN** rail beside the graph sets the usable input span between the two deadzones: released at the top, full pressure at the bottom. **OUT** sets minimum active and maximum output, with 100% at the top to match the output axis. Drag either rectangular handle, or focus a rail, choose a handle with Left/Right or Space, and adjust it with Up/Down. These are the same values shown in the list; all selected mappings update together and their dependent limits stay valid.
+
+Use **Edit shape** to create and drag actual custom or Bézier points. The button switches back to **Response** when you want to inspect the result of all output settings. Hover settings and points for explanations and coordinates. Input actuation has its own guide; Rapid Trigger movement is relative to the last peak or valley, so its illustration is a labeled example rather than a fixed release point. Smoothing uses a time-response illustration because it adds delay without changing the settled pressure curve. These previews update on changes and add no background animation loop.
+
+To capture an opposite key, select the first key and choose **Keys → Opposite keys**, then click **Capture**. Click the desired opposite key on the keyboard illustration. This pairs both keys, keeps the original key's SOCD policy and preserves their actuation settings. Existing partners are unpaired; **Undo** restores the previous pairings. **Cancel** or **Escape** cancels capture. Dragging a key continues to open **Controller** for normal output mapping.
+
+Choosing the opposite key or resolution policy in the dropdowns also applies immediately. Each choice has its own undo step; there is no need to change tabs to activate it.
 
 ![Opposite-key capture waiting for a keyboard selection, with Cancel available](images/socd-opposite-drop.png)
 

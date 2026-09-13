@@ -16,7 +16,7 @@ namespace Tk75.App
 
         Control BuildInputThresholdField(string label, NumericUpDown number, InputThresholdSlider slider, Button calibrate, InputActivationFields field)
         {
-            var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = new Padding(3, 0, 5, 0) };
+            var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = new Padding(2, 0, 3, 0) };
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -31,14 +31,15 @@ namespace Tk75.App
                 { if (inputThresholdDraftSlider != null) inputThresholdDraftSlider.CancelEdit(); inputThresholdDraftSlider = slider; inputThresholdDraftNumber = number; inputThresholdOriginalNumber = number.Value; }
                 bool previous = updatingInput; updatingInput = true;
                 try { number.Value = (decimal)value; } finally { updatingInput = previous; }
+                PreviewCurveInputOption(field, value);
             };
             slider.Committed += delegate(double value) {
                 inputThresholdDraftSlider = null; inputThresholdDraftNumber = null;
                 bool previous = updatingInput; updatingInput = true;
                 try { number.Value = (decimal)value; } finally { updatingInput = previous; }
-                MarkInputDirty(field);
+                MarkInputDirty(field); PreviewCurveInputOption(field, value);
             };
-            slider.Canceled += delegate { RestoreInputThresholdNumber(slider); };
+            slider.Canceled += delegate { RestoreInputThresholdNumber(slider); PreviewCurveInputOption(InputActivationFields.None, null); };
             calibrate.Click += delegate { Attempt(delegate { if (inputThresholdCaptureReader != null) CancelInputThresholdCapture(); else BeginInputThresholdCapture(field); }); };
             return panel;
         }

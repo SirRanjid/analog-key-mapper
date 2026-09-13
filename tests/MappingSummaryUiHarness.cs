@@ -22,7 +22,7 @@ namespace Tk75.Tests
             // Previous suites intentionally leave the minimum window size.
             // Programmatic selection does not scroll the second row into view;
             // inspect a fully displayed row, as a user would see before clicking.
-            grid.FirstDisplayedScrollingRowIndex = row.Index; Pump(form);
+            grid.FirstDisplayedScrollingRowIndex = row.Index; Pump(form); RevealKeySetting(form, grid);
             Rectangle area = grid.GetRowDisplayRectangle(row.Index, false);
             Check(area.Top >= grid.ColumnHeadersHeight && area.Bottom <= grid.ClientSize.Height,
                 label + ": the row under pixel inspection is fully visible.");
@@ -116,6 +116,7 @@ namespace Tk75.Tests
                 Check(grid.ClientSize.Height >= grid.ColumnHeadersHeight + grid.Rows[0].Height, "The minimum window retains one complete mapping row beneath the header.");
                 Check(grid.Columns.Cast<DataGridViewColumn>().Where(column => column.Visible).Sum(column => column.Width) <= grid.ClientSize.Width,
                     "Summary columns fit the minimum sidebar without a horizontal scrollbar.");
+                RevealKeySetting(form, grid); VisibleInside(form, grid, "mapping-summary/minimum-visible-grid");
                 CapturePreview(form, artifacts, "mapping-summary-minimum");
                 AssertPassive(form);
             }

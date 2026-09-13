@@ -80,6 +80,7 @@ namespace Tk75.App
             if (previous == null) return;
             if (handler != null) previous.Sample -= handler;
             actuationSlider.MeasuredPercent = releaseSlider.MeasuredPercent = repressSlider.MeasuredPercent = null;
+            RefreshCurveInputPreview();
             if (!IsDisposed && !closing)
             {
                 SetInputFieldAvailability(); RefreshInputThresholdCaptureButtons();
@@ -132,7 +133,7 @@ namespace Tk75.App
             if (source < 0) return;
             double amount = CapturedInputThreshold(sharedPressureRange.ForKey(source), maximum);
             var measuredSlider = inputThresholdCaptureField == InputActivationFields.Actuation ? actuationSlider : inputThresholdCaptureField == InputActivationFields.Release ? releaseSlider : repressSlider;
-            measuredSlider.MeasuredPercent = amount * 100;
+            measuredSlider.MeasuredPercent = amount * 100; PreviewCurveInputOption(inputThresholdCaptureField, amount * 100);
             SetInputStatus(string.Format(Tr("{0}: {1:0.##} % · Loslassen übernimmt", "{0}: {1:0.##}% · release to apply"), Label(source), amount * 100));
             if (!complete) return;
             int[] keys = inputThresholdCaptureKeys; InputActivationFields field = inputThresholdCaptureField;

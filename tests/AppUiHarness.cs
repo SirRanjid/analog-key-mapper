@@ -105,6 +105,10 @@ namespace Tk75.Tests
         }
         static void DetailMode(MainForm form, string mode)
         { Call(form, "SetDetailMode", mode, true, false); Pump(form); }
+        static void RevealKeySetting(MainForm form, Control control)
+        { Call(form, "ScrollKeySettingsTo", control); Pump(form); }
+        static void RevealCurveSetting(MainForm form, Control control)
+        { Call(form, "ScrollCurveSettingsTo", control); Pump(form); }
         static Button[] DetailTabs(MainForm form)
         { return new[] { Field<Button>(form, "keySettingsToggle"), Field<Button>(form, "advancedToggle"), Field<Button>(form, "controllerToggle") }; }
         static void CheckDetailTabState(MainForm form, string mode, string label)
@@ -155,7 +159,7 @@ namespace Tk75.Tests
                 if (current == 1) { Control curve = Field<Control>(form, "curve"); Check(curve.Width == curve.Height, "Keyboard tab navigation retains the square curve editor."); }
             }
             DetailMode(form, "input"); CheckDetailTabState(form, "input", "key behavior within Keys");
-            Check(Field<Control>(form, "keyBehaviorPanel").Visible, "Key behavior remains within the selected Keys tab.");
+            Check(Field<Control>(form, "keySocdPanel").Visible && !Field<Control>(form, "keyBehaviorPanel").Visible, "SOCD remains within Keys while advanced pressure belongs to Curve.");
             CheckStableKeyboard(form, baseline, drawing, "key behavior tab state");
             DetailMode(form, null);
             Equal(original, Json(Current(form)), "Switching and focusing detail tabs preserves profile values.");
@@ -219,42 +223,75 @@ namespace Tk75.Tests
             Call(form, "ShowPage", "mapping"); DetailMode(form, null);
             SetPreviewClientSize(form, size); string label = size.Width + "x" + size.Height;
             Check(form.ClientSize == size, "Requested client size applied: " + label);
-            foreach (string name in new[] { "devices", "profiles", "keyboard", "layoutMode", "mainControllerSlotPicker", "targets", "bindings", "keyTitle", "keyHint", "pressureText", "pressureRange", "pressureScaleMaximum", "calibrateRange", "addTargetButton", "controllerToggle", "keyBehaviorToggle", "advancedToggle", "deviceStatus", "outputStatus" })
+            foreach (string name in new[] { "devices", "profiles", "keyboard", "layoutMode", "mainControllerSlotPicker", "keyTitle", "controllerToggle", "advancedToggle", "deviceStatus", "outputStatus", "keyHint", "pressureText", "pressureRange", "pressureScaleMaximum", "calibrateRange", "targets", "addTargetButton" })
                 VisibleInside(form, Field<Control>(form, name), label + "/" + name);
             foreach (string name in new[] { "preset", "pasteMode", "keys", "settings", "curve", "monitor", "controllerPreview", "keyBehaviorPanel" })
-                LayoutCheck(!Field<Control>(form, name).Visible, label + "/" + name + " is hidden in the simple default view.");
+                LayoutCheck(!Field<Control>(form, name).Visible, label + "/" + name + " is hidden in the default Keys view.");
             CheckBar(form, Field<Control>(form, "devices").Parent, label + "/header");
-            CheckBar(form, Field<Control>(form, "removeTargetButton").Parent, label + "/target-actions");
             CheckBar(form, Field<Control>(form, "controllerToggle").Parent, label + "/detail-actions");
             CheckControllerFooter(form, label);
-            DataGridView assignmentGrid = Field<DataGridView>(form, "bindings");
-            LayoutCheck(assignmentGrid.ClientSize.Height >= assignmentGrid.ColumnHeadersHeight + assignmentGrid.RowTemplate.Height,
-                label + ": assignment list must show its column header and at least one usable data row: " + assignmentGrid.ClientSize);
             var keyboard = Field<VisualKeyboard>(form, "keyboard");
             LayoutCheck(keyboard.KeyboardBounds.Width >= 400 && keyboard.KeyboardBounds.Height >= 110, label + ": keyboard remains a usable physical overview.");
             Rectangle baseline = Relative(form, keyboard); RectangleF drawing = keyboard.KeyboardBounds;
             CheckStableKeyboard(form, baseline, drawing, label + "/key"); CapturePreview(form, artifacts, label);
             CheckDetailTabState(form, null, label + "/key tabs");
+            foreach (string name in new[] { "keyHint", "pressureText", "pressureRange", "pressureScaleMaximum", "calibrateRange", "targetHeader", "targets", "addTargetButton", "bindings", "removeTargetButton", "toggleTargetButton", "keyBehaviorToggle", "oppositeKey", "oppositeMode", "captureOpposite" })
+            {
+                Control control = Field<Control>(form, name); RevealKeySetting(form, control);
+                VisibleInside(form, control, label + "/scrolled/" + name);
+                CheckStableKeyboard(form, baseline, drawing, label + "/scroll/" + name);
+            }
+            RevealKeySetting(form, Field<Control>(form, "removeTargetButton").Parent);
+            CheckBar(form, Field<Control>(form, "removeTargetButton").Parent, label + "/target-actions");
+            DataGridView assignmentGrid = Field<DataGridView>(form, "bindings");
+            RevealKeySetting(form, assignmentGrid);
+            LayoutCheck(assignmentGrid.ClientSize.Height >= assignmentGrid.ColumnHeadersHeight + assignmentGrid.RowTemplate.Height,
+                label + ": assignment list must show its column header and at least one usable data row: " + assignmentGrid.ClientSize);
+            CapturePreview(form, artifacts, label + "-outputs");
             DetailMode(form, "input");
-            CheckDetailTabState(form, "input", label + "/input tabs");
-            foreach (string name in new[] { "keyBehaviorStatus", "rapidTrigger", "actuationPoint", "releaseMovement", "pressMovement", "oppositeKey", "oppositeMode", "applyKeyBehavior", "resetKeyBehavior" })
+            CheckDetailTabState(form, "input", label + "/input alias tabs");
+            RevealKeySetting(form, Field<Control>(form, "keySocdPanel"));
+            foreach (string name in new[] { "oppositeKey", "oppositeMode", "captureOpposite" })
                 VisibleInside(form, Field<Control>(form, name), label + "/input/" + name);
-            LayoutCheck(!Field<Control>(form, "keyTitle").Visible && !Field<Control>(form, "curve").Visible && !Field<Control>(form, "controllerPreview").Visible, label + ": behavior is the only visible detail context.");
+            LayoutCheck(Field<Control>(form, "keyTitle").Visible && !Field<Control>(form, "curve").Visible && !Field<Control>(form, "keyBehaviorPanel").Visible, label + ": SOCD is part of Keys and advanced pressure is reserved for Curve.");
             CheckStableKeyboard(form, baseline, drawing, label + "/input"); CapturePreview(form, artifacts, label + "-input");
             DetailMode(form, "advanced");
             CheckDetailTabState(form, "advanced", label + "/curve tabs");
-            foreach (string name in new[] { "preset", "pasteMode", "settings", "curve" }) VisibleInside(form, Field<Control>(form, name), label + "/advanced/" + name);
-            LayoutCheck(!Field<Control>(form, "keyTitle").Visible && !Field<Control>(form, "keyBehaviorPanel").Visible && !Field<Control>(form, "controllerPreview").Visible, label + ": curve is the only visible detail context.");
-            CheckBar(form, Field<Control>(form, "preset").Parent, label + "/advanced/signal");
+            foreach (string name in new[] { "curveShape", "pasteMode", "curve" }) VisibleInside(form, Field<Control>(form, name), label + "/advanced/" + name);
+            LayoutCheck(!Field<Control>(form, "keyTitle").Visible && Field<Control>(form, "keyBehaviorPanel").Visible && !Field<Control>(form, "controllerPreview").Visible, label + ": Curve contains the plot and advanced pressure controls.");
+            LayoutCheck(!Field<Control>(form, "preset").Visible, label + ": presets do not create a second visible shape selector.");
+            CheckBar(form, Field<Control>(form, "curveShape").Parent, label + "/advanced/signal");
             DataGridView settings = Field<DataGridView>(form, "settings"); Control curve = Field<Control>(form, "curve");
-            LayoutCheck(settings.ClientSize.Width >= 180 && settings.ClientSize.Height >= 95, label + ": settings editor too small: " + settings.ClientSize);
-            LayoutCheck(curve.ClientSize.Width >= 100 && curve.ClientSize.Height >= 100, label + ": curve editor too small: " + curve.ClientSize);
+            LayoutCheck(settings.ClientSize.Width >= 180 && settings.ClientSize.Height >= 210, label + ": settings editor too small: " + settings.ClientSize);
+            LayoutCheck(curve.ClientSize.Width >= 184 && curve.ClientSize.Height >= 184, label + ": curve editor too small: " + curve.ClientSize);
             LayoutCheck(curve.Width == curve.Height, label + ": curve control remains square: " + curve.Size);
             RectangleF plot = (RectangleF)typeof(CurveCanvas).GetProperty("Plot", Private).GetValue(curve, null);
             LayoutCheck(Math.Abs(plot.Width - plot.Height) < 0.01f, label + ": curve coordinate plot remains square: " + plot);
             LayoutCheck(plot.Width > 0 && plot.Height > 0 && plot.Left >= 0 && plot.Top >= 0 && plot.Right <= curve.ClientSize.Width && plot.Bottom + 7 + curve.Font.Height <= curve.ClientSize.Height,
                 label + ": internal curve plot/axis labels clipped: " + plot + " within " + curve.ClientSize);
+            Control thresholds = Field<Control>(form, "keyBehaviorPanel");
+            if (size == DefaultClientSize)
+            {
+                LayoutCheck(thresholds.Right <= curve.Left && thresholds.Top <= curve.Top, label + ": vertical pressure controls sit to the left of the square curve.");
+                LayoutCheck(!Field<Panel>(form, "curveEditorScroll").VerticalScroll.Visible, label + ": the normal Curve view scrolls only the lower settings grid.");
+            }
+            else if (curve.Parent.ClientSize.Width < 464)
+                LayoutCheck(thresholds.Top >= curve.Bottom + 8, label + ": the minimum layout puts usable vertical sliders below the plot.");
             CheckStableKeyboard(form, baseline, drawing, label + "/advanced"); CapturePreview(form, artifacts, label + "-advanced");
+            RevealCurveSetting(form, thresholds);
+            foreach (string name in new[] { "keyBehaviorStatus", "rapidTrigger", "actuationPoint", "releaseMovement", "pressMovement", "actuationSlider", "releaseSlider", "repressSlider", "calibrateActuation", "calibrateRelease", "calibrateRepress", "applyKeyBehavior", "resetKeyBehavior" })
+                VisibleInside(form, Field<Control>(form, name), label + "/advanced/" + name);
+            foreach (string name in new[] { "actuationSlider", "releaseSlider", "repressSlider" })
+                LayoutCheck(Field<Control>(form, name).Height >= 84, label + ": vertical slider retains a usable track: " + name);
+            foreach (string name in new[] { "calibrateActuation", "calibrateRelease", "calibrateRepress" })
+            {
+                Control button = Field<Control>(form, name);
+                int captionWidth = TextRenderer.MeasureText(button.Text, button.Font, Size.Empty, TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width;
+                LayoutCheck(captionWidth <= button.ClientSize.Width - button.Padding.Horizontal, label + ": per-option calibration caption fits: " + name);
+            }
+            CapturePreview(form, artifacts, label + "-advanced-thresholds");
+            RevealCurveSetting(form, settings); VisibleInside(form, settings, label + "/advanced/reachable-settings");
+            CheckStableKeyboard(form, baseline, drawing, label + "/advanced/scroll"); CapturePreview(form, artifacts, label + "-advanced-settings");
             DetailMode(form, "controller");
             CheckDetailTabState(form, "controller", label + "/controller tabs");
             foreach (string name in new[] { "controllerPreview", "controllerSlotPicker", "controllerKindPicker", "addControllerSlot", "removeControllerSlot", "controllerNameEdit", "controllerConnector", "rgbColorButton", "rgbDefaultColor", "rgbOverrideToggle", "rgbStatus", "rgbRestoreButton" })
@@ -898,11 +935,14 @@ namespace Tk75.Tests
                 input.OppositePolicy = input.OppositeKeyIndex.HasValue ? InputOpposedPolicy.LastPressed : InputOpposedPolicy.Neutral;
             }
             ComboBox opposite = Field<ComboBox>(form, "oppositeKey"), policy = Field<ComboBox>(form, "oppositeMode");
-            opposite.SelectedItem = opposite.Items.Cast<object>().Single(item => (int?)item.GetType().GetField("Index").GetValue(item) == 14);
-            policy.SelectedItem = policy.Items.Cast<object>().Single(item => (InputOpposedPolicy)item.GetType().GetField("Value").GetValue(item) == InputOpposedPolicy.LastPressed);
-            Call(form, "SaveKeyBehavior"); Pump(form);
-            Equal(Json(expected), Json(Current(form)), "Explicit two-key pairing links the selected keys symmetrically and only unpairs their old partners, preserving activation settings.");
-            Call(form, "Undo"); Pump(form); Equal(Json(fixture), Json(Current(form)), "Creating a pair for both selected keys is one undo step.");
+            opposite.SelectedItem = opposite.Items.Cast<object>().Single(item => (int?)item.GetType().GetField("Index").GetValue(item) == 14); Pump(form);
+            Profile pairedBeforePolicy = Current(form);
+            Equal(Json(KeyInputEditing.SetPairing(fixture, new[] { 9, 14 }, 14, InputOpposedPolicy.FirstPressed)), Json(pairedBeforePolicy),
+                "Choosing a two-key opposite commits that pairing immediately without Apply or a tab change.");
+            policy.SelectedItem = policy.Items.Cast<object>().Single(item => (InputOpposedPolicy)item.GetType().GetField("Value").GetValue(item) == InputOpposedPolicy.LastPressed); Pump(form);
+            Equal(Json(expected), Json(Current(form)), "Selecting the policy immediately updates both paired keys while preserving activation settings.");
+            Call(form, "Undo"); Pump(form); Equal(Json(pairedBeforePolicy), Json(Current(form)), "The policy choice has its own undo step.");
+            Call(form, "Undo"); Pump(form); Equal(Json(fixture), Json(Current(form)), "The preceding opposite-key choice has one undo step.");
             expected = Current(form);
             foreach (KeyInputSettings input in expected.Inputs.Where(input => input.KeyIndex == 9 || input.KeyIndex == 14)) input.ActuationPoint = .27;
             Field<NumericUpDown>(form, "actuationPoint").Value = 27;
@@ -921,7 +961,45 @@ namespace Tk75.Tests
             Call(form, "ResetKeyBehavior"); Pump(form);
             Equal(Json(expected), Json(Current(form)), "Bulk reset removes only selected input settings and cleanly releases their existing pairs.");
             Call(form, "Undo"); Pump(form); Equal(Json(fixture), Json(Current(form)), "Bulk reset including pair cleanup is one undo step.");
-            Call(form, "Commit", original); SelectKeys(form, 14); DetailMode(form, null);
+            Call(form, "Commit", original); SelectKeys(form, 14); DetailMode(form, null); CheckSocdDropdownSelection(form);
+        }
+        static void CheckSocdDropdownSelection(MainForm form)
+        {
+            Profile original = Current(form), fixture = Current(form);
+            fixture.Inputs = new List<KeyInputSettings> {
+                new KeyInputSettings { KeyIndex = 9, ActuationPoint = .18 },
+                new KeyInputSettings { KeyIndex = 14, RapidTriggerEnabled = true, ActuationPoint = .42, ReleaseMovement = .07, PressMovement = .09 },
+                new KeyInputSettings { KeyIndex = 21, ActuationPoint = .73 }
+            };
+            try
+            {
+                Call(form, "Commit", fixture); SelectKeys(form, 9); DetailMode(form, null); RevealKeySetting(form, Field<Control>(form, "keySocdPanel"));
+                var opposite = Field<ComboBox>(form, "oppositeKey"); var policy = Field<ComboBox>(form, "oppositeMode");
+                object baseline = Field<EditHistory>(form, "history").SnapshotToken;
+                for (int refresh = 0; refresh < 3; refresh++) Call(form, "RefreshInputEditor");
+                Check(Object.ReferenceEquals(baseline, Field<EditHistory>(form, "history").SnapshotToken) && !Field<bool>(form, "inputDirty"),
+                    "Rebuilding SOCD choices does not create phantom edits or history entries.");
+                opposite.SelectedItem = opposite.Items.Cast<object>().Single(item => (int?)item.GetType().GetField("Index").GetValue(item) == 14); Pump(form);
+                var paired = KeyInputEditing.SetPairing(fixture, new[] { 9 }, 14, InputOpposedPolicy.Neutral);
+                Equal(Json(paired), Json(Current(form)), "The actual opposite-key dropdown immediately pairs the selected key and retains the unselected key's settings.");
+                Check(Field<string>(form, "detailsMode") == null && !Field<bool>(form, "inputDirty"), "Direct pairing remains in Keys with no hidden pending Apply action.");
+                policy.SelectedItem = policy.Items.Cast<object>().Single(item => (InputOpposedPolicy)item.GetType().GetField("Value").GetValue(item) == InputOpposedPolicy.LastPressed); Pump(form);
+                var changed = KeyInputEditing.SetPairing(paired, new[] { 9 }, 14, InputOpposedPolicy.LastPressed);
+                Equal(Json(changed), Json(Current(form)), "The actual policy dropdown immediately updates the pair and preserves every unrelated field.");
+                Call(form, "Undo"); Pump(form); Equal(Json(paired), Json(Current(form)), "One undo restores the policy before the latest dropdown choice.");
+                Call(form, "Undo"); Pump(form); Equal(Json(fixture), Json(Current(form)), "A second undo restores the original unpaired keys without phantom rebuild steps.");
+                Call(form, "Redo"); Pump(form);
+                opposite.SelectedItem = opposite.Items.Cast<object>().Single(item => (int?)item.GetType().GetField("Index").GetValue(item) == null); Pump(form);
+                Equal(Json(KeyInputEditing.SetPairing(paired, new[] { 9 }, null, InputOpposedPolicy.Neutral)), Json(Current(form)),
+                    "Choosing No opposite immediately unpairs both keys without touching another key.");
+                Call(form, "Undo"); Pump(form); Equal(Json(paired), Json(Current(form)), "Unpairing is one undo step.");
+                SelectKeys(form, 9, 14);
+                object beforePreserve = Field<EditHistory>(form, "history").SnapshotToken;
+                opposite.SelectedItem = opposite.Items.Cast<object>().Single(item => (bool)item.GetType().GetField("Preserve").GetValue(item)); Pump(form);
+                Check(!policy.Enabled && Object.ReferenceEquals(beforePreserve, Field<EditHistory>(form, "history").SnapshotToken) && !Field<bool>(form, "inputDirty"),
+                    "Keep existing pairs disables policy editing and creates no phantom history entry.");
+            }
+            finally { Call(form, "Commit", original); SelectKeys(form, 14); DetailMode(form, null); }
         }
         static void CheckConnectorKeys(ControllerConnector connector, List<bool> requests, string label)
         {
@@ -1321,8 +1399,12 @@ namespace Tk75.Tests
             ShortKeyboardClick(keyboard, 9); Pump(form);
             Check(Field<string>(form, "detailsMode") == null && Field<Control>(form, "keyTitle").Visible, "Selecting a physical key opens its settings in the sidebar.");
             Check(Relative(form, keyboard) == keyboardBounds, "Contextual key selection leaves keyboard size and position unchanged.");
+            foreach (string name in new[] { "pressureRange", "pressureScaleMaximum", "calibrateRange", "targets" })
+                VisibleInside(form, Field<Control>(form, name), "normal-key-click/" + name);
+            Check(!Field<Control>(form, "keyBehaviorPanel").Visible, "A short key click keeps the simple Keys view and leaves advanced pressure under Curve.");
             Field<Button>(form, "keyBehaviorToggle").PerformClick(); Pump(form);
-            Check(Field<string>(form, "detailsMode") == "input" && Field<Control>(form, "keyBehaviorPanel").Visible, "Key behavior action opens the corresponding sidebar context.");
+            VisibleInside(form, Field<Control>(form, "captureOpposite"), "opposite-key-shortcut/capture");
+            Check(Field<string>(form, "detailsMode") == "input" && Field<Control>(form, "keySocdPanel").Visible, "The opposite-key shortcut retains the unified Keys content and reveals its capture section.");
             Field<Button>(form, "advancedToggle").PerformClick(); Pump(form);
             Check(Field<string>(form, "detailsMode") == "advanced" && Field<Control>(form, "curve").Visible, "Curve action opens the corresponding sidebar context.");
             Field<Button>(form, "controllerToggle").PerformClick(); Pump(form);
@@ -1607,7 +1689,7 @@ namespace Tk75.Tests
             CheckControllerSelection(form);
             CheckControllerKeyAssignments(form, artifacts);
             CheckMultiKeySignalScope(form);
-            CheckCurveSettingsSliders(form);
+            CheckCurveSettingsSliders(form, artifacts);
             CheckInputThresholdSliders(form);
             CheckMultiKeyInputScope(form);
             CheckManyControllerFooter(form, artifacts);
@@ -1696,6 +1778,9 @@ namespace Tk75.Tests
                 RunKeyboardTabClicks(form);
                 RunControllerModifierUi(artifacts);
                 RunNativeThemeControls(artifacts);
+                CheckCurveShapePicker(form, artifacts);
+                RunCurveDynamicsUi(form, artifacts);
+                RunCurveRangeRailUi(form, artifacts);
                 RunInputThresholdCapture(artifacts);
                 RunKeyAnnotations(form, artifacts);
                 CheckMappingSummaries(form, artifacts);

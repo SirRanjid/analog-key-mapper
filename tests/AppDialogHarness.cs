@@ -168,6 +168,7 @@ namespace Tk75.Tests
         static void CheckLivePressurePainting(MainForm form, DialogInput input, string path)
         {
             var slider = Field<PressureRangeSlider>(form, "pressureRange");
+            RevealKeySetting(form, slider.Parent);
             var label = Field<Label>(form, "pressureText");
             var bindings = Field<DataGridView>(form, "bindings");
             var keyboard = Field<VisualKeyboard>(form, "keyboard");
@@ -277,6 +278,7 @@ namespace Tk75.Tests
                         Size caption = TextRenderer.MeasureText(button.Text, button.Font, new Size(Int32.MaxValue, Int32.MaxValue), TextFormatFlags.SingleLine);
                         Check(caption.Width <= button.ClientSize.Width - button.Padding.Horizontal && caption.Height <= button.ClientSize.Height - button.Padding.Vertical,
                             "The full calibration caption fits the compact button without wrapping or ellipsis: " + locale + "/" + expected);
+                        RevealKeySetting(form, button.Parent);
                         VisibleInside(form, button, "compact calibration " + locale + "/" + expected);
                         CapturePreview(form, artifacts, "pressure-button-compact-" + locale + (capture == 0 ? "-ready" : "-cancel"));
                         if (capture != 0) ClickPressureCalibration(form);
@@ -404,6 +406,7 @@ namespace Tk75.Tests
                     slider.AccessibilityObject.GetChild(1).Value = "600";
                     CheckPressureRange(form, 10, 600, 700);
                     SelectKeys(form, 14);
+                    RevealKeySetting(form, slider.Parent);
                     CapturePreview(form, artifacts, "per-key-pressure-range");
 
                     committed = File.ReadAllText(path); PushDialog(input, 14, 0); ClickPressureCalibration(form);

@@ -20,7 +20,7 @@ namespace Tk75.App
             int[] selected = SelectedKeys();
             if (selected.Length != 1 || closing || deviceDetachInProgress || activeMappingDrag != null) return;
             FlushInputDraft();
-            SetDetailMode("input", true, false);
+            SetDetailMode("input", true, false); ScrollKeySettingsTo(keySocdPanel);
             socdCapture = new SocdDragContext { Selection = selected, Target = selected[0], ProfilePath = profilePath,
                 ControllerId = runtime.SelectedControllerId, Layout = keyboard.LayoutModel,
                 History = history, SnapshotToken = history.SnapshotToken, Mode = "input" };

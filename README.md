@@ -2,9 +2,9 @@
 
 **Turn GamaKay TK75 TMR key pressure into controller input — with visual mapping, editable response curves and optional key lighting.**
 
-**Free and open source · 1.0.0-rc.6 · Windows x64**
+**Free and open source · 1.0.0-rc.7 · Windows x64**
 
-**[Download Windows rc.6](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.6/AnalogKeyMapper-1.0.0-rc.6-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.6) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
+**[Download Windows rc.7](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.7/AnalogKeyMapper-1.0.0-rc.7-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.7) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
 
 ![Analog Key Mapper showing keyboard mappings, controller selection, lighting and USB connection controls](docs/images/controller.png)
 
@@ -20,7 +20,7 @@
 
 ## Quick start
 
-1. [Download the Windows rc.6 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.6/AnalogKeyMapper-1.0.0-rc.6-windows-x64.zip) and extract it into a writable folder.
+1. [Download the Windows rc.7 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.7/AnalogKeyMapper-1.0.0-rc.7-windows-x64.zip) and extract it into a writable folder.
 2. Double-click **`Verify-Checksums.bat`** to check the included files.
 3. Open **`AnalogKeyMapper.exe`** inside the extracted `AnalogKeyMapper` folder, connect your keyboard by USB, and create a mapping.
 
@@ -32,7 +32,7 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 ## Release candidate
 
-**rc.6** adds individual pressure ranges with selection-wide calibration, vertical actuation controls, sliders beside curve settings, threshold annotations on the keycaps, and consistent dark dropdowns, number fields and scrollbars. A closing status window explains each cleanup phase; Windows shutdown waits for bounded cleanup. Lighting changes use fewer verification requests while preserving the full original backup. See the [user guide](docs/user-guide.md).
+**rc.7** separates simple key assignments from advanced pressure tuning. Vertical actuation and Rapid Trigger controls sit beside a smaller square curve, each with its own calibration button. Response previews show what the settings change, with real editable points in **Edit shape**. A single shape selector replaces the duplicate choice. Numeric edits keep their row and scroll position, and native control styling covers the intermediate repaint as well as the finished screen. See the [user guide](docs/user-guide.md).
 
 The release candidate also includes these connection and lifecycle safeguards:
 

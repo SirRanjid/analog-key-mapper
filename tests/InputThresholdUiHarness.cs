@@ -21,7 +21,7 @@ namespace Tk75.Tests
                 new KeyInputSettings { KeyIndex = 14, RapidTriggerEnabled = true, ActuationPoint = .4, ReleaseMovement = .08, PressMovement = .1 },
                 new KeyInputSettings { KeyIndex = 21, ActuationPoint = .7 }
             };
-            Call(form, "Commit", fixture); SelectKeys(form, 9, 14); DetailMode(form, "input");
+            Call(form, "Commit", fixture); SelectKeys(form, 9, 14); DetailMode(form, "advanced"); RevealCurveSetting(form, Field<Control>(form, "keyBehaviorPanel"));
             var slider = Field<InputThresholdSlider>(form, "actuationSlider");
             var release = Field<InputThresholdSlider>(form, "releaseSlider");
             var repress = Field<InputThresholdSlider>(form, "repressSlider");

@@ -36,6 +36,9 @@ try {
     $arguments += (Join-Path $PSScriptRoot 'ThemeControlsUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'KeyAnnotationUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'CurveSettingsSliderUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'CurveShapePickerUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'CurveDynamicsUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'CurveRangeRailUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'InputThresholdUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'InputThresholdCaptureUiHarness.cs')
     & $compiler @arguments
@@ -63,7 +66,10 @@ finally {
         if ($previewFiles.Count) {
             $previewFolder = Join-Path $workspace 'release\ui-previews'
             [void][IO.Directory]::CreateDirectory($previewFolder)
-            Compress-Archive -LiteralPath @($previewFiles.FullName) -DestinationPath (Join-Path $previewFolder 'AnalogKeyMapper-ui-previews.zip') -Force
+            $previewPaths = @($previewFiles.FullName)
+            $englishPreviews = Join-Path $testFolder 'english'
+            if (Test-Path -LiteralPath $englishPreviews -PathType Container) { $previewPaths += $englishPreviews }
+            Compress-Archive -LiteralPath $previewPaths -DestinationPath (Join-Path $previewFolder 'AnalogKeyMapper-ui-previews.zip') -Force
         }
     }
     if ($null -ne $testProcess) {

@@ -130,6 +130,15 @@ namespace Tk75.App
     {
         static readonly ConditionalWeakTable<Control, NumberSurface> Numbers = new ConditionalWeakTable<Control, NumberSurface>();
         static readonly ConditionalWeakTable<Control, ScrollSurface> Scrolls = new ConditionalWeakTable<Control, ScrollSurface>();
+        static readonly ConditionalWeakTable<Control, ComboSurface> Combos = new ConditionalWeakTable<Control, ComboSurface>();
+
+        internal static void AttachCombo(ComboBox control)
+        {
+            if (control is SleekComboBox) return;
+            Combos.GetValue(control, delegate(Control owner) { return new ComboSurface((ComboBox)owner); });
+            control.DrawMode = DrawMode.OwnerDrawFixed;
+            if (!(control is DataGridViewComboBoxEditingControl)) control.ItemHeight = Math.Max(24, control.Font.Height + 10);
+        }
 
         internal static void AttachNumber(NumericUpDown control)
         { Numbers.GetValue(control, delegate(Control owner) { return new NumberSurface((NumericUpDown)owner); }); }
@@ -235,25 +244,97 @@ namespace Tk75.App
             }
         }
 
+        // DataGridView supplies and reuses a native ComboBox editing control.
+        // Keep that control (including its editing/accessibility contract) and
+        // apply the same drawing as every other picker, even after reuse.
+        sealed class ComboSurface : ControlSurface
+        {
+            readonly ComboBox combo;
+            readonly ComboListSurface list = new ComboListSurface();
+            bool hovered;
+            public ComboSurface(ComboBox owner) : base(owner)
+            {
+                combo = owner; combo.DrawMode = DrawMode.OwnerDrawFixed;
+                combo.DrawItem += DrawItem;
+                combo.HandleCreated += Created; combo.HandleDestroyed += Destroyed;
+                combo.DropDown += DropDown; combo.DropDownClosed += Changed;
+                combo.SelectedIndexChanged += Changed; combo.TextChanged += Changed;
+                combo.GotFocus += Changed; combo.LostFocus += Changed; combo.EnabledChanged += Changed;
+                combo.MouseEnter += Enter; combo.MouseLeave += Leave;
+                AttachList();
+            }
+            void Created(object sender, EventArgs e) { AttachList(); }
+            void Destroyed(object sender, EventArgs e) { list.Dispose(); }
+            void AttachList()
+            {
+                if (!combo.IsHandleCreated) return;
+                NativeControlPaint.ComboInfo info = new NativeControlPaint.ComboInfo(); info.Size = Marshal.SizeOf(typeof(NativeControlPaint.ComboInfo));
+                if (NativeControlPaint.GetComboBoxInfo(combo.Handle, ref info)) list.Attach(info.List);
+            }
+            void DropDown(object sender, EventArgs e) { AttachList(); combo.Invalidate(); }
+            void Changed(object sender, EventArgs e) { combo.Invalidate(); }
+            void Enter(object sender, EventArgs e) { hovered = true; combo.Invalidate(); }
+            void Leave(object sender, EventArgs e) { hovered = false; combo.Invalidate(); }
+            void DrawItem(object sender, DrawItemEventArgs e) { ComboSurfaceDrawing.Item(combo, e); }
+            protected override void WndProc(ref Message message)
+            {
+                if (combo != null && combo.DropDownStyle != ComboBoxStyle.Simple &&
+                    NativeControlPaint.TryClientPaint(ref message, combo.ClientSize, delegate(Graphics graphics) { ComboSurfaceDrawing.Face(combo, hovered, true, graphics); })) return;
+                base.WndProc(ref message);
+            }
+            public override void Dispose()
+            {
+                combo.DrawItem -= DrawItem; combo.HandleCreated -= Created; combo.HandleDestroyed -= Destroyed;
+                combo.DropDown -= DropDown; combo.DropDownClosed -= Changed;
+                combo.SelectedIndexChanged -= Changed; combo.TextChanged -= Changed;
+                combo.GotFocus -= Changed; combo.LostFocus -= Changed; combo.EnabledChanged -= Changed;
+                combo.MouseEnter -= Enter; combo.MouseLeave -= Leave;
+                list.Dispose(); base.Dispose();
+            }
+        }
+
         sealed class ScrollSurface : ControlSurface
         {
             readonly bool standalone, vertical;
-            bool framePending;
             public ScrollSurface(Control owner) : base(owner)
             { standalone = owner is ScrollBar; vertical = owner is VScrollBar; }
             protected override void WndProc(ref Message message)
             {
                 if (standalone && NativeControlPaint.TryClientPaint(ref message, Owner.ClientSize, PaintStandalone)) return;
+                if (standalone && SuppressNativeRedraw(ref message)) return;
                 if (!standalone && message.Msg == 0x0085)
-                { framePending = false; ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero); message.Result = IntPtr.Zero; return; }
+                { ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero); message.Result = IntPtr.Zero; return; }
                 base.WndProc(ref message);
                 if (!standalone && (message.Msg == NativeControlPaint.Print || message.Msg == NativeControlPaint.PrintClient))
                 { if (message.Msg == NativeControlPaint.Print) ScrollbarDrawing.PaintFrame(Handle, message.WParam); return; }
                 if (ScrollbarDrawing.ChangesScrollAppearance(message.Msg))
                 {
                     if (standalone) Owner.Invalidate();
-                    else if (!framePending) framePending = ScrollbarDrawing.InvalidateFrame(Handle);
+                    // Non-client scrollbars do not expose the SBM_* redraw
+                    // flag. Finish their frame within this same input/layout
+                    // message, before a later queued paint can expose the
+                    // native light frame for a whole display interval.
+                    else if (ScrollbarDrawing.ChangesFrameAppearance(message.Msg)) ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero);
                 }
+            }
+            bool SuppressNativeRedraw(ref Message message)
+            {
+                // These documented messages can paint synchronously through
+                // GetDC, bypassing WM_PAINT entirely. A later dark repaint is
+                // too late: the white native thumb has already been shown.
+                // Change only the redraw request, retain native range/position
+                // processing and its exact return value, then queue our paint.
+                // https://learn.microsoft.com/windows/win32/controls/sbm-setscrollinfo
+                int kind = message.Msg;
+                bool redraw = kind == 0x00E9 ? message.WParam != IntPtr.Zero :
+                    kind == 0x00E0 ? message.LParam != IntPtr.Zero : kind == 0x00E6;
+                if (!redraw) return false;
+                Message update = message;
+                if (kind == 0x00E9) update.WParam = IntPtr.Zero;
+                else if (kind == 0x00E0) update.LParam = IntPtr.Zero;
+                else update.Msg = 0x00E2;
+                base.WndProc(ref update); message.Result = update.Result;
+                Owner.Invalidate(); return true;
             }
             void PaintStandalone(Graphics graphics)
             {
@@ -278,21 +359,78 @@ namespace Tk75.App
         // us; destroying/recreating the ComboBox detaches this object explicitly.
         internal sealed class ComboListSurface : NativeWindow, IDisposable
         {
-            bool framePending;
             public void Attach(IntPtr handle)
             {
                 if (Handle == handle) return;
-                ReleaseHandle(); framePending = false; if (handle != IntPtr.Zero) AssignHandle(handle);
+                ReleaseHandle(); if (handle != IntPtr.Zero) AssignHandle(handle);
             }
             protected override void WndProc(ref Message message)
             {
                 if (message.Msg == 0x0085)
-                { framePending = false; ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero); message.Result = IntPtr.Zero; return; }
+                { ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero); message.Result = IntPtr.Zero; return; }
                 base.WndProc(ref message);
                 if (message.Msg == NativeControlPaint.Print) ScrollbarDrawing.PaintFrame(Handle, message.WParam);
-                else if (!framePending && ScrollbarDrawing.ChangesScrollAppearance(message.Msg)) framePending = ScrollbarDrawing.InvalidateFrame(Handle);
+                else if (ScrollbarDrawing.ChangesFrameAppearance(message.Msg)) ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero);
             }
             public void Dispose() { ReleaseHandle(); }
+        }
+    }
+
+    internal static class ComboSurfaceDrawing
+    {
+        internal static void Face(ComboBox combo, bool hovered, bool showFocus, Graphics graphics)
+        {
+            graphics.Clear(combo.Parent == null ? ModernTheme.Surface : combo.Parent.BackColor);
+            if (combo.Width < 3 || combo.Height < 3) return;
+            NativeControlPaint.ComboInfo info = new NativeControlPaint.ComboInfo(); info.Size = Marshal.SizeOf(typeof(NativeControlPaint.ComboInfo));
+            bool nativeBounds = NativeControlPaint.GetComboBoxInfo(combo.Handle, ref info);
+            Rectangle button = nativeBounds ? info.Button.Bounds : new Rectangle(combo.Width - SystemInformation.VerticalScrollBarWidth - 2, 2, SystemInformation.VerticalScrollBarWidth, combo.Height - 4);
+            Rectangle area = nativeBounds ? info.Item.Bounds : new Rectangle(3, 2, Math.Max(1, button.Left - 5), combo.Height - 4);
+            area.Inflate(-7, 0);
+            string label = combo.SelectedIndex >= 0 ? combo.GetItemText(combo.SelectedItem) : combo.Text;
+            if (combo.SelectedItem is string) label = UiText.Get(label);
+            if (String.IsNullOrEmpty(label)) label = UiText.Get("Auswählen");
+            Field(graphics, new Rectangle(Point.Empty, combo.ClientSize), button, area, combo.Font,
+                combo.DropDownStyle == ComboBoxStyle.DropDownList ? label : null, combo.Enabled,
+                combo.Focused || combo.DroppedDown, hovered, combo.DroppedDown, combo.RightToLeft == RightToLeft.Yes);
+            if (combo.DropDownStyle == ComboBoxStyle.DropDownList && combo.Focused && showFocus && !combo.DroppedDown)
+                ControlPaint.DrawFocusRectangle(graphics, Rectangle.Inflate(area, -1, -5), ModernTheme.Accent, ModernTheme.SurfaceAlt);
+        }
+        internal static void Field(Graphics graphics, Rectangle bounds, Rectangle button, Rectangle text, Font font, string label,
+            bool enabled, bool focused, bool hovered, bool droppedDown, bool rightToLeft)
+        {
+            if (bounds.Width < 3 || bounds.Height < 3) return;
+            SmoothingMode previous = graphics.SmoothingMode; graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Color border = enabled && focused ? ModernTheme.Accent : hovered && enabled ? ModernTheme.Muted : ModernTheme.Border;
+            using (GraphicsPath path = SurfaceDrawing.Round(new RectangleF(bounds.Left + .5f, bounds.Top + .5f, bounds.Width - 1.5f, bounds.Height - 1.5f), 7))
+            using (Brush fill = new SolidBrush(ModernTheme.SurfaceAlt))
+            using (Pen pen = new Pen(border)) { graphics.FillPath(fill, path); graphics.DrawPath(pen, path); }
+            NativeControlPaint.Chevron(graphics, button, true, !droppedDown, enabled ? ModernTheme.Accent : ModernTheme.Muted);
+            graphics.SmoothingMode = previous;
+            if (label != null) TextRenderer.DrawText(graphics, label, font, text, enabled ? ModernTheme.Foreground : ModernTheme.Muted,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine |
+                TextFormatFlags.PreserveGraphicsClipping | TextFormatFlags.PreserveGraphicsTranslateTransform |
+                (rightToLeft ? TextFormatFlags.RightToLeft | TextFormatFlags.Right : TextFormatFlags.Left));
+        }
+        internal static void Item(ComboBox combo, DrawItemEventArgs e)
+        {
+            if (e.Bounds.Width <= 0 || e.Bounds.Height <= 0) return;
+            bool listSelection = (e.State & DrawItemState.Selected) != 0 && (e.State & DrawItemState.ComboBoxEdit) == 0;
+            Color fill = listSelection ? ModernTheme.AccentSoft : ModernTheme.SurfaceAlt;
+            string label = e.Index >= 0 && e.Index < combo.Items.Count ? combo.GetItemText(combo.Items[e.Index]) : combo.Text;
+            if (e.Index >= 0 && e.Index < combo.Items.Count && combo.Items[e.Index] is string) label = UiText.Get(label);
+            if (String.IsNullOrEmpty(label)) label = UiText.Get("Auswählen");
+            using (BufferedGraphics buffer = BufferedGraphicsManager.Current.Allocate(e.Graphics, e.Bounds))
+            {
+                using (Brush brush = new SolidBrush(fill)) buffer.Graphics.FillRectangle(brush, e.Bounds);
+                TextRenderer.DrawText(buffer.Graphics, label, combo.Font, Rectangle.Inflate(e.Bounds, -10, 0),
+                    combo.Enabled ? ModernTheme.Foreground : ModernTheme.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis |
+                    TextFormatFlags.NoPrefix | TextFormatFlags.PreserveGraphicsTranslateTransform | TextFormatFlags.PreserveGraphicsClipping |
+                    (combo.RightToLeft == RightToLeft.Yes ? TextFormatFlags.RightToLeft | TextFormatFlags.Right : TextFormatFlags.Left));
+                if ((e.State & DrawItemState.Focus) != 0 && (e.State & (DrawItemState.ComboBoxEdit | DrawItemState.NoFocusRect)) == 0)
+                    ControlPaint.DrawFocusRectangle(buffer.Graphics, e.Bounds, ModernTheme.Foreground, fill);
+                buffer.Render(e.Graphics);
+            }
         }
     }
 
@@ -317,13 +455,13 @@ namespace Tk75.App
                 message == 0x020E || message == 0x0215 || message == 0x02A2 || message == 0x02A3 ||
                 message == 0x00E0 || message == 0x00E2 || message == 0x00E9;
         }
-        internal static bool InvalidateFrame(IntPtr window)
+        internal static bool ChangesFrameAppearance(int message)
         {
-            // Queue at most one frame-only paint after native scroll processing.
-            // Invalidating the client would repaint lists/live values on hover.
-            return window != IntPtr.Zero && NativeControlPaint.PostMessage(window, 0x0085, (IntPtr)1, IntPtr.Zero);
+            // A pointer moving over the panel/list contents does not change its
+            // non-client bar. Keep those high-rate input events paint-free;
+            // native scrollbar hover arrives as WM_NCMOUSEMOVE/NCMOUSELEAVE.
+            return message != 0x0200 && message != 0x0201 && message != 0x0202 && ChangesScrollAppearance(message);
         }
-
         internal static bool Read(IntPtr window, uint objectId, out ScrollInfo info)
         {
             info = new ScrollInfo(); info.Size = Marshal.SizeOf(typeof(ScrollInfo));
