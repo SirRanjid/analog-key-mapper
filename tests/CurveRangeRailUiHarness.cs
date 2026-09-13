@@ -123,6 +123,18 @@ namespace Tk75.Tests
             foreach (Size size in new[] { DefaultClientSize, new Size(SupportedMinimumSize.Width - (form.Width - form.ClientSize.Width), SupportedMinimumSize.Height - (form.Height - form.ClientSize.Height)) })
             {
                 SetPreviewClientSize(form, size); Pump(form);
+                // The narrow layout deliberately stacks the plot, thresholds
+                // and grid. Test that users can reach the plot after working
+                // below it, not that every section fits in one viewport.
+                var numericSettings = Field<DataGridView>(form, "settings");
+                RevealCurveSetting(form, numericSettings); numericSettings.Focus(); Pump(form);
+                VisibleInside(form, numericSettings, "range-rail/reachable-numeric-settings/" + size);
+                if (size != DefaultClientSize)
+                    Check(Field<Panel>(form, "curveEditorScroll").AutoScrollPosition.Y < 0,
+                        "The minimum fixture actually visits lower settings before returning to the range handles.");
+                RevealCurveSetting(form, canvas);
+                Check(input.Focus(), "A range handle accepts keyboard focus after returning from lower settings."); Pump(form);
+                VisibleInside(form, canvas, "range-rail/reachable-whole-curve/" + size);
                 RectangleF plot = (RectangleF)typeof(CurveCanvas).GetProperty("Plot", Private).GetValue(canvas, null);
                 Check(canvas.Width == canvas.Height && Math.Abs(plot.Width - plot.Height) < .01, "The response control and plot remain square with both rails at " + size);
                 foreach (var rail in new[] { input, output })
