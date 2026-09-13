@@ -31,7 +31,7 @@ Profiles offer **32 output-capable slots in total**, each freely assigned to Xbo
 
 ## Recorded automated checks
 
-The rc.5 revision replaces the inline calibration link with a visible **Calibrate** button that becomes **Cancel** during a measurement. Live pressure ticks repaint only their old and new positions, and the changing controller-output list uses buffered drawing. The [release page](https://github.com/SirRanjid/analog-key-mapper/releases) identifies each exact build and its [automated validation](https://github.com/SirRanjid/analog-key-mapper/actions); the recorded results below remain tied to their stated versions.
+The rc.5 revision replaces the inline calibration link with a visible **Calibrate** button that becomes **Cancel** during a measurement. Live pressure ticks repaint only their old and new positions, the pressure readout avoids redundant parent layout, and the changing controller-output list uses buffered drawing. The [release page](https://github.com/SirRanjid/analog-key-mapper/releases) identifies each exact build and its [automated validation](https://github.com/SirRanjid/analog-key-mapper/actions); the recorded results below remain tied to their stated versions.
 
 The rc.4 tests add shared range persistence, automatic calibration after one press and release, editable min/max handles, opposite-key capture by click, saved close-to-tray behavior, transient restore retries and helper cleanup with fresh device identification. The release notes link the complete workflow run for the downloadable build. These checks use synthetic sources; physical shutdown and game acceptance for rc.4 remain open.
 

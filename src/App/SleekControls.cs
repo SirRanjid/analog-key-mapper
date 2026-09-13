@@ -5,6 +5,18 @@ using System.Windows.Forms;
 
 namespace Tk75.App
 {
+    internal sealed class LiveValueLabel : Label
+    {
+        protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
+        {
+            // Label.AdjustSize repeats the existing bounds on each Text change,
+            // even with AutoSize off. That still lays out its TableLayoutPanel.
+            // A fixed-size live readout needs only the normal text repaint.
+            if (!AutoSize && x == Left && y == Top && width == Width && height == Height) return;
+            base.SetBoundsCore(x, y, width, height, specified);
+        }
+    }
+
     // Live output values should not expose a separate background erase on each
     // sample. Keep native layout, cell painting and selection behavior intact.
     internal sealed class BufferedValueGrid : DataGridView

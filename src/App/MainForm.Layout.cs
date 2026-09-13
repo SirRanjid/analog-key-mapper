@@ -10,7 +10,7 @@ namespace Tk75.App
 {
     public sealed partial class MainForm
     {
-        readonly Label keyTitle = new Label(), keyHint = new Label(), pressureText = new Label(), keyboardTitle = new Label();
+        readonly Label keyTitle = new Label(), keyHint = new Label(), pressureText = new LiveValueLabel(), keyboardTitle = new Label();
         readonly Label mappingEmpty = new Label();
         readonly Label targetHeader = new Label { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
         readonly LinkLabel inputDetails = new LinkLabel { Text = "Warum kommen keine Druckwerte?", AutoSize = true };

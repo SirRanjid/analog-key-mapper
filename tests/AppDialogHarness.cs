@@ -185,7 +185,31 @@ namespace Tk75.Tests
             for (Control parent = slider.Parent; parent != null; parent = parent.Parent) ancestors.Add(parent);
             var layouts = new List<string>(); var parentRedraws = new List<string>(); var markerAreas = new List<Rectangle>();
             int labelRedraws = 0, gridRedraws = 0;
-            LayoutEventHandler layout = delegate(object sender, LayoutEventArgs e) { layouts.Add(sender.GetType().Name + "/" + e.AffectedProperty); };
+            var layoutStacks = new HashSet<string>(StringComparer.Ordinal);
+            Func<Control, string> hierarchy = delegate(Control control) {
+                if (control == null) return "<null>";
+                var parts = new List<string>();
+                for (Control current = control; current != null; current = current.Parent)
+                {
+                    Control item = current;
+                    FieldInfo field = typeof(MainForm).GetFields(Private).FirstOrDefault(candidate => Object.ReferenceEquals(candidate.GetValue(form), item));
+                    parts.Add(current.GetType().Name + "[" + (current.Parent == null ? 0 : current.Parent.Controls.GetChildIndex(current)) + "]" +
+                        (field == null ? "" : "#" + field.Name));
+                }
+                parts.Reverse(); return String.Join("/", parts);
+            };
+            LayoutEventHandler layout = delegate(object sender, LayoutEventArgs e) {
+                layouts.Add(sender.GetType().Name + "/" + e.AffectedProperty);
+                if (layoutStacks.Count < 2)
+                {
+                    string stack = new StackTrace(1, true).ToString();
+                    if (layoutStacks.Add(stack))
+                        Console.WriteLine("PRESSURE LAYOUT DIAGNOSTIC " + layoutStacks.Count + ": sender=" + hierarchy((Control)sender) +
+                            "; affected=" + hierarchy(e.AffectedControl) + "; property=" + e.AffectedProperty +
+                            "; affectedBounds=" + (e.AffectedControl == null ? "<null>" : e.AffectedControl.Bounds.ToString()) +
+                            "; marker=" + slider.MeasuredValue + Environment.NewLine + stack);
+                }
+            };
             InvalidateEventHandler parentRedraw = delegate(object sender, InvalidateEventArgs e) { parentRedraws.Add(sender.GetType().Name + "/" + e.InvalidRect); };
             InvalidateEventHandler marker = delegate(object sender, InvalidateEventArgs e) { markerAreas.Add(e.InvalidRect); };
             InvalidateEventHandler text = delegate { labelRedraws++; }, grid = delegate { gridRedraws++; };
