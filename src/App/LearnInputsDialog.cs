@@ -267,8 +267,14 @@ namespace Tk75.App
                 capture.State == InputLearningCaptureState.Capturing ? T("Erkannt. Loslassen bzw. zur Ruheposition zurückkehren. Bei Drehrädern oder Schaltern: „Eingabe fertig“.", "Detected. Release or return to rest. For wheels or switches, choose “Finish input”.") :
                 T("Gewünschte Taste drücken oder Regler bewegen, dann loslassen. Das Tempo bestimmst du.", "Press the desired button or move a control, then release. Go at your own pace."));
             var active = capture.Control;
-            SetText(reading, active == null ? source.DisplayName : active.Label + " · " + KindName(active.Kind) + " · " + capture.LiveValue.ToString("P0"));
-            meter.Value = Math.Max(0, Math.Min(1000, (int)Math.Round(capture.LiveValue * 1000))); UpdateButtons();
+            double displayValue = capture.LiveValue;
+            string valueText = displayValue.ToString("P0");
+            var travel = source as TravelLearningSource;
+            double raw;
+            if (travel != null && active != null && source.TryGetValue(active.ControlId, out raw))
+            { displayValue = raw / travel.DisplayMaximum; valueText = T("Rohwert ", "Raw ") + raw.ToString("0"); }
+            SetText(reading, active == null ? source.DisplayName : active.Label + " · " + KindName(active.Kind) + " · " + valueText);
+            meter.Value = Math.Max(0, Math.Min(1000, (int)Math.Round(Math.Min(1, Math.Max(0, displayValue)) * 1000))); UpdateButtons();
         }
         LearnedKeyBinding MakeBinding(int key, LearnedInputRoute route)
         {

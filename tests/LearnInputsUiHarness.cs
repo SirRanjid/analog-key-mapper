@@ -238,6 +238,24 @@ namespace Tk75.Tests
             Equal(beforeForget, Json(Current(form)), "One Undo restores the whole forgotten assignment without additional edits.");
             Check((int?)Call(form, "PhysicalInputKey", 14) == null && (int?)Call(form, "PhysicalInputKey", 9) == 9,
                 "An external pedal has no keyboard lighting index, while an ordinary physical key retains its index.");
+            MethodInfo suppression = typeof(MainForm).GetMethod("TryInputSuppressionKey", Private);
+            object[] suppressionArgs = { Current(form), 14, new SuppressionKey() };
+            Check(!(bool)suppression.Invoke(form, suppressionArgs), "A pedal cannot suppress the keyboard key bearing its logical target label.");
+            var digital = new LearningUiSource('1', LearningButton("scan:1e", null));
+            var digitalProfile = Current(form); digitalProfile.LearnedInputs.RemoveAll(binding => binding.KeyIndex == 14);
+            var digitalBinding = LearningIntegrationBinding(14, digital, "scan:1e"); digitalBinding.Backend = "keyboard";
+            digitalProfile.LearnedInputs.Add(digitalBinding);
+            suppressionArgs = new object[] { digitalProfile, 14, new SuppressionKey() };
+            Check(!(bool)suppression.Invoke(form, suppressionArgs), "A saved digital route with no connected source cannot suppress a physical key.");
+            owned.Add(digital.DeviceId, digital);
+            try
+            {
+                Check((bool)suppression.Invoke(form, suppressionArgs) && ((SuppressionKey)suppressionArgs[2]).ScanCode == 0x1e,
+                    "A connected digital route resolves its source scan code instead of the logical target's code.");
+                digital.IsReading = false;
+                Check(!(bool)suppression.Invoke(form, suppressionArgs), "A disconnected digital source immediately becomes ineligible for keyboard suppression.");
+            }
+            finally { owned.Remove(digital.DeviceId); digital.Dispose(); }
             Profile lighting = Current(form); lighting.RgbOverrideEnabled = true;
             lighting.ModeSwitchLightingEnabled = true; lighting.ModeSwitchHotkey.Enabled = true; lighting.ModeSwitchRgbColor = 0x123456;
             Call(form, "Commit", lighting);
@@ -289,6 +307,73 @@ namespace Tk75.Tests
             AssertPassive(form);
         }
         static void RunLearnInputsUi(MainForm preview, string artifacts)
-        { RunLearningWizardSequence(artifacts); RunLearningWizardGuards(artifacts); RunLearningMainFormIntegration(preview, artifacts); AssertPassive(preview); }
+        { RunLearningWizardSequence(artifacts); RunLearningWizardGuards(artifacts); RunLearningMainFormIntegration(preview, artifacts); RunLearningReconnectGuards(preview); AssertPassive(preview); }
+        static void AcceptLearningBatch(MainForm form, int generation, params ILearnedInputDeviceSource[] sources)
+        {
+            Type batchType = typeof(MainForm).GetNestedType("LearnedSourceBatch", BindingFlags.NonPublic);
+            object batch = Activator.CreateInstance(batchType, BindingFlags.Instance | BindingFlags.NonPublic, null,
+                new object[] { new List<ILearnedInputDeviceSource>(sources) }, null);
+            object pending = Field<object>(form, "learnedOpenBatches");
+            pending.GetType().GetMethod("Add").Invoke(pending, new[] { batch });
+            Call(form, "AcceptOpenedLearnedSources", generation, batch);
+            Check((int)pending.GetType().GetProperty("Count").GetValue(pending, null) == 0, "Completed reconnect batches release their pending ownership record.");
+        }
+        static object[] LearningRuntimeDelegates(MainForm form)
+        {
+            var result = new List<object>();
+            foreach (System.Collections.DictionaryEntry slot in Field<System.Collections.IDictionary>(Field<MultiControllerSession>(form, "runtime"), "slots"))
+            {
+                object session = slot.Value.GetType().GetField("Session").GetValue(slot.Value);
+                result.Add(Field<object>(Field<MappingSession>(session, "inner"), "copyRawSnapshot"));
+            }
+            return result.ToArray();
+        }
+        static void CheckLearningRuntimeUnchanged(MainForm form, LearnedInputRouting routing, object[] callbacks, string reason)
+        {
+            Check(object.ReferenceEquals(routing, Field<LearnedInputRouting>(form, "learnedInputRouting")), reason + ": the existing routing view is retained.");
+            var current = LearningRuntimeDelegates(form);
+            Check(current.Length == callbacks.Length && current.Where((value, index) => !object.ReferenceEquals(value, callbacks[index])).Count() == 0,
+                reason + ": no controller session receives a source replacement that would disconnect its output.");
+        }
+        static void RunLearningReconnectGuards(MainForm form)
+        {
+            int generation = Field<int>(form, "learnedSourceGeneration");
+            var routing = Field<LearnedInputRouting>(form, "learnedInputRouting");
+            var callbacks = LearningRuntimeDelegates(form);
+            Check(routing != null && callbacks.All(value => value != null), "Reconnect guard fixture contains actual configured routing delegates.");
+            typeof(MainForm).GetField("learnedSourcesOpening", Private).SetValue(form, true);
+            AcceptLearningBatch(form, generation);
+            Check(!Field<bool>(form, "learnedSourcesOpening"), "An empty discovery result ends only its pending connection attempt.");
+            CheckLearningRuntimeUnchanged(form, routing, callbacks, "Empty discovery");
+            var late = new LearningUiSource('f', LearningButton("button-1", null));
+            var owned = Field<Dictionary<string, ILearnedInputDeviceSource>>(form, "learnedSources");
+            typeof(MainForm).GetField("deviceDetachInProgress", Private).SetValue(form, true);
+            typeof(MainForm).GetField("learnedSourcesOpening", Private).SetValue(form, true);
+            try
+            {
+                AcceptLearningBatch(form, generation, late);
+                Check(late.Disposed && !owned.ContainsKey(late.DeviceId) && !Field<bool>(form, "learnedSourcesOpening"),
+                    "An input arriving during keyboard detachment is disposed instead of being adopted into the closing runtime.");
+                CheckLearningRuntimeUnchanged(form, routing, callbacks, "Late source during detach");
+            }
+            finally { typeof(MainForm).GetField("deviceDetachInProgress", Private).SetValue(form, false); }
+            var stale = new LearningUiSource('2', LearningButton("button-1", null));
+            typeof(MainForm).GetField("learnedSourcesOpening", Private).SetValue(form, true);
+            AcceptLearningBatch(form, generation - 1, stale);
+            Check(stale.Disposed && Field<bool>(form, "learnedSourcesOpening"), "An obsolete profile's result cannot clear the new profile's in-progress connection flag.");
+            CheckLearningRuntimeUnchanged(form, routing, callbacks, "Obsolete discovery generation");
+            typeof(MainForm).GetField("learnedSourcesOpening", Private).SetValue(form, false);
+            var existing = new LearningUiSource('3', LearningButton("button-1", null));
+            var duplicate = new LearningUiSource('3', LearningButton("button-1", null));
+            owned.Add(existing.DeviceId, existing);
+            try
+            {
+                AcceptLearningBatch(form, generation, duplicate);
+                Check(duplicate.Disposed && !existing.Disposed && object.ReferenceEquals(owned[existing.DeviceId], existing),
+                    "A duplicate connection result preserves the existing source and disposes only the extra handle.");
+                CheckLearningRuntimeUnchanged(form, routing, callbacks, "Duplicate discovery result");
+            }
+            finally { owned.Remove(existing.DeviceId); existing.Dispose(); }
+        }
     }
 }

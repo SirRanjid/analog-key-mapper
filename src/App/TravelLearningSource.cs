@@ -14,13 +14,16 @@ namespace Tk75.App
         bool disposed;
         public string DeviceId { get; private set; }
         public string DisplayName { get; private set; }
+        public double DisplayMaximum { get; private set; }
         public bool IsReading { get { return !disposed && reader.IsReading; } }
         public string Status { get { return reader.Status; } }
         public InputControlDescriptor[] Controls { get { return (InputControlDescriptor[])controls.Clone(); } }
         public event Action<InputControlSample> Sample;
-        public TravelLearningSource(ReaderSession reader, Func<int, string> label, Func<int, bool> known)
+        public TravelLearningSource(ReaderSession reader, Func<int, string> label, Func<int, bool> known, double displayMaximum = 385)
         {
             if (reader == null) throw new ArgumentNullException("reader");
+            if (Double.IsNaN(displayMaximum) || Double.IsInfinity(displayMaximum) || displayMaximum <= 0 || displayMaximum > 65535) throw new ArgumentOutOfRangeException("displayMaximum");
+            DisplayMaximum = displayMaximum;
             this.reader = reader; DeviceId = LearnedInputRouting.TravelDeviceId(reader);
             DisplayName = String.IsNullOrWhiteSpace(reader.Device.product) ? "Analog keyboard" : reader.Device.product;
             controls = Enumerable.Range(0, 256).Select(index => new InputControlDescriptor("key:" + index,

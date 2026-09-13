@@ -102,29 +102,33 @@ namespace Tk75.App
                 }
                 catch (Exception error) { store.Event("Learned input discovery failed: " + error.Message); }
                 var batch = new LearnedSourceBatch(opened);
+                bool reject;
                 lock (learnedOpenGate)
                 {
-                    if (closing || applicationResourcesDisposed || generation != learnedSourceGeneration) { DisposeSourceBatch(batch); return; }
-                    learnedOpenBatches.Add(batch);
+                    reject = closing || deviceDetachInProgress || applicationResourcesDisposed || generation != learnedSourceGeneration;
+                    if (!reject) learnedOpenBatches.Add(batch);
                 }
+                if (reject) { DisposeSourceBatch(batch); return; }
                 try
                 {
-                    uiContext.Post(delegate {
-                        lock (learnedOpenGate) learnedOpenBatches.Remove(batch);
-                        if (closing || IsDisposed || applicationResourcesDisposed || generation != learnedSourceGeneration) { DisposeSourceBatch(batch); return; }
-                        if (deviceDetachInProgress) { learnedSourcesOpening = false; DisposeSourceBatch(batch); return; }
-                        var inputs = batch.Take(); if (inputs == null) return;
-                        learnedSourcesOpening = false;
-                        bool added = false;
-                        foreach (var input in inputs)
-                            if (input != null && input.IsReading && !learnedSources.ContainsKey(input.DeviceId)) { learnedSources.Add(input.DeviceId, input); added = true; }
-                            else if (input != null) input.Dispose();
-                        if (added) { RebuildInputRouting(); RefreshKeySources(); UpdateKeyCard(); }
-                    }, null);
+                    uiContext.Post(delegate { AcceptOpenedLearnedSources(generation, batch); }, null);
                 }
                 catch (InvalidOperationException)
                 { lock (learnedOpenGate) learnedOpenBatches.Remove(batch); DisposeSourceBatch(batch); }
             });
+        }
+        void AcceptOpenedLearnedSources(int generation, LearnedSourceBatch batch)
+        {
+            lock (learnedOpenGate) learnedOpenBatches.Remove(batch);
+            if (closing || IsDisposed || applicationResourcesDisposed || generation != learnedSourceGeneration) { DisposeSourceBatch(batch); return; }
+            if (deviceDetachInProgress) { learnedSourcesOpening = false; DisposeSourceBatch(batch); return; }
+            var inputs = batch.Take(); if (inputs == null) return;
+            learnedSourcesOpening = false;
+            bool added = false;
+            foreach (var input in inputs)
+                if (input != null && input.IsReading && !learnedSources.ContainsKey(input.DeviceId)) { learnedSources.Add(input.DeviceId, input); added = true; }
+                else if (input != null) input.Dispose();
+            if (added) { RebuildInputRouting(); RefreshKeySources(); UpdateKeyCard(); }
         }
         void DisposeLearnedInputs()
         {
@@ -211,9 +215,10 @@ namespace Tk75.App
             var labels = unknown.Select(Label).ToArray();
             var names = Enumerable.Range(0, 256).Select(Label).ToArray();
             var known = new HashSet<int>(Enumerable.Range(0, 256).Where(AutomaticallyKnownKey));
+            double captureDisplayMaximum = sharedPressureRange.ScaleMaximum;
             LearnInputDeviceChoice primary = input == null || !input.IsReading ? null : new LearnInputDeviceChoice {
                 Backend = "travel", DeviceId = LearnedInputRouting.TravelDeviceId(input), Name = input.Device.product + " · Analog",
-                Open = delegate { return new TravelLearningSource(input, index => names[index], known.Contains); } };
+                Open = delegate { return new TravelLearningSource(input, index => names[index], known.Contains, captureDisplayMaximum); } };
             Func<bool> valid = delegate { return !closing && !deviceDetachInProgress && !applicationResourcesDisposed &&
                 Object.ReferenceEquals(originalHistory, history) && Object.ReferenceEquals(token, history.SnapshotToken) &&
                 Object.ReferenceEquals(input, reader) && Object.ReferenceEquals(layout, keyboard.LayoutModel) && path == profilePath && selection.SequenceEqual(SelectedKeys()); };
