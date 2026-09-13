@@ -40,6 +40,7 @@ namespace Tk75.App
             pressureRange.ValueCommitted += delegate { if (!updatingPressureRange) Attempt(delegate { SavePressureRange(pressureRange.SelectedMinimum, pressureRange.SelectedMaximum, pressureRange.RangeMaximum); }); };
             pressureScaleMaximum.ValueChanged += delegate {
                 if (updatingPressureRange) return;
+                CancelInputThresholdCapture();
                 CancelPressureCapture();
                 // The scale is a visual limit. Lowering it never changes a key's
                 // endpoints, including endpoints on currently unselected keys.
@@ -57,6 +58,7 @@ namespace Tk75.App
         {
             if (updatingPressureRange || calibration == null) return;
             Attempt(delegate {
+                CancelInputThresholdCapture();
                 double requested = (double)pressureScaleMaximum.Value;
                 double effective = Math.Max(sharedPressureRange.MaximumEndpoint, requested);
                 CancelPressureCapture();
@@ -70,6 +72,7 @@ namespace Tk75.App
         void SavePressureRange(double minimum, double maximum, double scaleMaximum)
         {
             if (calibration == null) return;
+            CancelInputThresholdCapture();
             bool measured = pressureCaptureReader != null;
             int[] selected = measured ? pressureCaptureKeys : SelectedKeys();
             CancelPressureCapture();
@@ -135,6 +138,7 @@ namespace Tk75.App
         {
             RequireReader(); int[] selected = SelectedKeys();
             if (selected.Length == 0 || calibration == null) return;
+            CancelInputThresholdCapture();
             CancelPressureCapture();
             ReaderSession input = reader;
             var initial = input.GetUiSnapshot(MappingSession.MaximumInputAgeMilliseconds).Where(s => s.Known && !s.Stale).ToDictionary(s => s.KeyIndex, s => (double)s.RawValue);

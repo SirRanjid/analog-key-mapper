@@ -1608,6 +1608,7 @@ namespace Tk75.Tests
             CheckControllerKeyAssignments(form, artifacts);
             CheckMultiKeySignalScope(form);
             CheckCurveSettingsSliders(form);
+            CheckInputThresholdSliders(form);
             CheckMultiKeyInputScope(form);
             CheckManyControllerFooter(form, artifacts);
             CheckLayout(form, new Size(1440, 880), artifacts); CheckLayout(form, new Size(1080, 740), artifacts);

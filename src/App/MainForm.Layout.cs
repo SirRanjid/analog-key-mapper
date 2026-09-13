@@ -248,8 +248,9 @@ namespace Tk75.App
         {
             int[] selected = SelectedKeys(); bool one = selected.Length == 1; bool any = selected.Length != 0;
             keyTitle.Text = one ? string.Format(Tr("Taste {0}", "Key {0}"), Label(selected[0])) : any ? string.Format(Tr("{0} Tasten", "{0} keys"), selected.Length) : Tr("Taste auswählen", "Choose a key");
-            keyHint.Text = !any ? Tr("Klicke auf eine Taste in der Abbildung.", "Click a key on the keyboard.") : Tr("Druckbereich · alle Tasten", "Pressure range · all keys");
+            keyHint.Text = !any ? Tr("Klicke auf eine Taste in der Abbildung.", "Click a key on the keyboard.") : one ? Tr("Druckbereich · diese Taste", "Pressure range · this key") : Tr("Druckbereich · ausgewählte Tasten", "Pressure range · selected keys");
             RefreshPressureRangeEditor();
+            RefreshInputThresholdCaptureButtons();
             if (one && reader != null && !reader.IsReading) keyHint.Text = Tr("Keine Druckwerte.\nVerbindungsdetails stehen unten.", "No pressure data.\nSee connection details below.");
             inputDetails.Visible = reader != null && (!reader.IsReading || !reader.HasReceivedSamples);
             ((TableLayoutPanel)inputDetails.Parent).RowStyles[5].Height = inputDetails.Visible ? 22 : 0;

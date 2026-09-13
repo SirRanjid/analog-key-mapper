@@ -254,12 +254,13 @@ namespace Tk75.Tests
                 fixture.Source.BeforeRead = delegate(int count, int timeout) { if (count == restoreReadNumber) restoreRead.Pass(timeout, fixture.Source); };
                 fixture.CloseWithRestore();
                 fixture.AwaitGate(restoreRead, "Normal close is genuinely blocked in an in-flight restore read.");
+                Set(fixture.Form, "systemShutdownWaitMilliseconds", 3000);
                 var args = new FormClosingEventArgs(CloseReason.WindowsShutDown, false);
                 Stopwatch elapsed = Stopwatch.StartNew();
                 typeof(Form).GetMethod("OnFormClosing", Fields).Invoke(fixture.Form, new object[] { args });
                 Check(!args.Cancel && elapsed.ElapsedMilliseconds < 4500, "Windows shutdown does not wait indefinitely or cancel an already pending normal RGB close.");
                 Check(Get<bool>(fixture.Form, "closing"), "System shutdown seals the UI even while RGB is pending.");
-                Check(!fixture.Source.Disposed && !fixture.State<bool>("Abort"), "The short Windows query deadline does not dispose the reader or cancel its pending restore.");
+                Check(!fixture.Source.Disposed && !fixture.State<bool>("Abort"), "The injected short session-end test deadline does not dispose the reader or cancel its pending restore.");
                 fixture.Preserved(preserved);
                 string backup = Directory.GetFiles(fixture.Lighting, "*.backup.json").Single();
                 Check((string)ReadJournal(backup)["SnapshotBase64"] == Convert.ToBase64String(Tk75RgbProtocol.EncodeSnapshot(fixture.Source.Original)), "An interrupted restore retains the exact durable original backup.");
@@ -271,7 +272,7 @@ namespace Tk75.Tests
                 fixture.Restored();
                 fixture.Preserved(preserved);
                 Check(Get<bool>(fixture.Form, "systemShutdownStarted"), "An earlier successful ordinary save does not convert interrupted OS shutdown into a normal clean exit.");
-                Console.WriteLine("PASS Windows shutdown: pending restore survives the query budget and restores the full original");
+                Console.WriteLine("PASS Windows shutdown: pending restore survives the injected test budget and restores the full original");
             }
         }
         static void CloseRetriesTransientRestore(string root)
@@ -454,6 +455,54 @@ namespace Tk75.Tests
                 Console.WriteLine("PASS cache: input changes invalidate; unchanged refreshes and restore remain correct");
             }
         }
+        static void ShortcutDialogKeepsLighting(string root)
+        {
+            using (var fixture = new Fixture(root))
+            {
+                fixture.Start(); fixture.Ready();
+                Profile profile = Get<EditHistory>(fixture.Form, "history").Current;
+                profile.RgbOverrideEnabled = false; profile.ModeSwitchLightingEnabled = true;
+                profile.ModeSwitchHotkey.Enabled = true; profile.ModeSwitchHotkey.KeyCode = (int)Keys.F9;
+                profile.ModeSwitchRgbColor = 0x112233;
+                Get<EditHistory>(fixture.Form, "history").Commit(profile);
+                // Model the successful registration state only. This fixture
+                // never invokes RegisterHotKey or sends global keyboard input.
+                Set(fixture.Form, "modeShortcutRegistrationActive", true); Set(fixture.Form, "modeHotkey", true);
+                Call(fixture.Form, "RefreshRgbLighting"); fixture.Idle();
+                Check(fixture.Source.Writes == 1 && !Same(fixture.Source.Current, fixture.Source.Original), "The saved physical shortcut marker is applied through the real journaled worker.");
+                object plan = Get<object>(fixture.Form, "rgbPlanCache"); var preserved = fixture.Files();
+                Set(fixture.Form, "modeShortcutDialogOpen", true); Set(fixture.Form, "modeHotkey", false);
+                for (int tick = 0; tick < 12; tick++) Call(fixture.Form, "RefreshRgbLighting");
+                fixture.Idle();
+                Check(fixture.Source.Writes == 1 && Object.ReferenceEquals(plan, Get<object>(fixture.Form, "rgbPlanCache")),
+                    "Pausing hotkeys inside their editor preserves the applied lighting plan without a restore/reapply flash.");
+                profile = Get<EditHistory>(fixture.Form, "history").Current; profile.ModeSwitchRgbColor = 0x445566;
+                Get<EditHistory>(fixture.Form, "history").Commit(profile);
+                Call(fixture.Form, "RefreshRgbLighting"); fixture.Idle();
+                Check(fixture.Source.Writes == 1, "Applying the edited profile while the modal dialog is still open does not insert an unmarked picture.");
+                Set(fixture.Form, "modeShortcutDialogOpen", false); Set(fixture.Form, "modeHotkey", true);
+                Call(fixture.Form, "RefreshRgbLighting"); fixture.Idle();
+                Check(fixture.Source.Writes == 2 && fixture.Source.Written.All(snapshot => !Same(snapshot, fixture.Source.Original)),
+                    "Closing the editor writes the final chosen marker directly, without an intermediate original-lighting transaction.");
+                fixture.Preserved(preserved);
+                Set(fixture.Form, "modeShortcutDialogOpen", true); Set(fixture.Form, "modeHotkey", false);
+                Call(fixture.Form, "RefreshRgbLighting");
+                Set(fixture.Form, "modeShortcutDialogOpen", false); Set(fixture.Form, "modeHotkey", true);
+                Call(fixture.Form, "RefreshRgbLighting"); fixture.Idle();
+                Check(fixture.Source.Writes == 2, "Cancelling the unchanged editor causes no physical lighting write.");
+
+                Set(fixture.Form, "modeShortcutDialogOpen", true); Set(fixture.Form, "modeHotkey", false);
+                Set(fixture.Form, "reader", null); Call(fixture.Form, "RefreshRgbLighting");
+                Check(Get<object>(fixture.Form, "rgbPlanCache") == null, "A missing source still invalidates the lighting plan while the shortcut editor is open.");
+                Set(fixture.Form, "reader", fixture.Reader);
+                int reads = fixture.Source.Reads;
+                Call(fixture.Form, "RestoreKeyboardLighting"); fixture.Idle();
+                Check(fixture.Source.Reads > reads, "Explicit restore still performs its fresh read while ordinary dialog color plans are paused.");
+                fixture.Restored();
+                Set(fixture.Form, "modeShortcutRegistrationActive", false);
+                Console.WriteLine("PASS shortcut lighting: edit/cancel preserve colors; final choice writes directly; identity and explicit restore remain live");
+            }
+        }
         [STAThread]
         public static int Main(string[] args)
         {
@@ -471,6 +520,7 @@ namespace Tk75.Tests
                 InitializationRetries(Path.Combine(root, "f"), 1);
                 InitializationRetries(Path.Combine(root, "g"), 2);
                 PlanCache(Path.Combine(root, "h"));
+                ShortcutDialogKeepsLighting(Path.Combine(root, "l"));
                 WindowsShutdownDuringRestore(Path.Combine(root, "i"));
                 CloseRetriesTransientRestore(Path.Combine(root, "k"));
                 JournalPathBudget(root);

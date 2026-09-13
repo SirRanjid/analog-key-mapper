@@ -317,6 +317,28 @@ namespace Tk75.Tests
             }
         }
 
+        static void DetachedReaderCleanupTracked(string directory)
+        {
+            using (var fixture = new Fixture(directory))
+            {
+                var detached = new TaskCompletionSource<object>();
+                Set(fixture.Form, "deviceDetachCleanup", detached.Task);
+                Set(fixture.Form, "systemShutdownWaitMilliseconds", 150);
+                ShutdownWork work = null;
+                try
+                {
+                    Closing(fixture.Form, CloseReason.WindowsShutDown);
+                    work = Field<ShutdownWork>(fixture.Form, "systemShutdownWork");
+                    Check(!work.Wait(0) && Field<bool>(fixture.Form, "systemShutdownTimedOut"), "A detached reader still owns cleanup after reader becomes null; shutdown waits its completion task.");
+                    Check(Field<ShutdownPhaseState>(fixture.Form, "systemReaderPhase") == ShutdownPhaseState.Running,
+                        "Reader/helper progress cannot finish while detached cleanup is pending.");
+                }
+                finally { detached.TrySetResult(null); if (work != null) work.Wait(2000); }
+                Check(Field<ShutdownPhaseState>(fixture.Form, "systemReaderPhase") == ShutdownPhaseState.Completed,
+                    "The resource lane finishes when detached reader cleanup actually returns.");
+            }
+        }
+
         [STAThread]
         public static int Main(string[] args)
         {
@@ -325,6 +347,8 @@ namespace Tk75.Tests
             try
             {
                 string root = Path.GetFullPath(args[0]);
+                int productionBudget = (int)typeof(MainForm).GetField("SystemShutdownTimeoutMilliseconds", BindingFlags.Static | BindingFlags.NonPublic).GetRawConstantValue();
+                Check(productionBudget >= 17000 && productionBudget <= 30000, "The production session-end budget covers lighting restore while remaining bounded below Windows' final shutdown allowance.");
                 IndependentLanes(); NormalClose(Path.Combine(root, "normal"));
                 SystemClose(Path.Combine(root, "healthy"), null, false);
                 SystemClose(Path.Combine(root, "rgb-pending"), "rgbClosePending", true);
@@ -336,6 +360,7 @@ namespace Tk75.Tests
                 NormalCloseWaitsForCandidate(Path.Combine(root, "normal-pending-connect"));
                 SuspendCancelsStartup(Path.Combine(root, "suspend"));
                 NormalCloseConfirmation(Path.Combine(root, "confirmation"));
+                DetachedReaderCleanupTracked(Path.Combine(root, "detached-reader"));
                 Console.WriteLine("PASS: " + checks + " shutdown assertions; synthetic endpoints only, no OS shutdown or hardware.");
                 return 0;
             }

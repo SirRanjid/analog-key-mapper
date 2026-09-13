@@ -137,14 +137,16 @@ namespace Tk75.App
             UiText.PreserveText(keyBehaviorStatus);
             var form = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 9, Margin = Padding.Empty };
             form.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34)); form.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33)); form.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
-            foreach (int height in new[] { 26, 34, 62, 26, 42, 44, 30, 48 }) form.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
-            // Extra window height belongs to empty space, never to the actions.
-            form.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            foreach (int height in new[] { 22, 28, 0, 22, 36, 40, 22, 42 }) form.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+            // The existing parameter row gets the available height. Bottom
+            // actions and SOCD controls remain inside the fixed Keys work area.
+            form.RowStyles[2].SizeType = SizeType.Percent; form.RowStyles[2].Height = 100;
+            form.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
             keyBehaviorPanel.Controls.Add(form); form.Controls.Add(keyBehaviorStatus, 0, 0); form.SetColumnSpan(keyBehaviorStatus, 3);
             rapidTrigger.Text = Tr("Schnell erneut auslösen", "Rapid retrigger"); form.Controls.Add(rapidTrigger, 0, 1); form.SetColumnSpan(rapidTrigger, 3);
-            form.Controls.Add(PercentField(Tr("Auslösepunkt (%)", "Actuation point (%)"), actuationPoint), 0, 2);
-            form.Controls.Add(PercentField(Tr("Loslassweg (%)", "Release movement (%)"), releaseMovement), 1, 2);
-            form.Controls.Add(PercentField(Tr("Erneuter Druckweg (%)", "Retrigger movement (%)"), pressMovement), 2, 2);
+            form.Controls.Add(BuildInputThresholdField(Tr("Auslösen (%)", "Actuation (%)"), actuationPoint, actuationSlider, calibrateActuation, InputActivationFields.Actuation), 0, 2);
+            form.Controls.Add(BuildInputThresholdField(Tr("Loslassen (%)", "Release (%)"), releaseMovement, releaseSlider, calibrateRelease, InputActivationFields.Release), 1, 2);
+            form.Controls.Add(BuildInputThresholdField(Tr("Erneut (%)", "Repress (%)"), pressMovement, repressSlider, calibrateRepress, InputActivationFields.Press), 2, 2);
             var oppositeCaption = Caption(Tr("Gegenrichtungen (SOCD)", "Opposite directions (SOCD)"), 26); form.Controls.Add(oppositeCaption, 0, 3); form.SetColumnSpan(oppositeCaption, 3);
             oppositeKey.Dock = oppositeMode.Dock = DockStyle.Fill; oppositeKey.DropDownWidth = 240;
             form.Controls.Add(oppositeKey, 0, 4); form.Controls.Add(oppositeMode, 1, 4); form.SetColumnSpan(oppositeMode, 2);
@@ -168,6 +170,7 @@ namespace Tk75.App
             releaseMovement.TextChanged += delegate { if (releaseMovement.ContainsFocus) MarkInputDirty(InputActivationFields.Release); };
             pressMovement.TextChanged += delegate { if (pressMovement.ContainsFocus) MarkInputDirty(InputActivationFields.Press); };
             SetInputTooltips();
+            Disposed += delegate { CancelInputThresholdCapture(); };
         }
         void SetInputTooltips()
         {
@@ -179,6 +182,7 @@ namespace Tk75.App
             keyCardTips.SetToolTip(applyKeyBehavior, Tr("Jetzt übernehmen. Beim Tastenwechsel oder Speichern werden offene Änderungen ebenfalls übernommen; Strg+Z macht sie rückgängig.", "Apply now. Changing keys or saving also applies pending edits; Ctrl+Z undoes them."));
             keyCardTips.SetToolTip(oppositeKey, Tr("Eine Taste: Gegenpart wählen. Zwei Tasten: das ausgewählte Paar verbinden. Bei größerer Auswahl bleiben vorhandene Paare erhalten.", "One key: choose its opposite. Two keys: pair the selected keys. Larger selections preserve existing pairs."));
             keyCardTips.SetToolTip(resetKeyBehavior, Tr("Entfernt das eigene Verhalten aller ausgewählten Tasten und löst ihre Gegenrichtungs-Paare. Die Druckparameter anderer Tasten bleiben erhalten.", "Removes custom behavior from every selected key and unpairs their opposites. Other keys keep their pressure settings."));
+            RefreshInputThresholdTooltips();
         }
         static Control PercentField(string label, NumericUpDown input)
         {
@@ -189,6 +193,7 @@ namespace Tk75.App
         void RefreshInputEditor()
         {
             if (oppositeMode.Items.Count == 0) return;
+            CancelInputThresholdCapture(); CancelInputThresholdGestures();
             // Flush against the captured previous selection before replacing it.
             // SelectionChanged has already updated SelectedKeys at this point.
             FlushInputDraft();
@@ -226,6 +231,7 @@ namespace Tk75.App
                 SetMixedInputTip(actuationPoint, values.Skip(1).Any(other => other.ActuationPoint != value.ActuationPoint));
                 SetMixedInputTip(releaseMovement, values.Skip(1).Any(other => other.ReleaseMovement != value.ReleaseMovement));
                 SetMixedInputTip(pressMovement, values.Skip(1).Any(other => other.PressMovement != value.PressMovement));
+                RefreshInputThresholdSliders(values);
             }
             finally { updatingInput = false; }
             SetInputFieldAvailability(); RefreshSocdDropTarget();
@@ -247,6 +253,9 @@ namespace Tk75.App
         {
             releaseMovement.Enabled = pressMovement.Enabled = rapidTrigger.Enabled && rapidTrigger.CheckState != CheckState.Unchecked;
             var pair = oppositeKey.SelectedItem as OppositeKeyItem; oppositeMode.Enabled = oppositeKey.Enabled && pair != null && !pair.Preserve && pair.Index.HasValue;
+            RefreshInputThresholdAvailability();
+            if (inputThresholdCaptureReader != null) oppositeKey.Enabled = oppositeMode.Enabled = false;
+            else { oppositeKey.Enabled = editingInputKeys.Length == 1 || editingInputKeys.Length == 2; oppositeMode.Enabled = oppositeKey.Enabled && pair != null && !pair.Preserve && pair.Index.HasValue; }
         }
         void SaveKeyBehavior()
         {
@@ -256,6 +265,7 @@ namespace Tk75.App
         }
         KeyInputSettings ReadInputDraft()
         {
+            CancelInputThresholdGestures();
             var value = new KeyInputSettings { KeyIndex = editingInputKeys[0] };
             value.RapidTriggerEnabled = rapidTrigger.Checked; value.ActuationPoint = (double)actuationPoint.Value / 100; value.ReleaseMovement = (double)releaseMovement.Value / 100; value.PressMovement = (double)pressMovement.Value / 100;
             var pair = oppositeKey.SelectedItem as OppositeKeyItem; value.OppositeKeyIndex = pair == null ? (int?)null : pair.Index;
@@ -293,6 +303,7 @@ namespace Tk75.App
         }
         void FlushInputDraft()
         {
+            CancelInputThresholdGestures();
             if (!inputDirty || editingInputKeys.Length == 0 || updatingInput) return;
             EditHistory previousHistory = history; object previousSnapshot = history.SnapshotToken;
             var next = MergePendingInput(history.Current); history.Commit(next); inputDirty = false; inputFieldsDirty = InputActivationFields.None; inputPairingDirty = false;

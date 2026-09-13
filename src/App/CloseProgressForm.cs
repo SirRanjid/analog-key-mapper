@@ -14,6 +14,7 @@ namespace Tk75.App
         readonly SleekProgressBar progress = new SleekProgressBar { Dock = DockStyle.Fill, Maximum = 4, Height = 7, Margin = new Padding(0, 10, 0, 4) };
         readonly Label detail = new Label { Dock = DockStyle.Fill, AutoSize = false, AutoEllipsis = true };
         readonly string[] names;
+        bool needsPaint = true;
 
         internal CloseProgressForm()
         {
@@ -42,7 +43,7 @@ namespace Tk75.App
         internal void SetPhase(int phase, ShutdownPhaseState state)
         {
             if (states[phase] == state) return;
-            states[phase] = state; RenderPhase(phase);
+            states[phase] = state; RenderPhase(phase); needsPaint = true;
             progress.Value = states.Count(value => value == ShutdownPhaseState.Completed);
         }
         void RenderPhase(int phase)
@@ -52,10 +53,10 @@ namespace Tk75.App
             phases[phase].ForeColor = state == ShutdownPhaseState.Failed ? ModernTheme.DangerColor : state == ShutdownPhaseState.Running ? ModernTheme.Accent : state == ShutdownPhaseState.Completed ? ModernTheme.Foreground : ModernTheme.Muted;
             phases[phase].AccessibleDescription = state.ToString();
         }
-        internal void SetDetail(string text) { if (detail.Text != text) detail.Text = text; }
+        internal void SetDetail(string text) { if (detail.Text != text) { detail.Text = text; needsPaint = true; } }
         // Synchronous paint is intentional during WM_ENDSESSION: dispatching
         // arbitrary application messages could reenter close or device callbacks.
-        internal void PaintProgress() { if (Visible && !IsDisposed) { Invalidate(true); Update(); } }
+        internal void PaintProgress() { if (needsPaint && Visible && !IsDisposed) { Invalidate(true); Update(); needsPaint = false; } }
         protected override bool ProcessDialogKey(Keys keyData) { return true; }
     }
 }

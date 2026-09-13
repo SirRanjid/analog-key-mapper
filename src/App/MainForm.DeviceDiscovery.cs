@@ -185,10 +185,10 @@ namespace Tk75.App
             deviceDetachCleanupFailure = null; deviceDetachCleanup = cleanup.Task;
             System.Threading.ThreadPool.QueueUserWorkItem(delegate {
                 try { runtime.SetReader(null); }
-                catch (Exception ex) { deviceDetachCleanupFailure = ex; store.Event("Disconnect runtime: " + ex.Message); }
+                catch (Exception ex) { deviceDetachCleanupFailure = ex; LogShutdownFailure("Disconnect runtime", ex); }
                 finally {
-                    try { RestoreRgbBeforeDisconnect(removed, RgbCloseTimeoutMilliseconds); } catch (Exception ex) { deviceDetachCleanupFailure = ex; store.Event("Disconnect lighting: " + ex.Message); }
-                    try { removed.Dispose(); } catch (Exception ex) { deviceDetachCleanupFailure = ex; store.Event("Disconnect reader: " + ex.Message); }
+                    try { RestoreRgbBeforeDisconnect(removed, RgbCloseTimeoutMilliseconds); } catch (Exception ex) { deviceDetachCleanupFailure = ex; LogShutdownFailure("Disconnect lighting", ex); }
+                    try { removed.Dispose(); } catch (Exception ex) { deviceDetachCleanupFailure = ex; LogShutdownFailure("Disconnect reader", ex); }
                     finally { cleanup.TrySetResult(null); }
                 }
                 PostDiscovery(delegate {

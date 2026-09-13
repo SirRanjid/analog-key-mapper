@@ -168,6 +168,13 @@ namespace Tk75.Diagnostics
                 SendTravelReport(report, output, evidence); RequireAlive(state, clock);
             }
         }
+        static void SettleRgbWithInput(int milliseconds, InputReader input, MonitorHostProtocol state,
+            Stopwatch clock, OutputQueue output, DeviceEvidence evidence)
+        {
+            RgbInputSettling.Wait(milliseconds, Stopwatch.Frequency, Stopwatch.GetTimestamp, input.Read,
+                delegate(byte[] report) { SendTravelReport(report, output, evidence); },
+                delegate { RequireAlive(state, clock); });
+        }
         static void RefreshDeviceEvidence(SafeFileHandle feature, InputReader input, uint model,
             MonitorHostProtocol state, Stopwatch clock, OutputQueue output, DeviceEvidence evidence)
         {
@@ -187,7 +194,7 @@ namespace Tk75.Diagnostics
             MonitorHostProtocol state, Stopwatch clock, OutputQueue output, DeviceEvidence evidence)
         {
             RequireAlive(state, clock); SendFeature(feature, command, "Beleuchtung lesen");
-            Thread.Sleep(20); RequireAlive(state, clock); byte[] reply = new byte[65];
+            SettleRgbWithInput(20, input, state, clock, output, evidence); byte[] reply = new byte[65];
             if (!FeatureNative.HidD_GetFeature(feature, reply, reply.Length)) throw Native.Error("Beleuchtung lesen");
             // Count a real successful GET with its existing opcode-specific
             // validation. A SetFeature/write acknowledgment is never evidence.
@@ -246,11 +253,10 @@ namespace Tk75.Diagnostics
                         RefreshDeviceEvidence(feature, input, model, state, clock, output, evidence);
                         RequireAlive(state, clock); SendFeature(feature, command, "Beleuchtung ändern");
                         int settlingMs = command[1] == 0x07 || (command[1] == 0x0c && command[6] == 1) ? 100 : 20;
-                        // The manufacturer's completed-picture/settings writes
-                        // settle for 100ms. Service real inputs meanwhile; time
-                        // passing or write acknowledgments never renew a lease.
-                        for (int waited = 0; waited < settlingMs; waited += 20)
-                        { Thread.Sleep(20); RequireAlive(state, clock); PumpRgbInput(input, state, clock, output, evidence); }
+                        // Preserve the full settling deadline while forwarding
+                        // pressure reports as soon as the owned read completes.
+                        // Only real evidence, never waiting/writes, renews a lease.
+                        SettleRgbWithInput(settlingMs, input, state, clock, output, evidence);
                         // The nominal 320ms of a full write burst is not a wall-
                         // clock bound: scheduler rounding and synchronous USB
                         // calls add time. Query only between completed commands,

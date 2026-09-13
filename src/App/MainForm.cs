@@ -353,6 +353,7 @@ namespace Tk75.App
         void UpdateLive()
         {
             UpdatePressureCapture();
+            UpdateInputThresholdCapture();
             if (closing || deviceDetachInProgress) return;
             bool showLive = Visible && WindowState != FormWindowState.Minimized;
             runtime.SetPreviewActive(showLive);

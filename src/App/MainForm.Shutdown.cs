@@ -66,6 +66,7 @@ namespace Tk75.App
             if (closing) return;
             if (TryMinimizeToTrayOnClosing(args)) return;
             CancelPressureCapture();
+            CancelInputThresholdCapture();
             ShowCloseProgress();
             if (rgbClosePending) { args.Cancel = true; return; }
             if (deviceDetachInProgress)
@@ -112,6 +113,7 @@ namespace Tk75.App
             ShowCloseProgress();
             closing = true; closeAfterDeviceDetach = false; Enabled = false;
             CancelPressureCapture();
+            CancelInputThresholdCapture();
             CancelStartupReconnect(); CancelControllerReconnectSave();
             uiTimer.Stop(); StopDeviceDiscovery(); ReleaseShortcutRegistrations();
             CancelMappingDrag(); keyboardSuppression.SetEnabled(false);
@@ -198,10 +200,13 @@ namespace Tk75.App
             if (systemShutdownWork == null || closeProgress == null || closeProgress.IsDisposed) return;
             var phases = systemShutdownWork.States;
             closeProgress.SetPhase(0, phases[2]); closeProgress.SetPhase(1, phases[0]);
-            closeProgress.SetPhase(2, systemLightingPhase);
+            ShutdownPhaseState lighting = systemLightingPhase;
+            if (phases[1] == ShutdownPhaseState.Failed && lighting == ShutdownPhaseState.Pending) lighting = ShutdownPhaseState.Failed;
+            closeProgress.SetPhase(2, lighting);
             // Controller candidates may own helper cleanup independently of the
             // reader. The final phase cannot be complete while either is running.
             ShutdownPhaseState resources = systemReaderPhase;
+            if (phases[1] == ShutdownPhaseState.Failed && resources == ShutdownPhaseState.Pending) resources = ShutdownPhaseState.Failed;
             if (resources == ShutdownPhaseState.Completed && phases[0] != ShutdownPhaseState.Completed)
                 resources = phases[0] == ShutdownPhaseState.Failed ? ShutdownPhaseState.Failed : ShutdownPhaseState.Running;
             closeProgress.SetPhase(3, resources);
@@ -260,6 +265,7 @@ namespace Tk75.App
             if (systemShutdownStarted) { HideCloseProgress(); return false; }
             if (applicationResourcesDisposed) return !resourceCleanupFailed;
             applicationResourcesDisposed = true;
+            if (deviceDetachCleanupFailure != null) resourceCleanupFailed = true;
             ReaderSession ownedReader = reader; reader = null;
             try { keyboardSuppression.Dispose(); }
             catch (Exception error) { resourceCleanupFailed = true; LogShutdownFailure("Keyboard suppression cleanup", error); }
