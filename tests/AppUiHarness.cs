@@ -1544,7 +1544,7 @@ namespace Tk75.Tests
             Equal("Taste A", Field<Label>(form, "keyTitle").Text, "Key card follows direct physical selection.");
             keyboard.SelectKey(keyboard.LayoutModel.FindByIndex(14), true); Pump(form);
             Check(((int[])Call(form, "SelectedKeys")).SequenceEqual(new[] { 9, 14 }), "Ctrl-selection preserves multiple keyboard indices.");
-            Check(!Field<LinkLabel>(form, "calibrateRange").Enabled, "Calibration needs active pressure input.");
+            Check(!Field<Button>(form, "calibrateRange").Enabled, "Calibration needs active pressure input.");
             SelectKeys(form, 14);
             Binding[] w = Current(form).Bindings.Where(b => b.KeyIndex == 14).ToArray(); Check(w.Length == 2, "Preview includes two independent W bindings.");
             SelectBindings(form, w.Select(b => b.BindingId).ToArray());

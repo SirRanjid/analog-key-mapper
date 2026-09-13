@@ -11,7 +11,7 @@ namespace Tk75.App
     {
         readonly PressureRangeSlider pressureRange = new PressureRangeSlider();
         readonly NumericUpDown pressureScaleMaximum = new NumericUpDown { Minimum = 1, Maximum = 65535, Value = 385, DecimalPlaces = 0, Dock = DockStyle.Fill, Margin = new Padding(3, 0, 3, 0) };
-        readonly LinkLabel calibrateRange = new LinkLabel { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight };
+        readonly Button calibrateRange = new SleekButton { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, AccessibleRole = AccessibleRole.PushButton };
         readonly Label pressureScaleLabel = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
         KeyboardPressureRange sharedPressureRange = new KeyboardPressureRange(null);
         CalibrationDocument reportedLegacyPressureRange;
@@ -44,7 +44,7 @@ namespace Tk75.App
             };
             pressureScaleMaximum.Leave += delegate { CommitPressureScale(); };
             pressureScaleMaximum.KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { CommitPressureScale(); e.Handled = e.SuppressKeyPress = true; } };
-            calibrateRange.LinkClicked += delegate { Attempt(delegate { if (pressureCaptureReader == null) BeginPressureCapture(); else { CancelPressureCapture(); RefreshPressureRangeEditor(); } }); };
+            calibrateRange.Click += delegate { Attempt(delegate { if (pressureCaptureReader == null) BeginPressureCapture(); else { CancelPressureCapture(); RefreshPressureRangeEditor(); } }); };
             VisibleChanged += delegate { if (!Visible && pressureCaptureReader != null) { CancelPressureCapture(); RefreshPressureRangeEditor(); } };
             Disposed += delegate { CancelPressureCapture(); };
             return panel;
@@ -78,6 +78,12 @@ namespace Tk75.App
             updatingPressureRange = true;
             try
             {
+                // Keep the themed button inside the scale editor's 24px header.
+                // The theme's standard 32px minimum and margins belong to larger rows.
+                if (calibrateRange.MinimumSize != Size.Empty) calibrateRange.MinimumSize = Size.Empty;
+                Padding buttonMargin = new Padding(3, 0, 0, 0), buttonPadding = new Padding(4, 0, 4, 0);
+                if (calibrateRange.Margin != buttonMargin) calibrateRange.Margin = buttonMargin;
+                if (calibrateRange.Padding != buttonPadding) calibrateRange.Padding = buttonPadding;
                 if (pressureCaptureReader == null && (!Object.ReferenceEquals(displayedPressureRange, calibration) || !pressureRange.IsDragging && !pressureScaleMaximum.Focused))
                 {
                     pressureRange.SetRange(0, sharedPressureRange.ScaleMaximum, sharedPressureRange.Minimum, sharedPressureRange.Maximum);
@@ -89,11 +95,16 @@ namespace Tk75.App
                 pressureRange.Enabled = pressureScaleMaximum.Enabled = calibration != null && pressureCaptureReader == null;
                 calibrateRange.Enabled = selected.Length == 1 && reader != null && reader.IsReading && calibration != null;
                 calibrateRange.Text = pressureCaptureReader != null ? Tr("Abbrechen", "Cancel") : Tr("Kalibrieren", "Calibrate");
+                calibrateRange.AccessibleName = calibrateRange.Text;
                 if (pressureCaptureReader == null && selected.Length != 0)
                     keyHint.Text = Tr("Druckbereich · alle Tasten", "Pressure range · all keys");
                 keyCardTips.SetToolTip(pressureRange, Tr("Min und Max gelten für jede Taste dieser Tastatur.", "Min and max apply to every key on this keyboard."));
                 keyCardTips.SetToolTip(pressureScaleMaximum, Tr("Gemeinsame Rohwert-Skala. Eine Kalibrierung erweitert sie bei Bedarf automatisch.", "Shared raw-value scale. Calibration expands it automatically when needed."));
-                keyCardTips.SetToolTip(calibrateRange, Tr("Einmal bis zum Anschlag drücken und loslassen. Der gemessene Bereich gilt anschließend für alle Tasten.", "Press all the way down once, then release. The measured range is then used for all keys."));
+                string calibrationHint = pressureCaptureReader != null
+                    ? Tr("Kalibrierung abbrechen. Der gespeicherte Druckbereich bleibt unverändert.", "Cancel calibration. The saved pressure range stays unchanged.")
+                    : Tr("Einmal bis zum Anschlag drücken und loslassen. Der gemessene Bereich gilt anschließend für alle Tasten.", "Press all the way down once, then release. The measured range is then used for all keys.");
+                calibrateRange.AccessibleDescription = calibrationHint;
+                keyCardTips.SetToolTip(calibrateRange, calibrationHint);
             }
             finally { updatingPressureRange = false; }
         }

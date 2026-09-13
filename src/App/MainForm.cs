@@ -28,7 +28,7 @@ namespace Tk75.App
         readonly SleekComboBox pasteMode = new SleekComboBox();
         readonly SleekComboBox preset = new SleekComboBox();
         readonly Label deviceStatus = new Label(), outputStatus = new Label(), selectionStatus = new Label(), liveStatus = new Label();
-        readonly DataGridView keys = Grid(), bindings = Grid(), settings = Grid(), monitor = Grid();
+        readonly DataGridView keys = Grid(), bindings = Grid(true), settings = Grid(), monitor = Grid();
         readonly VisualKeyboard keyboard = new VisualKeyboard();
         readonly CurveCanvas curve = new CurveCanvas();
         readonly Timer uiTimer = new Timer { Interval = 33 };
@@ -93,11 +93,13 @@ namespace Tk75.App
         }
         void OnPower(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
         { if (e.Mode == Microsoft.Win32.PowerModes.Suspend) { CancelStartupReconnect(); runtime.Disable("Ruhezustand – Controller aus"); } }
-        static DataGridView Grid()
+        static DataGridView Grid(bool liveValues = false)
         {
-            return new DataGridView { Dock = DockStyle.Fill, BackgroundColor = ModernTheme.Surface, BorderStyle = BorderStyle.None, RowHeadersVisible = false,
-                AllowUserToAddRows = false, AllowUserToDeleteRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect, ReadOnly = true, MultiSelect = true };
+            DataGridView grid = liveValues ? new BufferedValueGrid() : new DataGridView();
+            grid.Dock = DockStyle.Fill; grid.BackgroundColor = ModernTheme.Surface; grid.BorderStyle = BorderStyle.None; grid.RowHeadersVisible = false;
+            grid.AllowUserToAddRows = grid.AllowUserToDeleteRows = false; grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect; grid.ReadOnly = grid.MultiSelect = true;
+            return grid;
         }
         static FlowLayoutPanel Bar() { return new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(8), WrapContents = true }; }
         Button Add(FlowLayoutPanel bar, string text, Action action)

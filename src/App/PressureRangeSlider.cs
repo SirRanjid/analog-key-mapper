@@ -42,7 +42,11 @@ namespace Tk75.App
                 if (value.HasValue && !Finite(value.Value)) throw new ArgumentOutOfRangeException("value");
                 if (measuredValue == value) return;
                 int previous = MarkerPixel(measuredValue); measuredValue = value;
-                if (previous != MarkerPixel(measuredValue)) Invalidate();
+                int next = MarkerPixel(measuredValue);
+                if (previous == next) return;
+                // A live sample only moves the small tick. Keep the scale,
+                // handles and surrounding editor out of its repaint region.
+                InvalidateMarker(previous); InvalidateMarker(next);
             }
         }
 
@@ -81,6 +85,13 @@ namespace Tk75.App
             return Clamp(Math.Round(value, MidpointRounding.AwayFromZero), rangeMinimum, rangeMaximum);
         }
         int MarkerPixel(double? value) { return value.HasValue ? (int)Math.Round(Position(value.Value)) : Int32.MinValue; }
+        void InvalidateMarker(int pixel)
+        {
+            if (pixel == Int32.MinValue) return;
+            Rectangle area = Rectangle.Ceiling(new RectangleF(pixel - 2 * UiScale, TrackY + 8 * UiScale, 4 * UiScale, 9 * UiScale));
+            area.Intersect(ClientRectangle);
+            if (!area.IsEmpty) Invalidate(area);
+        }
         RectangleF HandleBounds(int handle)
         {
             float x = Position(handle == 0 ? selectedMinimum : selectedMaximum), radius = HandleRadius;
@@ -95,14 +106,15 @@ namespace Tk75.App
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
-            g.Clear(Parent == null ? BackColor : Parent.BackColor);
+            using (var background = new SolidBrush(Parent == null ? BackColor : Parent.BackColor))
+                g.FillRectangle(background, e.ClipRectangle);
             if (Width < 3 || Height < 3) return;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             Color ink = Enabled ? ForeColor : ModernTheme.Muted;
             Color accent = Enabled ? ModernTheme.Accent : ModernTheme.Muted;
             int labelHeight = Math.Max(Font.Height + 4, (int)(22 * UiScale));
             TextFormatFlags labels = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine |
-                TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding;
+                TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.PreserveGraphicsClipping;
             Rectangle labelArea = new Rectangle(0, 0, Math.Max(1, Width / 2 - 4), labelHeight);
             TextRenderer.DrawText(g, "Min " + Number(selectedMinimum), Font, labelArea, ink, labels);
             labelArea.X = Width / 2 + 4; labelArea.Width = Math.Max(1, Width - labelArea.X);
@@ -116,7 +128,7 @@ namespace Tk75.App
             }
             if (measuredValue.HasValue)
             {
-                float x = Position(measuredValue.Value);
+                float x = MarkerPixel(measuredValue);
                 using (var marker = new Pen(ink, Math.Max(1.5f, UiScale)))
                     g.DrawLine(marker, x, TrackY + 10 * UiScale, x, TrackY + 15 * UiScale);
             }

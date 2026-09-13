@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Drawing;
 using System.Reflection;
 using System.Windows.Forms;
 using Tk75.App;
@@ -7,6 +9,56 @@ namespace Tk75.Tests
 {
     public static partial class AppUiHarness
     {
+        static void CheckPressureMarkerPainting(PressureRangeSlider slider)
+        {
+            double? saved = slider.MeasuredValue;
+            var dirty = new List<Rectangle>();
+            InvalidateEventHandler changed = delegate(object sender, InvalidateEventArgs e) { dirty.Add(e.InvalidRect); };
+            MethodInfo paint = typeof(PressureRangeSlider).GetMethod("OnPaint", BindingFlags.NonPublic | BindingFlags.Instance);
+            slider.MeasuredValue = null;
+            using (var retained = new Bitmap(slider.Width, slider.Height))
+            {
+                PaintPressureRegion(slider, paint, retained, slider.ClientRectangle);
+                slider.Invalidated += changed;
+                try
+                {
+                    double span = slider.RangeMaximum - slider.RangeMinimum;
+                    foreach (double? sample in new double?[] { 0, span / 3, span / 2, span, span + 100, null, span / 4, null })
+                    {
+                        dirty.Clear(); slider.MeasuredValue = sample;
+                        foreach (Rectangle area in dirty)
+                        {
+                            Check(area.Top > slider.Font.Height && area.Width < 16 && area.Height < slider.Height / 2,
+                                "Moving the pressure tick repaints only its old/new marker area, below the range labels.");
+                            PaintPressureRegion(slider, paint, retained, area);
+                        }
+                        using (var complete = new Bitmap(slider.Width, slider.Height))
+                        {
+                            PaintPressureRegion(slider, paint, complete, slider.ClientRectangle);
+                            bool equal = true;
+                            for (int y = 0; y < retained.Height && equal; y++)
+                                for (int x = 0; x < retained.Width; x++)
+                                    if (retained.GetPixel(x, y) != complete.GetPixel(x, y)) { equal = false; break; }
+                            Check(equal, "Partial pressure updates exactly match a full redraw, including clearing the old tick.");
+                        }
+                    }
+                    slider.MeasuredValue = span / 2; dirty.Clear();
+                    slider.MeasuredValue = span / 2;
+                    slider.MeasuredValue = span / 2 + 0.000001;
+                    Check(dirty.Count == 0, "Equal values and subpixel pressure changes do not request another paint.");
+                }
+                finally { slider.Invalidated -= changed; slider.MeasuredValue = saved; }
+            }
+        }
+        static void PaintPressureRegion(PressureRangeSlider slider, MethodInfo paint, Bitmap image, Rectangle area)
+        {
+            using (Graphics graphics = Graphics.FromImage(image))
+            {
+                graphics.SetClip(area);
+                paint.Invoke(slider, new object[] { new PaintEventArgs(graphics, area) });
+            }
+        }
+
         // This contract check does not create a native control handle, show a
         // window, read input devices or alter focus. Gesture/layout checks run
         // separately with the regular synthetic UI fixture.

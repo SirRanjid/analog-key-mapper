@@ -120,7 +120,8 @@ namespace Tk75.Tests
                 CalibrationDocument saved = store.LoadCalibration(new string('c', 64), input.Reader.Fingerprint);
                 typeof(MainForm).GetField("reader", Private).SetValue(form, input.Reader);
                 typeof(MainForm).GetField("calibration", Private).SetValue(form, saved);
-                Call(form, "Configure"); SelectKeys(form, 14); DetailMode(form, null); Call(form, "RefreshPressureRangeEditor");
+                Call(form, "Configure"); Field<MultiControllerSession>(form, "runtime").SetReader(input.Reader);
+                SelectKeys(form, 14); DetailMode(form, null); Call(form, "RefreshPressureRangeEditor");
                 Check(!Field<System.Windows.Forms.Timer>(form, "uiTimer").Enabled && !Field<bool>(form, "discoveryEnabled"),
                     "Inline calibration uses only the injected source; hardware discovery and automatic UI ticks remain off.");
                 return form;
@@ -129,9 +130,9 @@ namespace Tk75.Tests
         }
         static void ClickPressureCalibration(MainForm form)
         {
-            var link = Field<LinkLabel>(form, "calibrateRange");
-            Check(link.Enabled, "The inline calibration action is available for the selected synthetic key.");
-            typeof(LinkLabel).GetMethod("OnLinkClicked", Private).Invoke(link, new object[] { new LinkLabelLinkClickedEventArgs(link.Links[0]) });
+            var button = Field<Button>(form, "calibrateRange");
+            Check(button.Enabled, "The inline calibration action is available for the selected synthetic key.");
+            button.PerformClick();
         }
         static void CheckPressureRange(MainForm form, double minimum, double maximum, double scale)
         {
@@ -152,6 +153,113 @@ namespace Tk75.Tests
                 Check(Field<object>(mapping, "output") == null, "Calibration never creates a controller output in this synthetic test.");
             }
         }
+        static void AwaitPressurePreview(MainForm form, int raw)
+        {
+            var runtime = Field<MultiControllerSession>(form, "runtime");
+            string binding = Current(form).Bindings.First(item => item.KeyIndex == 14).BindingId;
+            double expected = Field<KeyboardPressureRange>(form, "sharedPressureRange").Depth(raw);
+            AwaitDialog(delegate {
+                SignalResult result;
+                return runtime.Preview.BindingResults.TryGetValue(binding, out result) && result.IsValid &&
+                    Math.Abs(result.Normalized - expected) < 0.000001;
+            }, "The synthetic pressure reaches the real mapping preview before its UI tick.");
+        }
+        static void CheckLivePressurePainting(MainForm form, DialogInput input, string path)
+        {
+            var slider = Field<PressureRangeSlider>(form, "pressureRange");
+            var label = Field<Label>(form, "pressureText");
+            var bindings = Field<DataGridView>(form, "bindings");
+            var keyboard = Field<VisualKeyboard>(form, "keyboard");
+            PushDialog(input, 14, 0); AwaitPressurePreview(form, 0);
+            Call(form, "UpdateLive"); Application.DoEvents(); form.Update();
+            // Prime initial sample/status changes before measuring. Pump() is
+            // deliberately excluded here because it forces full-form layout.
+            var bounds = DialogControls(form).Where(control => control.Visible).ToDictionary(control => control, control => control.Bounds);
+            int[] selectedKeys = (int[])Call(form, "SelectedKeys"), keyboardKeys = keyboard.SelectedKeyIndices;
+            string[] selectedBindings = (string[])Call(form, "SelectedBindings");
+            int rows = bindings.Rows.Count;
+            var calibration = Field<CalibrationDocument>(form, "calibration");
+            var shared = Field<KeyboardPressureRange>(form, "sharedPressureRange");
+            string profile = Json(Current(form)), persisted = File.Exists(path) ? File.ReadAllText(path) : null;
+            var ancestors = new List<Control>();
+            for (Control parent = slider.Parent; parent != null; parent = parent.Parent) ancestors.Add(parent);
+            var layouts = new List<string>(); var parentRedraws = new List<string>(); var markerAreas = new List<Rectangle>();
+            int labelRedraws = 0, gridRedraws = 0;
+            LayoutEventHandler layout = delegate(object sender, LayoutEventArgs e) { layouts.Add(sender.GetType().Name + "/" + e.AffectedProperty); };
+            InvalidateEventHandler parentRedraw = delegate(object sender, InvalidateEventArgs e) { parentRedraws.Add(sender.GetType().Name + "/" + e.InvalidRect); };
+            InvalidateEventHandler marker = delegate(object sender, InvalidateEventArgs e) { markerAreas.Add(e.InvalidRect); };
+            InvalidateEventHandler text = delegate { labelRedraws++; }, grid = delegate { gridRedraws++; };
+            foreach (Control parent in ancestors) { parent.Layout += layout; parent.Invalidated += parentRedraw; }
+            slider.Invalidated += marker; label.Invalidated += text; bindings.Invalidated += grid;
+            var displayedValues = new HashSet<string>();
+            try
+            {
+                for (int cycle = 0; cycle < 2; cycle++)
+                    foreach (int raw in new[] { 16, 96, 192, 300, 385, 300, 96, 0 })
+                    {
+                        PushDialog(input, 14, raw); AwaitPressurePreview(form, raw); Call(form, "UpdateLive");
+                        Application.DoEvents(); form.Update();
+                        Check(slider.MeasuredValue == raw, "Normal pressing and releasing moves the inline live marker.");
+                        Check(bounds.All(item => item.Key.Bounds == item.Value), "Normal pressure cannot resize or move any visible control.");
+                        Check(((int[])Call(form, "SelectedKeys")).SequenceEqual(selectedKeys) && keyboard.SelectedKeyIndices.SequenceEqual(keyboardKeys) &&
+                            ((string[])Call(form, "SelectedBindings")).SequenceEqual(selectedBindings) && bindings.Rows.Count == rows,
+                            "Normal pressure preserves key selection, binding selection and the existing mapping rows.");
+                        displayedValues.Add(Convert.ToString(bindings.Rows[0].Cells[3].Value));
+                    }
+                Check(markerAreas.Count > 0 && labelRedraws > 0 && gridRedraws > 0 && displayedValues.Count > 1,
+                    "The regression exercises changing marker, raw-value text and calculated binding values.");
+                Check(markerAreas.All(area => !area.IsEmpty && slider.ClientRectangle.Contains(area) && area.Top >= slider.Font.Height + 4 &&
+                    area.Width <= Math.Max(12, slider.Font.Height) && area.Height <= Math.Max(12, slider.Height / 3)),
+                    "Each live marker invalidation is a small area below the slider labels, never the full range editor.");
+                int stableMarkers = markerAreas.Count, stableText = labelRedraws, stableGrid = gridRedraws;
+                for (int repeat = 0; repeat < 4; repeat++)
+                {
+                    PushDialog(input, 14, 0); Call(form, "UpdateLive"); Application.DoEvents(); form.Update();
+                }
+                Check(markerAreas.Count == stableMarkers && labelRedraws == stableText && gridRedraws == stableGrid,
+                    "Repeated unchanged samples invalidate neither marker, pressure text nor binding values.");
+                Check(layouts.Count == 0, "Live readings cause no ancestor layout: " + String.Join(", ", layouts.Take(6)));
+                Check(parentRedraws.Count == 0, "Live readings cause no ancestor invalidation: " + String.Join(", ", parentRedraws.Take(6)));
+                Check(Object.ReferenceEquals(calibration, Field<CalibrationDocument>(form, "calibration")) &&
+                    Object.ReferenceEquals(shared, Field<KeyboardPressureRange>(form, "sharedPressureRange")) && Json(Current(form)) == profile &&
+                    (File.Exists(path) ? File.ReadAllText(path) : null) == persisted,
+                    "Normal pressure never edits, persists or reconfigures the global calibration or mapping profile.");
+            }
+            finally
+            {
+                foreach (Control parent in ancestors) { parent.Layout -= layout; parent.Invalidated -= parentRedraw; }
+                slider.Invalidated -= marker; label.Invalidated -= text; bindings.Invalidated -= grid;
+            }
+        }
+        static void CheckPressureCalibrationButton(MainForm form, DialogInput input, string artifacts)
+        {
+            string language = UiText.Language; Size size = form.ClientSize;
+            var button = Field<Button>(form, "calibrateRange");
+            try
+            {
+                Size chrome = new Size(form.Width - form.ClientSize.Width, form.Height - form.ClientSize.Height);
+                SetPreviewClientSize(form, new Size(SupportedMinimumSize.Width - chrome.Width, SupportedMinimumSize.Height - chrome.Height));
+                foreach (string locale in new[] { "de", "en" })
+                {
+                    Call(form, "SwitchLanguage", locale); Call(form, "RefreshPressureRangeEditor"); Pump(form);
+                    for (int capture = 0; capture < 2; capture++)
+                    {
+                        if (capture != 0) { PushDialog(input, 14, 0); ClickPressureCalibration(form); Pump(form); }
+                        string expected = locale == "de" ? capture == 0 ? "Kalibrieren" : "Abbrechen" : capture == 0 ? "Calibrate" : "Cancel";
+                        Equal(expected, button.Text, "The inline button displays its localized ready/cancel action.");
+                        Check(button.AccessibleRole == AccessibleRole.PushButton && button.AccessibleName == expected && button.TabStop,
+                            "Calibration remains an accessible, keyboard-reachable push button in both states.");
+                        Size caption = TextRenderer.MeasureText(button.Text, button.Font, new Size(Int32.MaxValue, Int32.MaxValue), TextFormatFlags.SingleLine);
+                        Check(caption.Width <= button.ClientSize.Width - button.Padding.Horizontal && caption.Height <= button.ClientSize.Height - button.Padding.Vertical,
+                            "The full calibration caption fits the compact button without wrapping or ellipsis: " + locale + "/" + expected);
+                        VisibleInside(form, button, "compact calibration " + locale + "/" + expected);
+                        CapturePreview(form, artifacts, "pressure-button-compact-" + locale + (capture == 0 ? "-ready" : "-cancel"));
+                        if (capture != 0) ClickPressureCalibration(form);
+                    }
+                }
+            }
+            finally { Call(form, "CancelPressureCapture"); Call(form, "SwitchLanguage", language); SetPreviewClientSize(form, size); }
+        }
         static void RunInlinePressureRange(string artifacts)
         {
             string language = UiText.Language;
@@ -167,6 +275,9 @@ namespace Tk75.Tests
                     CheckPressureRange(form, 0, 385, 385);
                     Check(slider.Enabled && Field<NumericUpDown>(form, "pressureScaleMaximum").Enabled, "Both handles and the shared scale are editable inline.");
                     Check(!File.Exists(path), "Opening the range editor does not invent or persist a calibration.");
+                    CheckPressureMarkerPainting(slider);
+                    CheckLivePressurePainting(form, input, path);
+                    CheckPressureCalibrationButton(form, input, artifacts);
                     PushDialog(input, 14, 0); ClickPressureCalibration(form);
                     Check(Object.ReferenceEquals(Field<ReaderSession>(form, "pressureCaptureReader"), input.Reader), "The inline action subscribes to the already-connected reader.");
                     Check(!slider.Enabled && !Field<NumericUpDown>(form, "pressureScaleMaximum").Enabled, "Manual edits are paused during a live measurement.");
@@ -237,7 +348,7 @@ namespace Tk75.Tests
                     Check(saved.GlobalMinimum == 10 && saved.GlobalMaximum == 600 && saved.ScaleMaximum == 700,
                         "Editing either real slider handle persists the range for every key.");
                     SelectKeys(form, 9, 14);
-                    Check(slider.Enabled && !Field<LinkLabel>(form, "calibrateRange").Enabled,
+                    Check(slider.Enabled && !Field<Button>(form, "calibrateRange").Enabled,
                         "The shared range stays editable for multiple keys; measurement names one selected source key.");
                     CheckPressureRange(form, 10, 600, 700);
                     SelectKeys(form, 14);
@@ -247,7 +358,7 @@ namespace Tk75.Tests
                     PushDialog(input, 14, 80, 740, 0); input.Reader.Stop(); Call(form, "UpdatePressureCapture");
                     Check(Field<ReaderSession>(form, "pressureCaptureReader") == null && File.ReadAllText(path) == committed,
                         "Disconnect before the UI commits a completed measurement cannot change the saved range.");
-                    Check(!Field<LinkLabel>(form, "calibrateRange").Enabled, "A stopped reader disables calibration without silently reconnecting it.");
+                    Check(!Field<Button>(form, "calibrateRange").Enabled, "A stopped reader disables calibration without silently reconnecting it.");
                     CheckPressureRange(form, 10, 600, 700);
                 }
                 using (var input = new DialogInput())

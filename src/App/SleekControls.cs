@@ -5,6 +5,13 @@ using System.Windows.Forms;
 
 namespace Tk75.App
 {
+    // Live output values should not expose a separate background erase on each
+    // sample. Keep native layout, cell painting and selection behavior intact.
+    internal sealed class BufferedValueGrid : DataGridView
+    {
+        public BufferedValueGrid() { DoubleBuffered = true; }
+    }
+
     internal static class SurfaceDrawing
     {
         public static GraphicsPath Round(RectangleF area, float radius)
