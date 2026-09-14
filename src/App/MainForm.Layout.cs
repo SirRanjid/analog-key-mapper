@@ -75,7 +75,7 @@ namespace Tk75.App
             player.Controls.Add(mainControllerSlotPicker, 0, 1); introductionRow.Controls.Add(player, 1, 0); keyboardArea.Controls.Add(introductionRow, 0, 0);
             keyboard.Dock = DockStyle.Fill; keyboard.LayoutModel = KeyboardLayout.Tk75Iso(); keyboard.LegendStyle = KeyboardLegendStyle.Qwertz;
             keyboard.SelectionChanged += delegate { if (!updating) SelectKeyboardKeys(); }; keyboardArea.Controls.Add(keyboard, 0, 1);
-            keyboard.KeyClicked += delegate(KeyboardKeyDefinition key) { if (!updating && activeMappingDrag == null && !TryCompleteSocdCapture(key)) SetDetailMode(null, true, false); };
+            keyboard.KeyClicked += delegate(KeyboardKeyDefinition key) { if (!updating && activeMappingDrag == null) TryCompleteSocdCapture(key); };
             var legend = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty, Padding = new Padding(0, 4, 0, 0) };
             var mappingHint = new Label { Text = Tr("Drag & Drop: Taste ↔ Controller", "Drag & drop: key ↔ controller"), Width = 270, Height = 29, TextAlign = ContentAlignment.MiddleLeft, Tag = "muted" };
             keyCardTips.SetToolTip(mappingHint, Tr("Taste auf einen Controller-Button ziehen – oder den Controller-Button auf eine Taste. Strg + Klick wählt mehrere Tasten aus.", "Drag a key onto a controller button, or drag the controller button onto a key. Ctrl + click selects multiple keys."));
@@ -264,13 +264,11 @@ namespace Tk75.App
         {
             int[] selected = SelectedKeys(); bool one = selected.Length == 1; bool any = selected.Length != 0;
             keyTitle.Text = one ? string.Format(Tr("Taste {0}", "Key {0}"), Label(selected[0])) : any ? string.Format(Tr("{0} Tasten", "{0} keys"), selected.Length) : Tr("Taste auswählen", "Choose a key");
-            keyHint.Text = !any ? Tr("Klicke auf eine Taste in der Abbildung.", "Click a key on the keyboard.") : one ? Tr("Druckbereich · diese Taste", "Pressure range · this key") : Tr("Druckbereich · ausgewählte Tasten", "Pressure range · selected keys");
             RefreshPressureRangeEditor();
             RefreshInputThresholdCaptureButtons();
-            if (one && (reader != null || HasLearnedInputs) && !LiveInputReading) keyHint.Text = Tr("Keine Eingabewerte.\nVerbindungsdetails stehen unten.", "No input data.\nSee connection details below.");
             inputDetails.Visible = (reader != null || HasLearnedInputs) && (!LiveInputReading || !LiveInputSamples);
-            var keyRows = (TableLayoutPanel)inputDetails.Parent; keyRows.RowStyles[keyRows.GetRow(inputDetails)].Height = inputDetails.Visible ? 22 : 0;
-            keyHint.Text += LearnedSourceHint(selected);
+            var keyRows = (TableLayoutPanel)inputDetails.Parent; var inputRow = keyRows.RowStyles[keyRows.GetRow(inputDetails)];
+            int inputHeight = inputDetails.Visible ? 22 : 0; if (inputRow.Height != inputHeight) inputRow.Height = inputHeight;
             targets.Enabled = addTargetButton.Enabled = any; removeTargetButton.Enabled = toggleTargetButton.Enabled = SelectedBindings().Length != 0;
             targetHeader.Text = string.Format(Tr("Ziele · {0}", "Targets · {0}"), ControllerDisplayName); keyCardTips.SetToolTip(targetHeader, targetHeader.Text);
             mappingEmpty.Visible = bindings.Rows.Count == 0; if (mappingEmpty.Visible) mappingEmpty.BringToFront();

@@ -161,22 +161,32 @@ namespace Tk75.App
         { return profile.Bindings.Where(b => (string.IsNullOrEmpty(b.ControllerId) ? ControllerRouting.DefaultControllerId : b.ControllerId) == runtime.SelectedControllerId); }
         void RefreshKeys()
         {
-            int[] selection = SelectedKeys(); updating = true;
+            int[] selection = SelectedKeys(); bool previous = updating; updating = true;
             try
             {
-                keys.Rows.Clear(); var profile = history.Current;
+                var profile = history.Current;
+                if (keys.Rows.Count == 0) keys.Rows.Add(256);
                 var known = new HashSet<int>(profile.Bindings.Select(b => b.KeyIndex).Concat(profile.Inputs.Select(i => i.KeyIndex))); foreach (int index in LayoutIndices()) known.Add(index); if (keymap != null) foreach (var entry in keymap.Entries) known.Add(entry.KeyIndex); if (reader != null) foreach (var entry in reader.GetSnapshot()) known.Add(entry.KeyIndex);
                 if (profile.LearnedInputs != null) foreach (var input in profile.LearnedInputs) known.Add(input.KeyIndex);
+                var counts = CurrentControllerBindings(profile).GroupBy(b => b.KeyIndex).ToDictionary(group => group.Key, group => group.Count());
+                var snapshot = InputUiSnapshot().ToDictionary(entry => entry.KeyIndex);
                 for (int i = 0; i < 256; i++)
                 {
-                    keys.Rows.Add(i, Label(i), "—", CurrentControllerBindings(profile).Count(b => b.KeyIndex == i));
+                    int count; counts.TryGetValue(i, out count);
+                    var row = keys.Rows[i];
+                    SetCurveCellValue(row.Cells[0], i); SetCurveCellValue(row.Cells[1], Label(i));
+                    KeyStateSnapshot sample;
+                    SetCurveCellValue(row.Cells[2], snapshot.TryGetValue(i, out sample) && sample.Known
+                        ? sample.RawValue.ToString() + (sample.Stale ? Tr(" · alt", " · stale") : "") : "—");
+                    SetCurveCellValue(row.Cells[3], count);
                     var named = keymap == null ? null : keymap.Entries.FirstOrDefault(e => e.KeyIndex == i); keyboard.SetKeyLabel(i, named == null ? null : named.Label);
                 }
-                keys.CurrentCell = null; keys.ClearSelection();
+                if (keys.CurrentCell != null && !showAll.Checked && !known.Contains(keys.CurrentCell.RowIndex)) keys.CurrentCell = null;
                 for (int i = 0; i < 256; i++) keys.Rows[i].Visible = showAll.Checked || known.Contains(i);
-                foreach (int i in selection) if (keys.Rows[i].Visible) keys.Rows[i].Selected = true;
+                var selected = new HashSet<int>(selection);
+                for (int i = 0; i < 256; i++) keys.Rows[i].Selected = keys.Rows[i].Visible && selected.Contains(i);
             }
-            finally { updating = false; } HighlightKeys(); RefreshKeyControllerAssignments(); RefreshKeyBehaviorAnnotations();
+            finally { updating = previous; } HighlightKeys(); RefreshKeyControllerAssignments(); RefreshKeyBehaviorAnnotations();
         }
         void HighlightKeys()
         {
@@ -187,17 +197,29 @@ namespace Tk75.App
         void RefreshBindings()
         {
             var selectedKeys = new HashSet<int>(SelectedKeys());
-            string[] chosen = selectedKeys.SetEquals(displayedBindingKeys) ? SelectedBindings() : new string[0]; updating = true;
+            string[] chosen = selectedKeys.SetEquals(displayedBindingKeys) ? SelectedBindings() : new string[0]; bool previous = updating; updating = true;
             try
             {
-                bindings.Rows.Clear(); foreach (Binding binding in CurrentControllerBindings(history.Current).Where(b => selectedKeys.Contains(b.KeyIndex)))
-                { int row = bindings.Rows.Add(Label(binding.KeyIndex), TargetLabel(binding.Target), binding.Enabled ? Tr("Ja", "Yes") : Tr("Nein", "No"), "—"); bindings.Rows[row].Tag = binding.BindingId; }
+                Binding[] visible = CurrentControllerBindings(history.Current).Where(b => selectedKeys.Contains(b.KeyIndex)).ToArray();
+                // The grid owns persistent rows/cells. Only a changed mapping
+                // count needs new or removed rows; their identity is rebound
+                // before any selection or live-value event can observe them.
+                while (bindings.Rows.Count > visible.Length) bindings.Rows.RemoveAt(bindings.Rows.Count - 1);
+                if (bindings.Rows.Count < visible.Length) bindings.Rows.Add(visible.Length - bindings.Rows.Count);
+                for (int i = 0; i < visible.Length; i++)
+                {
+                    Binding binding = visible[i]; var row = bindings.Rows[i];
+                    bool rebound = !Object.Equals(row.Tag, binding.BindingId); row.Tag = binding.BindingId;
+                    SetCurveCellValue(row.Cells[0], Label(binding.KeyIndex)); SetCurveCellValue(row.Cells[1], TargetLabel(binding.Target));
+                    SetCurveCellValue(row.Cells[2], binding.Enabled ? Tr("Ja", "Yes") : Tr("Nein", "No"));
+                    if (rebound || row.Cells[3].Value == null) SetCurveCellValue(row.Cells[3], "—");
+                }
                 bindings.ClearSelection(); foreach (DataGridViewRow row in bindings.Rows) if (chosen.Contains((string)row.Tag)) row.Selected = true;
                 if (bindings.SelectedRows.Count == 0) bindings.SelectAll();
                 displayedBindingKeys.Clear(); displayedBindingKeys.UnionWith(selectedKeys);
                 selectionStatus.Text = selectedKeys.Count + (selectedKeys.Count == 1 ? Tr(" Taste · ", " key · ") : Tr(" Tasten · ", " keys · ")) + bindings.Rows.Count + (bindings.Rows.Count == 1 ? Tr(" Zuordnung", " mapping") : Tr(" Zuordnungen", " mappings"));
             }
-            finally { updating = false; } RefreshSettings(); UpdateKeyCard(); RefreshInputEditor(); RefreshMappingSummaries(true);
+            finally { updating = previous; } RefreshSettings(); UpdateKeyCard(); RefreshInputEditor(); RefreshMappingSummaries(true);
         }
         void RefreshSettings()
         {

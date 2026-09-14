@@ -102,15 +102,10 @@ namespace Tk75.App
             {
                 string[] values = selected.Select(binding => binding.Processing.Curve.ToString()).Distinct().ToArray();
                 string displayed = values.Length == 0 ? "—" : values.Length == 1 ? values[0] : "Gemischt";
-                curveShape.BeginUpdate();
-                try
-                {
-                    curveShape.Items.Clear();
-                    if (values.Length != 1) curveShape.Items.Add(new SettingOption(displayed));
-                    foreach (CurveKind kind in Enum.GetValues(typeof(CurveKind))) curveShape.Items.Add(new SettingOption(kind.ToString()));
-                    curveShape.SelectedItem = curveShape.Items.Cast<SettingOption>().Single(option => option.Value == displayed);
-                }
-                finally { curveShape.EndUpdate(); }
+                var choices = Enum.GetValues(typeof(CurveKind)).Cast<CurveKind>().Select(kind => new SettingOption(kind.ToString()));
+                if (values.Length != 1) choices = new[] { new SettingOption(displayed) }.Concat(choices);
+                RefreshChoices(curveShape, choices, (before, after) => before.Value == after.Value);
+                curveShape.SelectedItem = curveShape.Items.Cast<SettingOption>().Single(option => option.Value == displayed);
                 curveShape.Enabled = selected.Length != 0;
                 string help = CurveSettingHelp("Curve") + "\n" + Tr("Eine Änderung gilt für alle ausgewählten Zuordnungen. Gemischt lässt ihre bisherigen Formen unverändert.",
                     "Changing the shape applies to every selected mapping. Mixed keeps their existing shapes until you choose one.");

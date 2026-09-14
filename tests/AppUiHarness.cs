@@ -223,6 +223,9 @@ namespace Tk75.Tests
             Call(form, "ShowPage", "mapping"); DetailMode(form, null);
             SetPreviewClientSize(form, size); string label = size.Width + "x" + size.Height;
             Check(form.ClientSize == size, "Requested client size applied: " + label);
+            // Layout cases inspect specific reachable viewports. Tab changes
+            // now preserve user scrolling, so prepare the top explicitly.
+            RevealKeySetting(form, Field<Control>(form, "keyTitle"));
             foreach (string name in new[] { "devices", "profiles", "keyboard", "layoutMode", "mainControllerSlotPicker", "keyTitle", "controllerToggle", "advancedToggle", "deviceStatus", "outputStatus", "keyHint", "pressureText", "pressureRange", "pressureScaleMaximum", "calibrateRange", "targets", "addTargetButton" })
                 VisibleInside(form, Field<Control>(form, name), label + "/" + name);
             foreach (string name in new[] { "preset", "pasteMode", "keys", "settings", "curve", "monitor", "controllerPreview", "keyBehaviorPanel" })
@@ -257,6 +260,7 @@ namespace Tk75.Tests
             CheckStableKeyboard(form, baseline, drawing, label + "/input"); CapturePreview(form, artifacts, label + "-input");
             DetailMode(form, "advanced");
             CheckDetailTabState(form, "advanced", label + "/curve tabs");
+            RevealCurveSetting(form, Field<Control>(form, "curveShape").Parent);
             foreach (string name in new[] { "curveShape", "pasteMode" }) VisibleInside(form, Field<Control>(form, name), label + "/advanced/" + name);
             LayoutCheck(!Field<Control>(form, "keyTitle").Visible && Field<Control>(form, "keyBehaviorPanel").Visible && !Field<Control>(form, "controllerPreview").Visible, label + ": Curve contains the plot and advanced pressure controls.");
             LayoutCheck(!Field<Control>(form, "preset").Visible, label + ": presets do not create a second visible shape selector.");
@@ -324,6 +328,7 @@ namespace Tk75.Tests
             CheckStableKeyboard(form, baseline, drawing, label + "/controller"); CapturePreview(form, artifacts, label + "-controller");
             DetailMode(form, null); CheckStableKeyboard(form, baseline, drawing, label + "/return-to-key");
             CheckDetailTabState(form, null, label + "/returned tabs");
+            RevealKeySetting(form, Field<Control>(form, "keyTitle"));
             VisibleInside(form, Field<Control>(form, "keyTitle"), label + "/return-to-key/title");
             Console.WriteLine("LAYOUT: " + label + "; stable keyboard=" + baseline + "; settings=" + settings.ClientSize + "; square curve=" + curve.ClientSize);
             Call(form, "ShowPage", "keys"); Pump(form); VisibleInside(form, Field<Control>(form, "keys"), label + "/diagnostic keys");
@@ -1459,11 +1464,12 @@ namespace Tk75.Tests
             AssertPassive(form);
             var keyboard = Field<VisualKeyboard>(form, "keyboard"); Rectangle keyboardBounds = Relative(form, keyboard);
             ShortKeyboardClick(keyboard, 9); Pump(form);
-            Check(Field<string>(form, "detailsMode") == null && Field<Control>(form, "keyTitle").Visible, "Selecting a physical key opens its settings in the sidebar.");
+            Check(Field<string>(form, "detailsMode") == "controller" && Field<Control>(form, "controllerPreview").Visible, "Selecting a physical key retains the active Controller tab.");
             Check(Relative(form, keyboard) == keyboardBounds, "Contextual key selection leaves keyboard size and position unchanged.");
+            Field<Button>(form, "keySettingsToggle").PerformClick(); Pump(form);
             foreach (string name in new[] { "pressureRange", "pressureScaleMaximum", "calibrateRange", "targets" })
                 VisibleInside(form, Field<Control>(form, name), "normal-key-click/" + name);
-            Check(!Field<Control>(form, "keyBehaviorPanel").Visible, "A short key click keeps the simple Keys view and leaves advanced pressure under Curve.");
+            Check(!Field<Control>(form, "keyBehaviorPanel").Visible, "The explicit Keys tab keeps its simple view and leaves advanced pressure under Curve.");
             Field<Button>(form, "keyBehaviorToggle").PerformClick(); Pump(form);
             VisibleInside(form, Field<Control>(form, "captureOpposite"), "opposite-key-shortcut/capture");
             Check(Field<string>(form, "detailsMode") == "input" && Field<Control>(form, "keySocdPanel").Visible, "The opposite-key shortcut retains the unified Keys content and reveals its capture section.");
@@ -1863,6 +1869,7 @@ namespace Tk75.Tests
                 RunIsolatedFeature("native-theme", artifacts, featureFailures, delegate(MainForm preview, string output) { RunNativeThemeControls(output); });
                 RunIsolatedFeature("rebuild-paint", artifacts, featureFailures, RunRebuildPainting);
                 RunIsolatedFeature("scrollbar-interaction", artifacts, featureFailures, RunScrollbarInteraction);
+                RunIsolatedFeature("key-selection-reuse", artifacts, featureFailures, RunKeySelectionReuse);
                 RunIsolatedFeature("curve-shape", artifacts, featureFailures, CheckCurveShapePicker);
                 RunIsolatedFeature("curve-dynamics", artifacts, featureFailures, RunCurveDynamicsUi);
                 RunIsolatedFeature("curve-ranges", artifacts, featureFailures, RunCurveRangeRailUi);

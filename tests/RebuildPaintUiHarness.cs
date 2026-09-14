@@ -126,7 +126,10 @@ namespace Tk75.Tests
                     NativeSurfaceTheme.RefreshLayout(keyPanel);
                     Check(keyPanel.AutoScrollPosition == actual && actual.Y < 0, "Completing a managed scroll preserves the actual native position.");
                 }, false);
-                ObserveRebuild(form, keyPanel, artifacts, "keys-reset-from-offset", delegate { Call(form, "SetDetailMode", null, true, false); }, true);
+                ObserveRebuild(form, keyPanel, artifacts, "keys-reset-from-offset", delegate {
+                    keyPanel.AutoScrollPosition = Point.Empty;
+                    NativeSurfaceTheme.RefreshLayout(keyPanel);
+                }, true);
                 CheckRebuiltFrame(keyPanel, artifacts, "keys-final");
 
                 // At a narrower supported window the curve settings exceed
@@ -145,8 +148,11 @@ namespace Tk75.Tests
                     Call(form, "ScrollCurveSettingsTo", Field<Control>(form, "settings"));
                 }, false);
                 Check(curvePanel.AutoScrollPosition.Y < 0, "Revealing curve settings keeps native scrolling functional.");
-                ObserveRebuild(form, curvePanel, artifacts, "curve-reset", delegate { Call(form, "SetDetailMode", "advanced", true, false); }, false);
-                Check(curvePanel.AutoScrollPosition == Point.Empty, "Returning to Curve restores its top viewport position.");
+                ObserveRebuild(form, curvePanel, artifacts, "curve-reset", delegate {
+                    curvePanel.AutoScrollPosition = Point.Empty;
+                    NativeSurfaceTheme.RefreshLayout(curvePanel);
+                }, false);
+                Check(curvePanel.AutoScrollPosition == Point.Empty, "An explicit managed reset restores Curve's top viewport position.");
                 CheckRebuiltFrame(curvePanel, artifacts, "curve-final");
                 AssertPassive(form);
                 Check(rebuildPaintFailures.Count == 0, "Actual app rebuilds and managed scrolling retain themed pixels before and after queued paints.");

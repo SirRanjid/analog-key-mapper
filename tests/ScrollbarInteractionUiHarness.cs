@@ -17,6 +17,37 @@ namespace Tk75.Tests
         sealed class InteractionGrid : DataGridView { public void RecreateNativeHandle() { RecreateHandle(); } }
         sealed class InteractionFocusBar : VScrollBar { public void RecreateNativeHandle() { RecreateHandle(); } }
 
+        // Test gestures use synchronous SendMessage below. The real pointer
+        // remains wherever the user/CI desktop left it; queued mouse input at
+        // that unrelated position must not become a second synthetic gesture.
+        // Filter only this fixture's HWNDs. Timers, paint and the deliberately
+        // sent hover/leave/down/move/up messages still reach the real product.
+        sealed class ScrollInteractionPointerScope : IMessageFilter, IDisposable
+        {
+            readonly Form host;
+            readonly HashSet<IntPtr> nativeWindows = new HashSet<IntPtr>();
+            readonly Dictionary<int, int> filtered = new Dictionary<int, int>();
+            internal ScrollInteractionPointerScope(Form host) { this.host = host; Application.AddMessageFilter(this); }
+            internal void Include(IntPtr window) { nativeWindows.Add(window); }
+            public bool PreFilterMessage(ref Message message)
+            {
+                int kind = message.Msg;
+                bool pointer = kind >= 0x0200 && kind <= 0x020E || kind >= 0x00A0 && kind <= 0x00AD ||
+                    kind == 0x02A0 || kind == 0x02A1 || kind == 0x02A2 || kind == 0x02A3;
+                if (!pointer) return false;
+                Control control = Control.FromChildHandle(message.HWnd);
+                if (!nativeWindows.Contains(message.HWnd) && (control == null || control != host && !host.Contains(control))) return false;
+                int count; filtered.TryGetValue(kind, out count); filtered[kind] = count + 1;
+                return true;
+            }
+            public void Dispose()
+            {
+                Application.RemoveMessageFilter(this);
+                Console.WriteLine("SCROLL INPUT ISOLATION: queued physical-pointer messages suppressed only for the synthetic fixture: " +
+                    String.Join(", ", filtered.OrderBy(entry => entry.Key).Select(entry => "0x" + entry.Key.ToString("X4") + "=" + entry.Value).ToArray()));
+            }
+        }
+
         // Installed before ModernTheme, below the app's input owner. An input
         // message seen here would reach the original native scrollbar painter.
         // This catches a white flash even when a later app repaint hides it.
@@ -41,7 +72,7 @@ namespace Tk75.Tests
         {
             public string Name;
             public IntPtr Window;
-            public bool Standalone, Vertical = true;
+            public bool Standalone, Vertical = true, DefersContent;
             public Func<int> Position;
             public ScrollDeliveryProbe Delivery;
         }
@@ -84,7 +115,7 @@ namespace Tk75.Tests
         static void InteractionUp(ScrollInteractionCase value, Point screen)
         { ThemeSend(value.Window, 0x0202, IntPtr.Zero, InteractionPoint(InteractionClient(value, screen))); }
 
-        static void CheckInteractionPixels(ScrollInteractionCase value, string artifacts, string stage)
+        static int CheckInteractionPixels(ScrollInteractionCase value, string artifacts, string stage)
         {
             ScrollbarDrawing.ScrollInfo info = InteractionGeometry(value);
             NativeControlPaint.Rect window; Check(NativeControlPaint.GetWindowRect(value.Window, out window), value.Name + " exposes native window bounds.");
@@ -111,16 +142,18 @@ namespace Tk75.Tests
                 }
                 InteractionCheck(painted >= count / 4, value.Name + "/" + stage + " has drawn app-palette pixels, not a clipped/empty capture (" + painted + "/" + count + ").");
                 InteractionCheck(bright < count / 8, value.Name + "/" + stage + " stays dark during interaction (" + bright + "/" + count + " bright).");
-                int tintedThumb = 0;
+                int tintedThumb = 0, thumbCoordinates = 0;
                 int extent = value.Vertical ? image.Height : image.Width;
                 for (int coordinate = info.ArrowSize + 1; coordinate < extent - info.ArrowSize - 1; coordinate++)
                 {
                     Color pixel = value.Vertical ? image.GetPixel(image.Width / 2, coordinate) : image.GetPixel(coordinate, image.Height / 2);
-                    if (pixel.B > 120 && pixel.R > 60 && pixel.B > pixel.R + 15 && pixel.B > pixel.G + 15) tintedThumb++;
+                    if (pixel.B > 120 && pixel.R > 60 && pixel.B > pixel.R + 15 && pixel.B > pixel.G + 15)
+                    { tintedThumb++; thumbCoordinates += coordinate; }
                 }
                 InteractionCheck(tintedThumb > 0, value.Name + "/" + stage + " keeps a visible app-colored thumb inside its track.");
                 if ((bright >= count / 8 || painted < count / 4 || tintedThumb == 0 || stage == "drag-3") && interactionImages.Add(value.Name + "-" + stage))
                     image.Save(Path.Combine(artifacts, "preview-scroll-interaction-" + value.Name + "-" + stage + ".png"));
+                return tintedThumb == 0 ? -1 : thumbCoordinates / tintedThumb;
             }
         }
 
@@ -165,7 +198,7 @@ namespace Tk75.Tests
             if (!captured) return false;
             try
             {
-                CheckInteractionPixels(value, artifacts, "pressed");
+                int initialThumb = CheckInteractionPixels(value, artifacts, "pressed"), previousThumb = initialThumb;
                 int previous = initial;
                 for (int step = 1; step <= 4; step++)
                 {
@@ -174,16 +207,20 @@ namespace Tk75.Tests
                     Point moved = value.Vertical ? new Point(press.X, info.Area.Top + offset) : new Point(info.Area.Left + offset, press.Y);
                     release = moved;
                     InteractionMove(value, moved);
-                    CheckInteractionPixels(value, artifacts, "drag-" + step);
+                    int paintedThumb = CheckInteractionPixels(value, artifacts, "drag-" + step);
                     int actual = value.Position();
                     InteractionCheck(actual >= previous, value.Name + " advances monotonically while the thumb remains held at drag step " + step + ".");
+                    InteractionCheck(paintedThumb >= previousThumb, value.Name + " paints a monotonically advancing thumb at drag step " + step + ".");
+                    if (value.DefersContent) InteractionCheck(actual == initial, value.Name + " preserves deferred content until release because DragFullWindows is disabled.");
                     InteractionCheck(GetCapture() == value.Window, value.Name + " retains its drag capture through step " + step + ".");
-                    previous = actual;
+                    previous = actual; previousThumb = paintedThumb;
                     Application.DoEvents(); CheckInteractionPixels(value, artifacts, "drag-queued-" + step);
                 }
-                InteractionCheck(value.Position() > initial, value.Name + " changes real content/value while dragging, before button-up.");
+                InteractionCheck(previousThumb > initialThumb, value.Name + " visibly moves its painted thumb before button-up, including deferred-content mode.");
+                if (!value.DefersContent) InteractionCheck(value.Position() > initial, value.Name + " changes real content/value while dragging, before button-up.");
             }
             finally { InteractionUp(value, release); }
+            InteractionCheck(value.Position() > initial, value.Name + " commits a changed real content/value position on button-up.");
             InteractionCheck(GetCapture() == previousCapture, value.Name + " restores the previous capture at button-up (including an already open popup).");
             InteractionCheck(value.Delivery == null || value.Delivery.MouseMessagesPassed == before, value.Name + " handles down/move/up without forwarding them to native tracking.");
             CheckInteractionPixels(value, artifacts, "released");
@@ -204,7 +241,8 @@ namespace Tk75.Tests
         }
 
         static ScrollInteractionCase InteractionCase(string name, Control control, bool standalone, bool vertical, Func<int> position, ScrollDeliveryProbe delivery)
-        { return new ScrollInteractionCase { Name = name, Window = control.Handle, Standalone = standalone, Vertical = vertical, Position = position, Delivery = delivery }; }
+        { return new ScrollInteractionCase { Name = name, Window = control.Handle, Standalone = standalone, Vertical = vertical,
+            DefersContent = control is ScrollableControl && !SystemInformation.DragFullWindows, Position = position, Delivery = delivery }; }
 
         static void PumpInteractionFor(int milliseconds, Action sample)
         {
@@ -215,6 +253,15 @@ namespace Tk75.Tests
                 System.Threading.Thread.Sleep(15); Application.DoEvents();
                 if (sample != null && watch.ElapsedMilliseconds >= nextSample) { sample(); nextSample += 100; }
             }
+        }
+
+        static void AwaitInteractionRepeat(ScrollInteractionCase value, int first, string artifacts, string stage)
+        {
+            // Wait for the actual timer-driven step, allowing a busy CI message
+            // pump to schedule it. Do not assert a fixed desktop frame rate.
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            while (value.Position() == first && GetCapture() == value.Window && watch.ElapsedMilliseconds < 2000)
+                PumpInteractionFor(60, delegate { CheckInteractionPixels(value, artifacts, stage); });
         }
 
         static Point InteractionForwardArrow(ScrollInteractionCase value)
@@ -233,7 +280,7 @@ namespace Tk75.Tests
             InteractionDown(value, arrow);
             int first = value.Position();
             InteractionCheck(GetCapture() == value.Window && first > initial, "Holding a scrollbar arrow applies one immediate step and retains capture.");
-            PumpInteractionFor(570, delegate { CheckInteractionPixels(value, artifacts, "arrow-held"); });
+            AwaitInteractionRepeat(value, first, artifacts, "arrow-held");
             InteractionCheck(value.Position() > first, "The held arrow repeats after its initial delay.");
             InteractionUp(value, arrow);
             int released = value.Position();
@@ -246,7 +293,7 @@ namespace Tk75.Tests
             InteractionDown(value, page);
             first = value.Position();
             InteractionCheck(first >= panel.VerticalScroll.LargeChange, "Clicking the scrollbar track applies a real page step.");
-            PumpInteractionFor(570, delegate { CheckInteractionPixels(value, artifacts, "page-held"); });
+            AwaitInteractionRepeat(value, first, artifacts, "page-held");
             InteractionCheck(value.Position() > first, "Holding the track repeats page steps while its pointer remains beyond the thumb.");
             InteractionUp(value, page);
 
@@ -379,7 +426,9 @@ namespace Tk75.Tests
             using (TextBox text = new TextBox { Bounds = new Rectangle(234, 290, 210, 200), Multiline = true, ScrollBars = ScrollBars.Vertical })
             using (ComboBox combo = new ComboBox { Bounds = new Rectangle(456, 290, 220, 30), DropDownStyle = ComboBoxStyle.DropDownList,
                 FlatStyle = FlatStyle.Flat, DrawMode = DrawMode.OwnerDrawFixed, MaxDropDownItems = 8, IntegralHeight = true })
+            using (var pointerScope = new ScrollInteractionPointerScope(host))
             {
+                Console.WriteLine("SCROLL OS PREFERENCE: DragFullWindows=" + SystemInformation.DragFullWindows + "; settings and pointer position remain unchanged.");
                 grid.Columns.Add("Setting", "Setting"); grid.Columns.Add("Value", "Value"); grid.Columns[0].Width = 520; grid.Columns[1].Width = 260;
                 for (int row = 0; row < 200; row++) { grid.Rows.Add("Synthetic setting " + row, row); list.Items.Add("Synthetic option " + row); combo.Items.Add("Synthetic option " + row); }
                 text.Lines = Enumerable.Range(0, 300).Select(i => "Synthetic line " + i).ToArray();
@@ -389,6 +438,7 @@ namespace Tk75.Tests
                 HScrollBar horizontalGrid = grid.Controls.OfType<HScrollBar>().Single(bar => bar.Visible);
                 NativeControlPaint.ComboInfo comboInfo = new NativeControlPaint.ComboInfo(); comboInfo.Size = Marshal.SizeOf(typeof(NativeControlPaint.ComboInfo));
                 Check(NativeControlPaint.GetComboBoxInfo(combo.Handle, ref comboInfo), "The synthetic combo exposes only its own popup HWND.");
+                pointerScope.Include(comboInfo.List);
                 var probes = new List<ScrollDeliveryProbe>();
                 Func<IntPtr, bool, ScrollDeliveryProbe> probe = delegate(IntPtr window, bool standalone) { var created = new ScrollDeliveryProbe(window, standalone); probes.Add(created); return created; };
                 try
@@ -439,6 +489,7 @@ namespace Tk75.Tests
                     combo.DroppedDown = true; Application.DoEvents();
                     Check(combo.DroppedDown, "The synthetic combo opens its own scrolling popup.");
                     Check(NativeControlPaint.GetComboBoxInfo(combo.Handle, ref comboInfo), "The opened combo exposes its current popup HWND.");
+                    pointerScope.Include(comboInfo.List);
                     Check(popupProbe.Handle == comboInfo.List, "The popup delivery probe remains below the app input owner on the live popup handle.");
                     var popup = new ScrollInteractionCase { Name = "combo-popup-vertical", Window = comboInfo.List, Position = delegate { return ThemeSend(comboInfo.List, 0x018E, IntPtr.Zero, IntPtr.Zero).ToInt32(); }, Delivery = popupProbe };
                     if (CheckContinuousScrollbarHover(popup, artifacts)) CheckOwnedScrollbarDrag(popup, artifacts);

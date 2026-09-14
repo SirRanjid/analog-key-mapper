@@ -117,10 +117,17 @@ namespace Tk75.App
                 calibrateRange.Enabled = CanCapturePressure(selected);
                 calibrateRange.Text = pressureCaptureReader != null ? Tr("Abbrechen", "Cancel") : Tr("Kalibrieren", "Calibrate");
                 calibrateRange.AccessibleName = calibrateRange.Text;
-                if (pressureCaptureReader == null && selected.Length != 0)
-                    keyHint.Text = selected.Length == 1 ? Tr("Druckbereich · ausgewählte Taste", "Pressure range · selected key") :
+                if (pressureCaptureReader == null)
+                {
+                    string hint = selected.Length == 0 ? Tr("Klicke auf eine Taste in der Abbildung.", "Click a key on the keyboard.") :
+                        selected.Length == 1 ? Tr("Druckbereich · ausgewählte Taste", "Pressure range · selected key") :
                         string.Format(mixed ? Tr("Verschiedene Bereiche · Änderungen für {0} Tasten", "Mixed ranges · edits apply to {0} keys") :
                         Tr("Druckbereich · {0} ausgewählte Tasten", "Pressure range · {0} selected keys"), selected.Length);
+                    if (selected.Length == 1 && (reader != null || HasLearnedInputs) && !LiveInputReading)
+                        hint = Tr("Keine Eingabewerte.\nVerbindungsdetails stehen unten.", "No input data.\nSee connection details below.");
+                    hint += LearnedSourceHint(selected);
+                    if (keyHint.Text != hint) keyHint.Text = hint;
+                }
                 keyCardTips.SetToolTip(pressureRange, mixed ?
                     Tr("Die Griffe zeigen den Bereich der ersten ausgewählten Taste. Eine Änderung setzt Min und Max für alle ausgewählten Tasten.", "The handles show the first selected key's range. An edit sets min and max for all selected keys.") :
                     Tr("Min und Max gelten nur für die ausgewählten Tasten.", "Min and max apply only to the selected keys."));

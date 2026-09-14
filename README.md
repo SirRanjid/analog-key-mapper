@@ -15,6 +15,7 @@
 - **Map in both directions.** Drag a key onto a controller output, or an output onto a key. The grabbed shape follows your pointer; readable left/right labels and numbered key badges identify assignments.
 - **Learn missing inputs together.** Select unresolved keys, right-click and choose **Learn unknown inputs…**. Pick the source device, then press or move each input in turn. Standard keyboard keys are identified automatically; supported buttons, axes, hats and relative controls can fill the remaining gaps. [Input learning guide](docs/input-learning.md).
 - **Keep controller setups separate.** Mix Xbox 360 and DualSense slots, each with its own mappings, color and USB connection control. Pending connections stay visible and can be cancelled.
+- **Keep your place while editing.** Clicking another key updates the settings in the tab you are using. Each tab also retains its scroll position when you return to it.
 - **See and tune each output.** Keys, Curve and Controller tabs keep the keyboard in place. A larger square graph, compact settings and directly editable Bézier handles let you refine any curve, including presets.
 - **Set key behavior together.** Configure Rapid Trigger and opposite-key handling (SOCD). Use Capture, then click the opposite key to pair it. Use Ctrl+click or a selection rectangle for bulk edits, with undo.
 - **Tune one key or a whole selection.** Set individual min/max pressure ranges, or calibrate selected keys with one press and release. The keyboard shares one adjustable scale. Two vertical controls set actuation and release; move away from a slider while dragging for finer adjustments.
@@ -35,11 +36,11 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 ## Release candidate
 
-**rc.11** gives the app's scrollbars shared input handling and buffered drawing. They keep their themed appearance during hover, thumb dragging, held arrow/page clicks and view rebuilds, including tables and open drop-downs. Large scroll ranges, keyboard focus and existing selections are preserved. [What's new](docs/release-notes-1.0.0-rc.11.md).
+**rc.11** keeps your current tab and scroll position when you select another key. Settings, mapping rows and choices update in place, and returning to a tab keeps the position you left. Scrollbars also keep their themed appearance during hover, thumb dragging and held arrow/page clicks, including tables and open drop-downs. [What's new](docs/release-notes-1.0.0-rc.11.md).
 
 Startup lighting review and the cleanup improvements from rc.10 remain included. Matching leftover key colors require confirmation before cleanup unless you have explicitly saved permission for future matching patterns. Exit and Windows shutdown wait for actual keyboard-helper cleanup. [Lighting guide](docs/user-guide.md#optional-keyboard-lighting) · [Background startup](docs/background-startup.md).
 
-The current application UI passed **16,655 local assertions**, including **2,318 scrollbar interaction checks**. Background/tray and shutdown checks also passed. The release workflow covers **62 offline suites**, Windows builds, controller-helper checks and verified packaging; see [validation status](docs/status.md) for completed runs and their exact versions. Physical hardware, real Windows shutdown and game acceptance of rc.11 remain open.
+The combined update passed **16,993 local UI checks**, including **230 key-selection checks** and **2,373 scrollbar checks**. The workflow covers **62 offline suites**, Windows builds, controller-helper checks and verified packaging; see [validation status](docs/status.md) for recorded results and their exact scope, and the [release page](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.11) for the completed workflow behind its downloads. Physical hardware, real Windows shutdown and game acceptance of rc.11 remain open.
 
 The rc.9 input-learning features remain: automatically identify standard keyboard positions, learn supported HID controls, review assignments and apply them together with one undo. Routes reconnect only to their saved device identity. Analog pressure still needs a supported protocol; standard keyboard on/off events cannot supply pressure values. [Input learning guide](docs/input-learning.md).
 

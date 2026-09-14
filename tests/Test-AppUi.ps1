@@ -29,6 +29,7 @@ try {
     $arguments += (Join-Path $PSScriptRoot 'AppUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'AppDialogHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'KeyboardGestureUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'KeySelectionReuseUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'ControllerModifierUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'MappingSummaryUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'SocdDragUiHarness.cs')

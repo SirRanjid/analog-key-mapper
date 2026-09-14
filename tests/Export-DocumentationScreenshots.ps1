@@ -30,7 +30,7 @@ $arguments += $shared
 $arguments += $appSources
 $arguments += (Join-Path $PSScriptRoot 'DocumentationScreenshots.cs')
 $arguments += (Join-Path $PSScriptRoot 'PresentationEntry.cs')
-foreach ($harness in @('AppUiHarness','AppDialogHarness','KeyboardGestureUiHarness','ControllerModifierUiHarness',
+foreach ($harness in @('AppUiHarness','AppDialogHarness','KeyboardGestureUiHarness','KeySelectionReuseUiHarness','ControllerModifierUiHarness',
     'MappingSummaryUiHarness','SocdDragUiHarness','PressureRangeSliderUiHarness','ThemeControlsUiHarness','RebuildPaintUiHarness','ScrollbarInteractionUiHarness',
     'KeyAnnotationUiHarness','CurveSettingsSliderUiHarness','CurveShapePickerUiHarness','CurveDynamicsUiHarness',
     'CurveRangeRailUiHarness','SliderPrecisionUiHarness','InputThresholdUiHarness','InputThresholdCaptureUiHarness',
@@ -45,11 +45,21 @@ $images = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } els
 $process = $null
 try {
     $process = Start-Process -FilePath $executable -ArgumentList ('"' + $data + '" "' + $images + '"') -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    # Windows PowerShell 5.1 can lose ExitCode for a redirected Start-Process
+    # unless its native handle is retained before waiting. Keep the real handle;
+    # successful renderer text must never substitute for a confirmed exit code.
+    $rendererHandle = $process.Handle
+    if ($rendererHandle -eq [IntPtr]::Zero) { throw 'Documentation renderer process handle unavailable.' }
     if (-not $process.WaitForExit(30000)) { throw 'Documentation rendering timed out.' }
+    # The bounded wait already confirmed process exit; now finish draining its
+    # asynchronous output redirection before reading the diagnostic files.
+    $process.WaitForExit()
     $process.Refresh()
+    $rendererExitCode = $process.ExitCode
     [Console]::Write([System.IO.File]::ReadAllText($stdout))
     [Console]::Error.Write([System.IO.File]::ReadAllText($stderr))
-    if ($process.ExitCode -ne 0) { throw ('Documentation rendering failed. See ' + $artifactDirectory) }
+    if ($null -eq $rendererExitCode) { throw ('Documentation renderer exit code unavailable. See ' + $artifactDirectory) }
+    if ($rendererExitCode -ne 0) { throw ('Documentation rendering failed (exit {0}). See {1}' -f $rendererExitCode, $artifactDirectory) }
     Write-Output ('Images: ' + $images)
 }
 finally {

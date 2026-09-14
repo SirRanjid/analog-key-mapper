@@ -274,8 +274,8 @@ namespace Tk75.Tests
                 SelectKeys(form, 14); DetailMode(form, "input"); ArmSocdCapture(form);
                 typeof(MainForm).GetField("history", Private).SetValue(form, new EditHistory(Current(form)));
                 ShortKeyboardClick(keyboard, 9); Pump(form);
-                Check(Field<object>(form, "socdCapture") == null && Field<string>(form, "detailsMode") == null,
-                    "A replaced editing history invalidates capture and the click returns to normal Keys navigation.");
+                Check(Field<object>(form, "socdCapture") == null && Field<string>(form, "detailsMode") == "input",
+                    "A replaced editing history invalidates capture and the normal key click retains the current tab.");
                 Equal(before, Json(Current(form)), "A stale capture cannot modify the replacement profile history.");
 
                 SelectKeys(form, 14); DetailMode(form, "input");

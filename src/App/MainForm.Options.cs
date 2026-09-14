@@ -86,6 +86,7 @@ namespace Tk75.App
         void SetDetailMode(string mode, bool chosen, bool activate = true)
         {
             if (deviceDetachInProgress || closing) return;
+            if (mode == detailsMode) { UpdateDetailsButtons(); UpdateDetailsTitle(); return; }
             if (mode != "input" && socdCapture != null) CancelSocdCapture(false);
             if (mode != "advanced" && inputThresholdCaptureReader != null) CancelInputThresholdCapture();
             if (mode != null && mode != "input" && pressureCaptureReader != null)
@@ -103,9 +104,8 @@ namespace Tk75.App
                 controllerPanel.Visible = mode == "controller"; advancedPanel.Visible = advancedVisible;
                 if (mode == "controller") controllerPanel.BringToFront();
                 else if (mode == "input") { keyCard.BringToFront(); RefreshInputEditor(); }
-                else if (advancedVisible) { advancedPanel.BringToFront(); curveEditorScroll.AutoScrollPosition = Point.Empty; }
+                else if (advancedVisible) advancedPanel.BringToFront();
                 else keyCard.BringToFront();
-                if (mode == null || mode == "input") keyCardScroll.AutoScrollPosition = Point.Empty;
             }
             finally { detailsHost.ResumeLayout(true); }
             UpdateDetailsButtons(); UpdateDetailsTitle();
@@ -225,16 +225,7 @@ namespace Tk75.App
                     other.ReleaseMovement != value.ReleaseMovement);
                 SetInputStatus(selected.Length == 0 ? Tr("Wähle Tasten für ihr Verhalten.", "Select keys to configure their behavior.") : InputSelectionLabel() + " · " +
                     (mixed ? Tr("Gemischt · Änderungen gelten für alle", "Mixed · changes apply to all") : configured ? Tr("Eigene Einstellung", "Custom behavior") : Tr("Standardverhalten", "Default behavior")));
-                oppositeKey.Items.Clear();
-                if (selected.Length > 1) oppositeKey.Items.Add(new OppositeKeyItem(null, Tr("Bestehende Paare beibehalten", "Keep existing pairs"), true));
-                if (selected.Length <= 2) oppositeKey.Items.Add(new OppositeKeyItem(null, Tr("Kein Gegenpart", "No opposite key")));
-                if (selected.Length == 2)
-                    oppositeKey.Items.Add(new OppositeKeyItem(selected[1], Label(selected[0]) + " ↔ " + Label(selected[1])));
-                else if (selected.Length == 1)
-                {
-                    var candidates = LayoutIndices().Concat(profile.Bindings.Select(b => b.KeyIndex)).Concat(profile.Inputs.Select(i => i.KeyIndex)).Concat(reader == null ? Enumerable.Empty<int>() : reader.GetSnapshot().Select(s => s.KeyIndex)).Concat(keymap == null ? Enumerable.Empty<int>() : keymap.Entries.Select(e => e.KeyIndex)).Distinct().Where(i => i != selected[0]).OrderBy(i => Label(i), StringComparer.CurrentCultureIgnoreCase);
-                    foreach (int candidate in candidates) oppositeKey.Items.Add(new OppositeKeyItem(candidate, Label(candidate)));
-                }
+                RefreshOppositeChoices(profile, selected);
                 SetInputFields(value);
                 if (values.Skip(1).Any(other => other.RapidTriggerEnabled != value.RapidTriggerEnabled)) rapidTrigger.CheckState = CheckState.Indeterminate;
                 if (selected.Length == 2 && !(values[0].OppositeKeyIndex == selected[1] && values[1].OppositeKeyIndex == selected[0]) && values.Any(other => other.OppositeKeyIndex.HasValue))

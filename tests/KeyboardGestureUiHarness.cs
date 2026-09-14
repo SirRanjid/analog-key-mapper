@@ -28,20 +28,19 @@ namespace Tk75.Tests
         {
             var keyboard = Field<VisualKeyboard>(form, "keyboard");
             string before = Json(Current(form));
-            foreach (string mode in new[] { "controller", "advanced", "input" })
+            foreach (string mode in new string[] { null, "controller", "advanced", "input" })
             {
                 SelectKeys(form, 14); DetailMode(form, mode); keyboard.Focus();
                 Rectangle original = Relative(form, keyboard); Point point = KeyGesturePoint(keyboard, 14);
                 SendKeyboardMouse(keyboard, "OnMouseDown", point);
                 Equal(mode, Field<string>(form, "detailsMode"), "Holding an already-selected key does not flash the Keys tab before drag detection.");
                 SendKeyboardMouse(keyboard, "OnMouseUp", point); Pump(form);
-                Check(Field<string>(form, "detailsMode") == null && Field<Control>(form, "keyTitle").Visible,
-                    "A short click on the already-selected key opens Keys from " + mode + ".");
+                CheckDetailTabState(form, mode, "A short click on the already-selected key retains " + (mode ?? "Keys"));
                 Check(Relative(form, keyboard) == original, "Short-click navigation keeps keyboard geometry fixed.");
             }
             DetailMode(form, "advanced"); ShortKeyboardClick(keyboard, 9); Pump(form);
-            Check(((int[])Call(form, "SelectedKeys")).SequenceEqual(new[] { 9 }) && Field<string>(form, "detailsMode") == null,
-                "A short click on another key both selects that key and opens Keys.");
+            Check(((int[])Call(form, "SelectedKeys")).SequenceEqual(new[] { 9 }) && Field<string>(form, "detailsMode") == "advanced",
+                "A short click on another key selects it while retaining Curve.");
             DetailMode(form, "input");
             object drag = Call(form, "PrepareKeyMappingDrag", new[] { 9 });
             Check(drag != null && Field<string>(form, "detailsMode") == "controller",
