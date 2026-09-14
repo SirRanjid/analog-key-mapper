@@ -57,6 +57,9 @@ namespace Tk75.App
                 throw new ArgumentException("A nonempty unique key selection and its labels are required.");
             if (keys.Any(key => (uint)key >= 256) || discoverDevices == null) throw new ArgumentException("Valid logical keys and a device provider are required.");
             targets = (int[])keys.Clone(); labels = (string[])keyLabels.Clone(); discover = discoverDevices; contextValid = isContextValid;
+            Icon applicationIcon = AppStatusIcon.CreateApplication();
+            Icon = applicationIcon;
+            Disposed += delegate { applicationIcon.Dispose(); };
             Text = T("Unbekannte Eingaben lernen", "Learn unknown inputs"); ClientSize = new Size(680, 590); MinimumSize = new Size(620, 570);
             StartPosition = FormStartPosition.CenterParent; MinimizeBox = false; MaximizeBox = false; KeyPreview = true;
             var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 1, RowCount = 9 };

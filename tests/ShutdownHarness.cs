@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Tk75.App;
+using Tk75.Diagnostics;
 using Tk75.Mapping;
 
 namespace Tk75.Tests
@@ -339,6 +340,121 @@ namespace Tk75.Tests
             }
         }
 
+        sealed class DrainingSource : IReportSource
+        {
+            internal readonly ManualResetEvent Entered = new ManualResetEvent(false), Release = new ManualResetEvent(false);
+            internal volatile bool Finished;
+            public byte[] Read(int timeoutMs) { Thread.Sleep(10); return null; }
+            public void Dispose() { Entered.Set(); Release.WaitOne(); Finished = true; }
+        }
+        sealed class LearnedCleanupSource : ILearnedInputDeviceSource
+        {
+            internal int Disposals;
+            internal bool Fail;
+            public string DeviceId { get { return "synthetic"; } }
+            public string DisplayName { get { return "Synthetic cleanup"; } }
+            public string Status { get { return "Synthetic"; } }
+            public bool IsReading { get { return true; } }
+            public InputControlDescriptor[] Controls { get { return new InputControlDescriptor[0]; } }
+            public event Action<InputControlSample> Sample { add { } remove { } }
+            public bool TryGetValue(string id, out double value) { value = 0; return false; }
+            public void Dispose() { Disposals++; if (Fail) throw new IOException("Synthetic learned input cleanup failure"); }
+        }
+        static ReaderSession AttachDrainingReader(Fixture fixture, DrainingSource source)
+        {
+            var device = new CollectionInfo { vendorId = 0x3151, productId = 0x5030, product = "Synthetic TK75", version = 0x0403,
+                usagePage = 65535, usage = 1, inputReportLength = 32 };
+            device.reportCapabilities.Add(new Dictionary<string, object> { { "reportType", "input" }, { "kind", "value" },
+                { "reportId", 5 }, { "usagePage", 65535 }, { "bitSize", 8 }, { "reportCount", 31 } });
+            var reader = new ReaderSession(device, new RongYuanTravel32(), delegate { return source; });
+            reader.Start(); var elapsed = Stopwatch.StartNew();
+            while (!reader.IsReading && elapsed.ElapsedMilliseconds < 2000) Thread.Sleep(2);
+            Check(reader.IsReading, "The real reader owns an open synthetic source before cleanup.");
+            Set(fixture.Form, "reader", reader); return reader;
+        }
+        static void SessionEndWaitsForActualReaderExit(string directory)
+        {
+            using (var fixture = new Fixture(directory))
+            {
+                var source = new DrainingSource(); var reader = AttachDrainingReader(fixture, source);
+                var release = new Thread(delegate() { source.Entered.WaitOne(2000); Thread.Sleep(650); source.Release.Set(); });
+                release.Start();
+                try
+                {
+                    object[] query = { Message.Create(fixture.Form.Handle, 0x0011, IntPtr.Zero, IntPtr.Zero) };
+                    typeof(MainForm).GetMethod("WndProc", Private).Invoke(fixture.Form, query);
+                    Check(reader.IsReading && !source.Entered.WaitOne(0), "A session query does not start teardown before Windows commits.");
+                    var elapsed = Stopwatch.StartNew();
+                    object[] end = { Message.Create(fixture.Form.Handle, 0x0016, new IntPtr(1), IntPtr.Zero) };
+                    typeof(MainForm).GetMethod("WndProc", Private).Invoke(fixture.Form, end);
+                    Check(source.Finished && elapsed.ElapsedMilliseconds >= 600,
+                        "WM_ENDSESSION waits past Stop's 250ms for the source's actual restore/OFF/exit cleanup.");
+                    Check(!Field<bool>(fixture.Form, "systemShutdownTimedOut") && Field<ShutdownPhaseState>(fixture.Form, "systemReaderPhase") == ShutdownPhaseState.Completed,
+                        "Only the completed reader worker permits successful system resource progress.");
+                }
+                finally { source.Release.Set(); release.Join(2000); reader.DisposeAndWait(2000); }
+            }
+        }
+        static void NormalCloseWaitsForActualReaderExit(string directory)
+        {
+            using (var fixture = new Fixture(directory))
+            {
+                var source = new DrainingSource(); var reader = AttachDrainingReader(fixture, source);
+                try
+                {
+                    var elapsed = Stopwatch.StartNew(); fixture.Form.Close();
+                    Check(elapsed.ElapsedMilliseconds < 1000, "Ordinary close starts source cleanup asynchronously even without an RGB worker.");
+                    elapsed.Restart();
+                    while (!source.Entered.WaitOne(0) && elapsed.ElapsedMilliseconds < 2000) { Application.DoEvents(); Thread.Sleep(2); }
+                    Check(source.Entered.WaitOne(0), "The test reaches real source disposal.");
+                    elapsed.Restart();
+                    while (elapsed.ElapsedMilliseconds < 400) { Application.DoEvents(); Thread.Sleep(2); }
+                    Check(!fixture.Form.IsDisposed && !source.Finished, "The editor remains alive after 250ms while helper cleanup is pending.");
+                    source.Release.Set(); elapsed.Restart();
+                    while (!fixture.Form.IsDisposed && elapsed.ElapsedMilliseconds < 2000) { Application.DoEvents(); Thread.Sleep(2); }
+                    Check(fixture.Form.IsDisposed && source.Finished, "The ordinary exit completes after the original source actually finishes.");
+                }
+                finally { source.Release.Set(); reader.DisposeAndWait(2000); }
+            }
+        }
+        static void LearnedFailureStillClosesReader(string directory)
+        {
+            using (var fixture = new Fixture(directory))
+            {
+                var source = new DrainingSource(); source.Release.Set();
+                var reader = AttachDrainingReader(fixture, source);
+                var broken = new LearnedCleanupSource { Fail = true }; var healthy = new LearnedCleanupSource();
+                var inputs = Field<Dictionary<string, ILearnedInputDeviceSource>>(fixture.Form, "learnedSources");
+                inputs.Add("broken", broken); inputs.Add("healthy", healthy);
+                Closing(fixture.Form, CloseReason.WindowsShutDown);
+                Check(source.Finished && broken.Disposals == 1 && healthy.Disposals == 1 && inputs.Count == 0,
+                    "One failing learned device cannot skip later sources or the primary helper's cleanup.");
+                Check(Field<ShutdownPhaseState>(fixture.Form, "systemReaderPhase") == ShutdownPhaseState.Failed,
+                    "A drained resource lane still reports the earlier cleanup failure.");
+                reader.DisposeAndWait(2000);
+            }
+        }
+        static void FinalDisposalDoesNotRepeatReaderBudget(string directory)
+        {
+            using (var fixture = new Fixture(directory))
+            {
+                var source = new DrainingSource(); var reader = AttachDrainingReader(fixture, source);
+                try
+                {
+                    bool timedOut = false;
+                    try { reader.DisposeAndWait(300); } catch (TimeoutException) { timedOut = true; }
+                    Check(timedOut && source.Entered.WaitOne(0), "The previous cleanup wait really exhausted its budget in source disposal.");
+                    Set(fixture.Form, "normalReaderCleanupWaited", true);
+                    Set(fixture.Form, "rgbCloseSucceeded", false);
+                    var elapsed = Stopwatch.StartNew();
+                    typeof(MainForm).GetMethod("DisposeApplicationResources", Private).Invoke(fixture.Form, new object[0]);
+                    Check(elapsed.ElapsedMilliseconds < 1000 && !source.Finished,
+                        "Final disposal does not spend another full reader budget after asynchronous cleanup timed out.");
+                }
+                finally { source.Release.Set(); reader.DisposeAndWait(2000); }
+            }
+        }
+
         [STAThread]
         public static int Main(string[] args)
         {
@@ -361,6 +477,10 @@ namespace Tk75.Tests
                 SuspendCancelsStartup(Path.Combine(root, "suspend"));
                 NormalCloseConfirmation(Path.Combine(root, "confirmation"));
                 DetachedReaderCleanupTracked(Path.Combine(root, "detached-reader"));
+                SessionEndWaitsForActualReaderExit(Path.Combine(root, "reader-session-end"));
+                NormalCloseWaitsForActualReaderExit(Path.Combine(root, "reader-normal-close"));
+                LearnedFailureStillClosesReader(Path.Combine(root, "learned-cleanup-failure"));
+                FinalDisposalDoesNotRepeatReaderBudget(Path.Combine(root, "reader-budget"));
                 Console.WriteLine("PASS: " + checks + " shutdown assertions; synthetic endpoints only, no OS shutdown or hardware.");
                 return 0;
             }

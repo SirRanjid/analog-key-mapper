@@ -1,6 +1,6 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
-using System.Reflection;
 using System.Windows.Forms;
 
 namespace Tk75.App
@@ -11,6 +11,9 @@ namespace Tk75.App
         bool minimizeToTray, trayPreferenceLoaded, trayExitRequested;
         NotifyIcon trayIcon;
         ContextMenuStrip trayMenu;
+        readonly Dictionary<TrayStatus, Icon> trayStatusIcons = new Dictionary<TrayStatus, Icon>();
+        TrayStatus? displayedTrayStatus;
+        string displayedTrayTooltip;
         FormWindowState lastVisibleWindowState = FormWindowState.Normal;
 
         // Also used by a hidden startup: Shown is never raised until the user
@@ -31,6 +34,7 @@ namespace Tk75.App
                 uiTimer.Start();
             }
             UiText.Apply(this); RefreshInputModeUi(); RefreshStopShortcutUi();
+            RefreshTrayStatus();
         }
 
         internal void InitializeTray(bool showIcon)
@@ -53,21 +57,75 @@ namespace Tk75.App
             AddMinimizeToTrayItem(trayMenu);
             AddStartupRegistrationItem(trayMenu);
             AddReconnectStartupItem(trayMenu);
+            AddRgbStartupPreferenceItem(trayMenu);
             trayMenu.Items.Add(new ToolStripSeparator());
             trayMenu.Items.Add(Tr("Beenden", "Exit"), null, delegate { ExitFromTray(); });
             StyleMenu(trayMenu);
-            string caption = "Analog Key Mapper";
-            var versions = typeof(MainForm).Assembly.GetCustomAttributes(typeof(AssemblyInformationalVersionAttribute), false);
-            if (versions.Length != 0) caption += " · " + ((AssemblyInformationalVersionAttribute)versions[0]).InformationalVersion;
-            trayIcon = new NotifyIcon { Icon = Icon ?? SystemIcons.Application, Text = caption.Length <= 63 ? caption : caption.Substring(0, 63), ContextMenuStrip = trayMenu, Visible = showIcon };
+            trayIcon = new NotifyIcon { ContextMenuStrip = trayMenu };
+            RefreshTrayStatus();
+            trayIcon.Visible = showIcon;
             trayIcon.MouseClick += delegate(object sender, MouseEventArgs e) { if (e.Button == MouseButtons.Left) RestoreFromTray(); };
             Resize += delegate { if (Visible && WindowState != FormWindowState.Minimized) lastVisibleWindowState = WindowState; };
             Disposed += delegate
             {
                 if (trayIcon != null) { trayIcon.Visible = false; trayIcon.Dispose(); trayIcon = null; }
+                foreach (Icon statusIcon in trayStatusIcons.Values) statusIcon.Dispose();
+                trayStatusIcons.Clear();
                 if (trayMenu != null) { trayMenu.Dispose(); trayMenu = null; }
                 openFont.Dispose();
             };
+        }
+
+        void RefreshTrayStatus()
+        {
+            if (trayIcon == null || IsDisposed || Disposing) return;
+            // Cleanup may hold controller locks. Its status must not query the
+            // detached runtime or rebuild input routing while those locks drain.
+            if (closing || rgbClosePending || deviceDetachInProgress)
+            {
+                SetTrayStatus(TrayStatus.Starting, Tr("Analog Key Mapper · Verbindung wird beendet…", "Analog Key Mapper · Closing connection…"));
+                return;
+            }
+            bool reading = LiveInputReading, active = runtime.AnyEnabled, keyboardMode = runtime.KeyboardMode;
+            bool starting = !sessionStarted || learnedSourcesOpening || reader != null && reader.IsStarting ||
+                lastInventory == null && discoveryEnabled && (discoveryRunning || discoveryPending);
+            if (!active && !starting)
+            {
+                var controllers = UiReadProfile.Controllers;
+                if (controllers == null || controllers.Count == 0)
+                    starting = runtime.IsControllerConnecting(Tk75.Mapping.ControllerRouting.DefaultControllerId);
+                else foreach (var controller in controllers)
+                    if (runtime.IsControllerConnecting(controller.Id)) { starting = true; break; }
+            }
+            bool attention = discoveryFailed || reader != null && reader.HasFault ||
+                !active && controllerReconnectNotice != null ||
+                modeShortcutRegistrationActive && !modeShortcutDialogOpen && (modeShortcutError != null || stopShortcutError != null) ||
+                active && !keyboardMode && keyboardSuppression.IsEnabled && !keyboardSuppression.IsInstalled;
+            var lighting = rgbBackupWork;
+            if (lighting != null && Object.ReferenceEquals(lighting.Reader, reader))
+                lock (lighting.Gate) attention |= lighting.Error != null || lighting.StartupApprovalPending || lighting.RecoveryRequired && !lighting.Busy;
+            TrayStatus status = TrayStatusPolicy.Resolve(starting, reading, keyboardMode, active, attention);
+            SetTrayStatus(status, TrayStatusPolicy.Tooltip(status, reading, active, UiText.Language == "en"));
+        }
+
+        void SetTrayStatus(TrayStatus status, string tooltip)
+        {
+            if (displayedTrayStatus != status)
+            {
+                Icon statusIcon;
+                if (!trayStatusIcons.TryGetValue(status, out statusIcon))
+                {
+                    statusIcon = AppStatusIcon.Create(status);
+                    trayStatusIcons.Add(status, statusIcon);
+                }
+                trayIcon.Icon = statusIcon;
+                displayedTrayStatus = status;
+            }
+            if (displayedTrayTooltip != tooltip)
+            {
+                trayIcon.Text = tooltip;
+                displayedTrayTooltip = tooltip;
+            }
         }
 
         internal void StartInBackground()
@@ -162,6 +220,7 @@ namespace Tk75.App
             AddMinimizeToTrayItem(menu);
             AddStartupRegistrationItem(menu);
             AddReconnectStartupItem(menu);
+            AddRgbStartupPreferenceItem(menu);
         }
 
         void AddStartupRegistrationItem(ContextMenuStrip menu)

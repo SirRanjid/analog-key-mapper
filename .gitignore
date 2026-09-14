@@ -11,6 +11,7 @@ tests/synthetic-background-ui-*/
 tests/synthetic-shutdown-*/
 tests/synthetic-controller-reconnect-*/
 tests/synthetic-controller-pending-*/
+tests/synthetic-rgb-dialog-*/
 tests/rlc-*/
 .cache/
 .vs/

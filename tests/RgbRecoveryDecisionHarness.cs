@@ -148,11 +148,95 @@ public static class RgbRecoveryDecisionHarness
         Unknown(RgbRecoveryDecision.Assess(original, new Tk75RgbSnapshot(original.ModelId, original.Profile, original.Layer, partiallyRestored.RawSettings, unrelated), new[] { write }),
             "Cleanup authorization cannot explain an unrelated LED byte.");
     }
+    static void SeededStartupRepair()
+    {
+        Tk75RgbSnapshot source = Original();
+        var background = new Dictionary<int, int>();
+        var activeColors = new Dictionary<int, int>();
+        foreach (int key in Tk75RgbProtocol.GetSupportedKeyIndices(source.ModelId))
+        { background[key] = 0x192837; activeColors[key] = 0xAB1000 + key; }
+        var original = new Tk75RgbSnapshot(source.ModelId, source.Profile, source.Layer,
+            Tk75RgbProtocol.PictureModeSettings(source.RawSettings, source.Layer), Tk75RgbProtocol.Overlay(source.ModelId, source.Picture, background));
+        var observed = new Tk75RgbSnapshot(original.ModelId, original.Profile, original.Layer, original.RawSettings,
+            Tk75RgbProtocol.Overlay(original.ModelId, original.Picture, new Dictionary<int, int> { { 14, 0xFFC65C }, { 65, 0x79C8AF } }));
+        var cleanup = new RgbRecoveryStep { Sequence = 1, Expected = observed, Desired = original, AutomaticRestore = true };
+        var journal = new[] { cleanup };
+        Unknown(RgbRecoveryDecision.Assess(original, observed, new RgbRecoveryStep[0], observed),
+            "A validated startup seed without a recorded transaction cannot authorize restoration.");
+        Check(RgbRecoveryDecision.Assess(original, original, new RgbRecoveryStep[0], observed).AtOriginal,
+            "An empty seeded journal can recognize an already clean original.");
+        Unknown(RgbRecoveryDecision.Assess(original, observed, journal),
+            "Legacy assessment never treats a differing startup seed as the original.");
+        Known(RgbRecoveryDecision.Assess(original, observed, journal, observed),
+            "A durably recorded startup cleanup starts from its separately validated observation.");
+        for (int blocks = 0; blocks <= 7; blocks++)
+        {
+            Tk75RgbSnapshot partial = Prefix(observed, original, blocks, false);
+            RgbRecoveryDecision value = RgbRecoveryDecision.Assess(original, partial, journal, observed);
+            if (Tk75RgbExchange.Equivalent(partial, original)) Check(value.AtOriginal && !value.NeedsRecovery, "Startup cleanup recognizes its clean target.");
+            else Known(value, "Every complete startup cleanup report boundary is recoverable.");
+            var retry = new RgbRecoveryStep { Sequence = 2, Expected = partial, Desired = original, Confirmed = original };
+            Check(RgbRecoveryDecision.Assess(original, original, new[] { cleanup, retry }, observed).AtOriginal,
+                "Startup cleanup retry chains from the recorded partial write.");
+        }
+        var wrongSeed = Paint(observed, 0x112233);
+        Unknown(RgbRecoveryDecision.Assess(original, original, journal, wrongSeed),
+            "A mismatched startup seed fails chain validation even when current lighting is clean.");
+        Unknown(RgbRecoveryDecision.Assess(original, observed, journal, null), "Missing startup provenance cannot seed a recovery chain.");
+        foreach (var wrong in new[] {
+            new Tk75RgbSnapshot(3590, observed.Profile, observed.Layer, observed.RawSettings, observed.Picture),
+            new Tk75RgbSnapshot(observed.ModelId, 1, observed.Layer, observed.RawSettings, observed.Picture),
+            new Tk75RgbSnapshot(observed.ModelId, observed.Profile, 3, observed.RawSettings, observed.Picture) })
+            Unknown(RgbRecoveryDecision.Assess(original, original, new RgbRecoveryStep[0], wrong),
+                "A startup seed must share the original model, onboard profile and layer even before writes.");
+        foreach (int offset in new[] { 90 * 3, 383 })
+        {
+            byte[] invalid = observed.Picture; invalid[offset] ^= 1;
+            var unsafeSeed = new Tk75RgbSnapshot(observed.ModelId, observed.Profile, observed.Layer, observed.RawSettings, invalid);
+            Unknown(RgbRecoveryDecision.Assess(original, original, new RgbRecoveryStep[0], unsafeSeed),
+                "A startup seed cannot legitimize unknown LED positions or trailing-byte differences.");
+        }
+        cleanup.Confirmed = original;
+        Check(RgbRecoveryDecision.Assess(original, original, journal, observed).AtOriginal,
+            "Confirmed startup cleanup restores the clean baseline, not the stale observed marker.");
+        Unknown(RgbRecoveryDecision.Assess(original, observed, journal, observed),
+            "Confirmed startup cleanup does not authorize a return to the stale observation.");
+        var active = new Tk75RgbSnapshot(original.ModelId, original.Profile, original.Layer, original.RawSettings,
+            Tk75RgbProtocol.Overlay(original.ModelId, original.Picture, activeColors));
+        var apply = new RgbRecoveryStep { Sequence = 2, Expected = original, Desired = active, AutomaticRestore = true };
+        var later = new[] { cleanup, apply };
+        Known(RgbRecoveryDecision.Assess(original, active, later, observed),
+            "Normal color updates can follow a seeded cleanup from the clean original.");
+        for (int appliedBlocks = 0; appliedBlocks <= 7; appliedBlocks++)
+            for (int restoredBlocks = 0; restoredBlocks <= 7; restoredBlocks++)
+            {
+                Tk75RgbSnapshot partial = Prefix(original, active, appliedBlocks, false);
+                Tk75RgbSnapshot restored = Prefix(partial, original, restoredBlocks, false);
+                RgbRecoveryDecision value = RgbRecoveryDecision.Assess(original, restored, later, observed);
+                if (Tk75RgbExchange.Equivalent(restored, original)) Check(value.AtOriginal && !value.NeedsRecovery, "Seeded automatic cleanup recognizes its clean baseline.");
+                else Known(value, "Seeded journals retain automatic cleanup recovery at complete report boundaries.");
+                var repair = new RgbRecoveryStep { Sequence = 3, Expected = restored, Desired = original, Confirmed = original };
+                Check(RgbRecoveryDecision.Assess(original, original, new[] { cleanup, apply, repair }, observed).AtOriginal,
+                    "Normal restoration chains from an interrupted helper cleanup after a seeded startup.");
+            }
+        apply.Confirmed = active;
+        for (int restoredBlocks = 0; restoredBlocks <= 7; restoredBlocks++)
+        {
+            Tk75RgbSnapshot restored = Prefix(active, original, restoredBlocks, false);
+            RgbRecoveryDecision value = RgbRecoveryDecision.Assess(original, restored, later, observed);
+            if (Tk75RgbExchange.Equivalent(restored, original)) Check(value.AtOriginal && !value.NeedsRecovery, "Confirmed colors still restore to the clean baseline.");
+            else Known(value, "Confirmed ordinary colors permit ordered helper restoration after a seeded startup.");
+        }
+        apply.AutomaticRestore = false;
+        Unknown(RgbRecoveryDecision.Assess(original, Prefix(active, original, 1, false), later, observed),
+            "A startup seed does not grant helper-cleanup authority to later transactions.");
+    }
     public static string Run()
     {
         checks = 0;
         OnboardProfileRetry();
         AutomaticCleanupPrefixes();
+        SeededStartupRepair();
         var original = Original(); var first = Paint(original, 0x123456); var second = Paint(original, 0xabcdef); var third = Paint(original, 0xffffff);
         var step = new RgbRecoveryStep { Sequence = 1, Expected = original, Desired = first };
         Known(RgbRecoveryDecision.Assess(original, first, new[] { step }), "Crash after write before confirmation can restore the recorded target");

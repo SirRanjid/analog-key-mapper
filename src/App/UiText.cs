@@ -16,6 +16,8 @@ namespace Tk75.App
         static readonly ConditionalWeakTable<Control, object> PreservedText = new ConditionalWeakTable<Control, object>();
         static readonly object gate = new object();
         static readonly Dictionary<string, string> English = new Dictionary<string, string>(StringComparer.Ordinal) {
+            {"Gespeicherte Tastenfarben erkannt, aber die ursprünglichen Farben sind nicht eindeutig. Beleuchtung unverändert gelassen.", "Configured key colors were found, but their original colors are ambiguous. Lighting was left unchanged."},
+            {"Bereinigung beim Start nicht bestätigt. Die Beleuchtung bleibt bis zum erneuten Verbinden der Tastatur unverändert.", "Startup cleanup was not approved. Lighting stays unchanged until the keyboard is reconnected."},
             {"Deine Tastatur", "Your keyboard"}, {"Tastatur einrichten", "Set up keyboard"}, {"TASTATUR", "KEYBOARD"}, {"PROFIL", "PROFILE"},
             {"Verbinden", "Connect"}, {"Auswählen", "Select"}, {"Taste auswählen", "Select a key"}, {"Wähle eine Taste, um sie einzurichten.", "Select a key to set it up."},
             {"Controller verbunden – gehaltene Tasten nach Loslassen bereit", "Controller connected – release held keys to make them ready"},

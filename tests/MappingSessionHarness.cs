@@ -695,6 +695,30 @@ public static class MappingSessionHarness
         AsyncConnections();
         using (var f = new Fixture(false))
         {
+            FakeOutput first = f.Arm();
+            ControllerRelease delayed = f.Session.PrepareDisable("previous controller disconnected");
+            try
+            {
+                f.Input.Set(14, 85, 0);
+                FakeOutput next = f.Arm();
+                Wait(delegate { return next.Submits >= 3; }, "A reconnected controller starts with neutral heartbeats while its key is held.");
+                string currentStatus = f.Session.Status;
+                Check(next.Nonzero == 0, "The new connection guards the initially held key.");
+                delayed.Neutral(); delayed.Dispose();
+                int submitted = next.Submits;
+                Wait(delegate { return next.Submits >= submitted + 3; }, "The new controller continues after old cleanup finishes.");
+                Check(next.Nonzero == 0 && f.Session.Status == currentStatus && next.DisposeCalls == 0,
+                    "Old release cleanup cannot clear the new held-key guard, overwrite its status, or remove its output.");
+                Check(first.DisposeCalls == 1, "Delayed release removes only its original output.");
+                f.Input.Set(14, 0, 0);
+                Wait(delegate { return f.Session.Status == "Virtueller Controller aktiv"; }, "The held key becomes ready after its actual release.");
+                f.Input.Set(14, 85, 0);
+                Wait(delegate { return next.Nonzero > 0; }, "A fresh press produces output after delayed cleanup.");
+            }
+            finally { delayed.Dispose(); }
+        }
+        using (var f = new Fixture(false))
+        {
             FakeOutput output = f.Arm(); f.Input.Set(14, 85, 0);
             Wait(delegate { return output.Nonzero > 0; }, "Two-phase release starts with real worker output.");
             ControllerRelease pending = f.Session.PrepareDisable("group stop");

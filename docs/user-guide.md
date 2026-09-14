@@ -117,13 +117,33 @@ When a key belongs to several connected controllers, the first controller in pro
 
 The app saves the keyboard's current lighting before changing it and keeps restoration records under `data/lighting/`. Supported static backgrounds are preserved on other keys. Animated effects that cannot be preserved reliably are rejected before writing.
 
-**Restore lighting** returns to the saved normal state and turns off both controller colors and the shortcut marker for the profile. On exit, the app restores the lighting captured from the keyboard at startup, including its colors, brightness and effect. The keyboard helper also attempts restoration if the app connection is interrupted. A closing window shows progress through saving, controller cleanup, lighting restoration and helper shutdown. During Windows shutdown, the app registers a reason and waits for its cleanup work, with a 25-second total budget. Original backups remain available if the keyboard becomes unavailable or cleanup fails. Forced termination, disconnected hardware or power loss can still prevent restoration.
+### Startup check for leftover colors
+
+When the keyboard connects, the app checks its visible custom lighting for the configured mode-switch and controller colors. The saved keys and colors count even when their lighting option, mapping or controller is currently off. A color must appear on at least one matching key and nowhere outside its configured keys; there must also be an unrelated key available for comparison. A whole keyboard set to the marker color therefore does not trigger cleanup.
+
+If the replacement colors can be determined, **Clean up old key colors?** lists the affected keys and proposed changes. Choose **Clean up** to approve them once. **Keep unchanged**, closing the question or exiting the app leaves the colors alone and pauses lighting changes until the keyboard is reconnected. Input and controller handling continue independently while the question is open.
+
+![Startup lighting question with affected keys, proposed colors and optional future automatic cleanup](images/startup-cleanup.png)
+
+**Clean up matching color patterns automatically in future** is initially unchecked. To revoke saved permission later, turn off **Automatically clean recognized key colors at startup** in the app or tray menu. This permission is separate from profiles; importing a profile cannot enable it.
+
+Recognition compares exact configured colors and key positions. An externally created identical pattern can look the same, so it cannot prove that the app set those colors. Replacement colors come from a compatible earlier backup or a uniform current background. If other keys now have a different uniform background, that current background is preserved. A varied background without a compatible backup remains unchanged because its missing colors cannot be inferred. Automatic permission never overrides these checks.
+
+Only the detected markers are corrected. The keyboard is checked again before writing so a change made while the question was open is not overwritten. After cleanup, current app options apply; an enabled mode-switch marker may correctly appear again. The approved clean state becomes the restoration baseline, so closing the app does not bring the leftover markers back.
+
+### Restore and exit
+
+**Restore lighting** returns to the saved normal state and turns off both controller colors and the shortcut marker for the profile. On exit, the app restores its baseline, including colors, brightness and effect. Normally this is the lighting read at startup; after an approved startup cleanup, it is the corrected state. The keyboard helper uses the same baseline if the app connection is interrupted.
+
+A closing window shows progress through saving, controller cleanup, lighting restoration and helper shutdown. The app waits for the keyboard reader and its helper to finish cleanup. During Windows shutdown, it registers a reason and waits within a **25-second total budget**. An unanswered startup lighting question is dismissed without granting permission and does not block exit. Backups remain available if the keyboard becomes unavailable or cleanup fails. Forced termination, disconnected hardware or power loss can still prevent restoration.
 
 If recovery pauses, keep the backups and follow the displayed reason. An onboard keyboard-profile change may require returning to the previous onboard profile before restoration. Onboard keyboard profiles and the mapper's JSON profiles are different settings.
 
 ## Background startup
 
 Use the optional **Start with Windows · in tray** setting and the separate **Reconnect controllers at startup** option. **Minimize to tray** is a saved checkbox: when enabled, the window's **X** hides the editor and keeps controllers running. Tray **Exit**, or **X** with the option disabled, closes the app and restores lighting. Reconnection starts off and only uses a confirmed previous session. See [background startup and tray controls](background-startup.md).
+
+The tray uses the official app logo with a small status badge: a blue arc while connecting, gray minus when controllers are off or input is disconnected, amber pause in keyboard mode, green check with active controller output, and a red warning triangle when attention is needed. Hover for the specific status, or click to open the editor. A startup lighting question also appears when the editor starts hidden.
 
 ## Troubleshooting
 
@@ -134,6 +154,8 @@ Use the optional **Start with Windows · in tray** setting and the separate **Re
 | Controller connection fails | Confirm `ViiperOutputHost.exe` and the compatible USB/IP setup. For Xbox, count physical controllers toward the four XInput slots. Read the error for the affected slot. |
 | Controller stays neutral | Check connection, mode, enabled mappings and fresh key input. Release keys held during startup. The preview alone does not prove game output. |
 | Colors do not change | Check **Key colors**, controller connection/mode, the separate marker option and the lighting status. |
+| Startup asks about old key colors | Review the shown keys and replacement colors. Approve cleanup once, optionally enable future automatic cleanup, or keep the lighting unchanged. |
+| Startup cannot determine the original colors | Keep the lighting backups and read the status. A varied background without a compatible backup, or a different onboard profile, can prevent a safe correction. |
 | Lighting reports a path that is too long | Exit and move the complete app folder, including `data/`, to a shorter writable path. Backup names retain the full device identity; the app checks all later journal paths before reading the lighting backup. |
 | Calibration changes after a USB-port move | Without a serial number, calibration may be associated with the Windows device path. The default range is used until suitable calibration is available. |
 | Keyboard and controller input both reach a game | Optional **Controller input only** suppression has its own switch and starts off after an app restart. It affects the selected positions across all keyboards, and Raw Input games may still see them. |

@@ -120,10 +120,12 @@ namespace Tk75.Tests
             public void Start() { Call(Form, "RefreshRgbLighting"); }
             public T State<T>(string field) { object work = Work; lock (Get<object>(work, "Gate")) return Get<T>(work, field); }
             public void Ready()
+            { Ready(Source.Original); }
+            public void Ready(Tk75RgbSnapshot original)
             {
                 Await(delegate { return Work != null && (!State<bool>("Busy") || State<bool>("Stopped")); }, "Lighting initialization completes.");
                 Check(State<int>("State") == 1 && !State<bool>("Stopped"), "Lighting is ready: " + State<string>("Error"));
-                Check(Same(State<Tk75RgbSnapshot>("Original"), Source.Original), "The real worker retains the exact original snapshot.");
+                Check(Same(State<Tk75RgbSnapshot>("Original"), original), "The real worker retains the exact clean original snapshot.");
             }
             public Tk75RgbSnapshot Color(int rgb)
             { return (Tk75RgbSnapshot)typeof(MainForm).GetMethod("BuildRgbDesired", BindingFlags.Static | BindingFlags.NonPublic).Invoke(null, new object[] { Source.Original, new Dictionary<int, int> { { 14, rgb } } }); }
@@ -503,6 +505,315 @@ namespace Tk75.Tests
                 Console.WriteLine("PASS shortcut lighting: edit/cancel preserve colors; final choice writes directly; identity and explicit restore remain live");
             }
         }
+
+        const int StartupSwitchKey = 54, StartupControllerKey = 14;
+        const int StartupSwitchColor = 0xFFC65C, StartupControllerColor = 0x79C8AF;
+        static Tk75RgbSnapshot UniformPicture(FakeSource source, int color)
+        {
+            var colors = Tk75RgbProtocol.GetSupportedKeyIndices(source.Original.ModelId).ToDictionary(key => key, key => color);
+            return new Tk75RgbSnapshot(source.Original.ModelId, source.Original.Profile, source.Original.Layer,
+                Tk75RgbProtocol.PictureModeSettings(source.Original.RawSettings, source.Original.Layer),
+                Tk75RgbProtocol.Overlay(source.Original.ModelId, source.Original.Picture, colors));
+        }
+        static Tk75RgbSnapshot MarkPicture(Tk75RgbSnapshot original, int key, int color)
+        {
+            return new Tk75RgbSnapshot(original.ModelId, original.Profile, original.Layer, original.RawSettings,
+                Tk75RgbProtocol.Overlay(original.ModelId, original.Picture, new Dictionary<int, int> { { key, color } }));
+        }
+        static void ConfigureStartupMarkers(Fixture fixture, bool controller, bool automaticRepair = true)
+        {
+            if (automaticRepair) RgbStartupPreferences.Save(fixture.Root, true);
+            Profile profile = Get<EditHistory>(fixture.Form, "history").Current;
+            profile.RgbOverrideEnabled = false; profile.ModeSwitchLightingEnabled = false;
+            profile.ModeSwitchHotkey.Enabled = false; profile.ModeSwitchHotkey.KeyCode = (int)Keys.F9;
+            profile.ModeSwitchRgbColor = StartupSwitchColor;
+            profile.Bindings.Clear();
+            if (controller)
+            {
+                profile = ControllerRouting.SetRgbColor(profile, "main", StartupControllerColor);
+                profile.Bindings.Add(new Tk75.Mapping.Binding { KeyIndex = StartupControllerKey, Target = OutputTarget.A, ControllerId = "main", Enabled = false });
+            }
+            Get<EditHistory>(fixture.Form, "history").Commit(profile);
+        }
+        static void CheckCleanStartup(Fixture fixture, Tk75RgbSnapshot clean)
+        {
+            fixture.Ready(clean); fixture.Idle();
+            Check(Same(fixture.Source.Current, clean), "Startup removes only known markers and preserves settings, unrelated keys and reserved picture bytes.");
+            Check(!fixture.State<bool>("Applied") && !fixture.State<bool>("RecoveryRequired"), "Startup cleanup becomes the confirmed normal baseline.");
+            Check((bool)typeof(MainForm).GetProperty("RgbOverrideReady", Fields).GetValue(fixture.Form, null), "Successfully reconciled startup permits current lighting settings.");
+            string backup = fixture.State<string>("BackupFile");
+            Check((string)ReadJournal(backup)["SnapshotBase64"] == Convert.ToBase64String(Tk75RgbProtocol.EncodeSnapshot(clean)),
+                "The active durable backup contains the cleaned baseline, so a later close cannot resurrect stale markers.");
+        }
+        static void StartupClearsDisabledMarkers(string root, bool controller)
+        {
+            using (var fixture = new Fixture(root))
+            {
+                ConfigureStartupMarkers(fixture, controller);
+                Tk75RgbSnapshot clean = UniformPicture(fixture.Source, 0x224466);
+                Tk75RgbSnapshot stale = MarkPicture(clean, controller ? StartupControllerKey : StartupSwitchKey,
+                    controller ? StartupControllerColor : StartupSwitchColor);
+                fixture.Source.SetCurrent(stale); fixture.Start(); CheckCleanStartup(fixture, clean);
+                Check(fixture.Source.Writes == 1, "A stale configured marker is removed in one durable exchange even when its option and shortcut/binding are disabled.");
+                var preserved = fixture.Files(); fixture.CloseWithRestore();
+                Await(delegate { return fixture.Form.IsDisposed; }, "A reconciled startup can finish the ordinary close path.");
+                Check(Same(fixture.Source.Current, clean) && fixture.Source.Writes == 1, "Normal close leaves cleaned lighting intact without restoring the startup marker.");
+                fixture.Preserved(preserved);
+                Console.WriteLine(controller ? "PASS startup: disabled controller binding marker is cleaned and remains clean on close" :
+                    "PASS startup: disabled F9 marker is cleaned and remains clean on close");
+            }
+        }
+        static void StartupLeavesGlobalMarkerColor(string root)
+        {
+            using (var fixture = new Fixture(root))
+            {
+                ConfigureStartupMarkers(fixture, true);
+                Tk75RgbSnapshot external = UniformPicture(fixture.Source, StartupSwitchColor);
+                fixture.Source.SetCurrent(external); fixture.Start(); CheckCleanStartup(fixture, external);
+                Check(fixture.Source.Writes == 0, "A whole-keyboard color equal to the saved marker is an external background, not a stale app marker.");
+                Console.WriteLine("PASS startup: matching global keyboard color is preserved without writing");
+            }
+        }
+        static void StartupLeavesSharedExternalMarkerColor(string root)
+        {
+            using (var fixture = new Fixture(root))
+            {
+                ConfigureStartupMarkers(fixture, false);
+                Tk75RgbSnapshot external = MarkPicture(UniformPicture(fixture.Source, 0x224466), 21, StartupSwitchColor);
+                external = MarkPicture(external, StartupSwitchKey, StartupSwitchColor);
+                fixture.Source.SetCurrent(external); fixture.Start(); CheckCleanStartup(fixture, external);
+                Check(fixture.Source.Writes == 0, "A marker color also present on one unrelated key is preserved even when most of the keyboard has another color.");
+                Console.WriteLine("PASS startup: marker color shared by an unassigned key remains external artwork");
+            }
+        }
+        static void StartupRebasesChangedBackground(string root)
+        {
+            Tk75RgbSnapshot external, stale;
+            Dictionary<string, byte[]> historical;
+            using (var seed = new Fixture(root))
+            {
+                ConfigureStartupMarkers(seed, false);
+                Tk75RgbSnapshot old = UniformPicture(seed.Source, 0x663322);
+                seed.Source.SetCurrent(old); seed.Start(); seed.Ready(old);
+                seed.Queue(MarkPicture(old, StartupSwitchKey, StartupSwitchColor)); seed.Idle();
+                Check(seed.Source.Writes == 1, "The rebase seed has a real unfinished override journal.");
+                historical = seed.Files(); external = UniformPicture(seed.Source, 0x2244BB);
+                stale = MarkPicture(external, StartupSwitchKey, StartupSwitchColor);
+            }
+            using (var fixture = new Fixture(root))
+            {
+                ConfigureStartupMarkers(fixture, false); fixture.Source.SetCurrent(stale);
+                fixture.Start(); CheckCleanStartup(fixture, external); fixture.Preserved(historical);
+                Check(Directory.GetFiles(fixture.Lighting, "*.backup.json").Length == 2, "Changed external lighting starts a new immutable clean baseline while retaining the historical backup.");
+                Check(fixture.Source.Writes == 1, "Rebasing repairs only the marker instead of restoring the historical keyboard background.");
+                fixture.Queue(stale); fixture.Idle();
+                Check(Same(fixture.Source.Current, stale), "The rebased session can record a new override against the new background.");
+                historical = fixture.Files();
+            }
+            using (var restart = new Fixture(root))
+            {
+                ConfigureStartupMarkers(restart, false); restart.Source.SetCurrent(stale);
+                restart.Start(); CheckCleanStartup(restart, external); restart.Preserved(historical);
+                Check(Directory.GetFiles(restart.Lighting, "*.backup.json").Length == 2 && restart.Source.Writes == 1,
+                    "A second restart recovers the new journal without treating the superseded historical journal as another pending session.");
+                Console.WriteLine("PASS startup: external background changes survive cleanup, immutable rebase and subsequent journal recovery");
+            }
+        }
+        static void StartupAmbiguousBackground(string root)
+        {
+            using (var fixture = new Fixture(root))
+            {
+                ConfigureStartupMarkers(fixture, false);
+                Tk75RgbSnapshot external = MarkPicture(UniformPicture(fixture.Source, 0x224466), StartupControllerKey, 0x991133);
+                Tk75RgbSnapshot stale = MarkPicture(external, StartupSwitchKey, StartupSwitchColor);
+                fixture.Source.SetCurrent(stale); fixture.Start();
+                Await(delegate { return fixture.Work != null && (!fixture.State<bool>("Busy") || fixture.State<bool>("Stopped")); }, "An ambiguous startup finishes its bounded inspection.");
+                Check(fixture.Source.Writes == 0 && Same(fixture.Source.Current, stale), "Without a compatible backup, multicolor artwork does not invent the marker key's missing original color.");
+                Check(!(bool)typeof(MainForm).GetProperty("RgbOverrideReady", Fields).GetValue(fixture.Form, null), "Unresolved stale marker recovery blocks ordinary overrides.");
+                string status = (string)typeof(MainForm).GetProperty("RgbOverrideStatusText", Fields).GetValue(fixture.Form, null);
+                Check(!String.IsNullOrWhiteSpace(status) && !String.IsNullOrWhiteSpace(fixture.State<string>("Error")), "Ambiguous startup explains why lighting is paused.");
+                Console.WriteLine("PASS startup: ambiguous external artwork remains untouched and reports the recovery limit");
+            }
+        }
+        static void StartupCleanupInterrupted(string root)
+        {
+            Tk75RgbSnapshot clean;
+            Dictionary<string, byte[]> historical;
+            using (var fixture = new Fixture(root))
+            {
+                ConfigureStartupMarkers(fixture, false); clean = UniformPicture(fixture.Source, 0x225577);
+                fixture.Source.SetCurrent(MarkPicture(clean, StartupSwitchKey, StartupSwitchColor));
+                fixture.Source.AfterWrite = delegate(int count, Tk75RgbSnapshot expected, Tk75RgbSnapshot desired, int timeout)
+                { if (count == 1) throw new IOException("Synthetic startup cleanup reached the keyboard before confirmation was lost."); };
+                fixture.Start();
+                Await(delegate { return fixture.Work != null && fixture.Source.Writes == 1 && !fixture.State<bool>("Busy"); }, "A lost startup-cleanup confirmation leaves recoverable durable state.");
+                Check(Same(fixture.Source.Current, clean), "The synthetic interrupted cleanup did reach the clean physical state.");
+                historical = fixture.Files();
+            }
+            using (var restart = new Fixture(root))
+            {
+                ConfigureStartupMarkers(restart, false); restart.Source.SetCurrent(clean);
+                restart.Start(); CheckCleanStartup(restart, clean); restart.Preserved(historical);
+                Check(restart.Source.Writes == 0, "Startup cleanup provenance accepts the already-clean state after lost confirmation without repainting stale markers.");
+                Console.WriteLine("PASS startup: interrupted cleanup journal recovers an already-clean keyboard without repainting");
+            }
+        }
+        static void StartupRejectsCorruptProvenance(string root)
+        {
+            Dictionary<string, byte[]> historical;
+            Tk75RgbSnapshot stale;
+            using (var seed = new Fixture(Path.Combine(root, "seed")))
+            {
+                ConfigureStartupMarkers(seed, false);
+                Tk75RgbSnapshot clean = UniformPicture(seed.Source, 0x225577);
+                stale = MarkPicture(clean, StartupSwitchKey, StartupSwitchColor);
+                seed.Source.SetCurrent(stale); seed.Start(); CheckCleanStartup(seed, clean);
+                seed.Queue(stale); seed.Idle(); historical = seed.Files();
+            }
+            string directory = Path.Combine(root, "bad"), lighting = Path.Combine(directory, "lighting");
+            Directory.CreateDirectory(lighting);
+            foreach (var file in historical)
+            {
+                string target = Path.Combine(lighting, Path.GetFileName(file.Key));
+                if (!file.Key.EndsWith(".backup.json", StringComparison.Ordinal)) File.WriteAllBytes(target, file.Value);
+                else
+                {
+                    // Make a separate malformed synthetic fixture; published
+                    // seed journals are never edited in place. The substituted
+                    // candidate remains structurally valid but cannot explain
+                    // the recorded observation and the claimed clean baseline.
+                    var journal = ReadJournal(file.Key);
+                    var candidates = (object[])journal["StartupCandidates"];
+                    ((Dictionary<string, object>)candidates[0])["Color"] = 0x33CC11;
+                    File.WriteAllText(target, new JavaScriptSerializer().Serialize(journal), new System.Text.UTF8Encoding(false));
+                }
+            }
+            using (var fixture = new Fixture(directory))
+            {
+                ConfigureStartupMarkers(fixture, false); fixture.Source.SetCurrent(stale);
+                var malformed = fixture.Files(); fixture.Start();
+                Await(delegate { return fixture.Work != null && fixture.State<bool>("Stopped"); }, "Unverifiable startup provenance stops initialization.");
+                Check(fixture.Source.Writes == 0 && Same(fixture.Source.Current, stale), "A corrupted recognition proof cannot authorize a keyboard write through the recovered transaction chain.");
+                Check(!(bool)typeof(MainForm).GetProperty("RgbOverrideReady", Fields).GetValue(fixture.Form, null), "A rejected startup journal cannot enable ordinary overrides.");
+                Check(fixture.State<string>("Error").Contains("recognition proof"), "The rejection is caused by mismatched startup recognition evidence.");
+                fixture.Preserved(historical); fixture.Preserved(malformed);
+                Console.WriteLine("PASS startup: a structurally valid but corrupted recognition proof cannot authorize recovery");
+            }
+        }
+        static void StartupPreservesOtherKeyboardProfile(string root)
+        {
+            Dictionary<string, byte[]> historical;
+            Tk75RgbSnapshot original, otherProfile;
+            using (var seed = new Fixture(root))
+            {
+                ConfigureStartupMarkers(seed, false); original = UniformPicture(seed.Source, 0x663322);
+                seed.Source.SetCurrent(original); seed.Start(); seed.Ready(original);
+                seed.Queue(MarkPicture(original, StartupSwitchKey, StartupSwitchColor)); seed.Idle();
+                historical = seed.Files();
+                Tk75RgbSnapshot external = MarkPicture(UniformPicture(seed.Source, 0x2244BB), StartupSwitchKey, StartupSwitchColor);
+                otherProfile = new Tk75RgbSnapshot(external.ModelId, 1, external.Layer, external.RawSettings, external.Picture);
+            }
+            using (var fixture = new Fixture(root))
+            {
+                ConfigureStartupMarkers(fixture, false); fixture.Source.SetCurrent(otherProfile); fixture.Start();
+                Await(delegate { return fixture.Work != null && (!fixture.State<bool>("Busy") || fixture.State<bool>("Stopped")); }, "Startup recognizes a different onboard keyboard profile.");
+                Check(fixture.Source.Writes == 0 && Same(fixture.Source.Current, otherProfile), "Markers in another onboard profile cannot authorize recovery of the previous profile's pending transaction.");
+                Check(Same(fixture.State<Tk75RgbSnapshot>("Original"), original) && Directory.GetFiles(fixture.Lighting, "*.backup.json").Length == 1,
+                    "A profile mismatch retains the previous original and never publishes a superseding baseline for the other profile.");
+                Check(!(bool)typeof(MainForm).GetProperty("RgbOverrideReady", Fields).GetValue(fixture.Form, null) && !String.IsNullOrWhiteSpace(fixture.State<string>("Error")),
+                    "The onboard profile mismatch keeps ordinary lighting overrides paused.");
+                string status = (string)typeof(MainForm).GetProperty("RgbOverrideStatusText", Fields).GetValue(fixture.Form, null);
+                Check(status.Contains("Tastaturprofil") || status.Contains("Keyboard profile"), "The status explains that the user must return to the previous keyboard profile.");
+                fixture.Preserved(historical);
+                Console.WriteLine("PASS startup: another onboard profile cannot supersede the original profile's pending recovery");
+            }
+        }
+        static Tk75RgbSnapshot AwaitStartupApproval(Fixture fixture)
+        {
+            ConfigureStartupMarkers(fixture, false, false);
+            Tk75RgbSnapshot clean = UniformPicture(fixture.Source, 0x335577);
+            fixture.Source.SetCurrent(MarkPicture(clean, StartupSwitchKey, StartupSwitchColor)); fixture.Start();
+            Await(delegate { return fixture.Work != null && fixture.State<bool>("StartupApprovalPending"); }, "Default startup waits for an explicit decision about the recognized stale marker.");
+            Check(fixture.Source.Writes == 0 && fixture.State<Tk75RgbSnapshot>("Original") == null && Directory.GetFiles(fixture.Lighting, "*.backup.json").Length == 0,
+                "Awaiting consent performs no write and does not publish the proposed clean lighting as an approved original backup.");
+            Check(!RgbStartupPreferences.Load(fixture.Root), "Missing startup preferences do not imply automatic repair consent.");
+            return clean;
+        }
+        static void StartupApprovalOnce(string root)
+        {
+            using (var fixture = new Fixture(root))
+            {
+                Tk75RgbSnapshot clean = AwaitStartupApproval(fixture);
+                Call(fixture.Form, "CompleteRgbStartupApproval", fixture.Work, true, false);
+                CheckCleanStartup(fixture, clean);
+                Check(fixture.Source.Writes == 1 && !fixture.State<bool>("StartupApprovalPending"), "Approving once completes the pending cleanup through one journaled exchange.");
+                Check(!RgbStartupPreferences.Load(root) && !File.Exists(Path.Combine(root, RgbStartupPreferences.FileName)), "One-time approval never creates remembered automatic repair consent.");
+                Console.WriteLine("PASS startup consent: default asks before writing; one-time approval cleans without saving consent");
+            }
+        }
+        static void StartupApprovalDeclined(string root)
+        {
+            using (var fixture = new Fixture(root))
+            {
+                AwaitStartupApproval(fixture); Tk75RgbSnapshot unchanged = fixture.Source.Current;
+                Call(fixture.Form, "CompleteRgbStartupApproval", fixture.Work, false, true);
+                Await(delegate { return !fixture.State<bool>("StartupApprovalPending") && (!fixture.State<bool>("Busy") || fixture.State<bool>("Stopped")); }, "Declining finishes the pending startup decision.");
+                Check(fixture.Source.Writes == 0 && Same(fixture.Source.Current, unchanged) && fixture.State<Tk75RgbSnapshot>("Original") == null,
+                    "Declining leaves the keyboard unchanged and cannot make the unapproved startup picture an original baseline.");
+                Check(!(bool)typeof(MainForm).GetProperty("RgbOverrideReady", Fields).GetValue(fixture.Form, null), "Declined startup repair keeps ordinary overrides gated.");
+                Check(!RgbStartupPreferences.Load(root) && !File.Exists(Path.Combine(root, RgbStartupPreferences.FileName)), "Declining never saves automatic approval even if the remember argument is true.");
+                Console.WriteLine("PASS startup consent: decline preserves lighting, gates overrides and never remembers approval");
+            }
+        }
+        static void StartupApprovalRemembered(string root)
+        {
+            Tk75RgbSnapshot clean;
+            using (var fixture = new Fixture(root))
+            {
+                clean = AwaitStartupApproval(fixture);
+                Call(fixture.Form, "CompleteRgbStartupApproval", fixture.Work, true, true); CheckCleanStartup(fixture, clean);
+                Check(RgbStartupPreferences.Load(root), "Explicit approval with remember durably enables future automatic startup repair.");
+            }
+            using (var restart = new Fixture(root))
+            {
+                ConfigureStartupMarkers(restart, false, false);
+                restart.Source.SetCurrent(MarkPicture(clean, StartupSwitchKey, StartupSwitchColor)); restart.Start(); CheckCleanStartup(restart, clean);
+                Check(restart.Source.Writes == 1 && !restart.State<bool>("StartupApprovalPending") && restart.State<bool>("StartupAutoRepair"),
+                    "A fresh form loads remembered consent and repairs a newly recognized marker without awaiting another decision.");
+                Console.WriteLine("PASS startup consent: remembered approval persists and enables automatic cleanup in a fresh form");
+            }
+        }
+        static void StartupCloseWhileApprovalPending(string root)
+        {
+            using (var fixture = new Fixture(root))
+            {
+                AwaitStartupApproval(fixture); Tk75RgbSnapshot unchanged = fixture.Source.Current;
+                Stopwatch elapsed = Stopwatch.StartNew(); fixture.Form.Close();
+                Await(delegate { return fixture.Form.IsDisposed; }, "Closing cancels a pending startup approval promptly.", 2500);
+                Check(elapsed.ElapsedMilliseconds < 2500 && fixture.Source.Writes == 0 && Same(fixture.Source.Current, unchanged),
+                    "Closing while consent is pending does not wait for approval or paint the proposed baseline.");
+                Check(!RgbStartupPreferences.Load(root), "Closing a pending prompt does not grant remembered consent.");
+                Console.WriteLine("PASS startup consent: close cancels an unanswered prompt without any keyboard writes");
+            }
+        }
+        static void StartupApprovalAfterExternalChange(string root, bool changedProfile)
+        {
+            using (var fixture = new Fixture(root))
+            {
+                AwaitStartupApproval(fixture);
+                Tk75RgbSnapshot external = MarkPicture(UniformPicture(fixture.Source, 0x2244BB), StartupSwitchKey, StartupSwitchColor);
+                if (changedProfile) external = new Tk75RgbSnapshot(external.ModelId, 1, external.Layer, external.RawSettings, external.Picture);
+                fixture.Source.SetCurrent(external);
+                Call(fixture.Form, "CompleteRgbStartupApproval", fixture.Work, true, false);
+                Await(delegate { return !fixture.State<bool>("StartupApprovalPending") && (!fixture.State<bool>("Busy") || fixture.State<bool>("Stopped")); }, "Approval rechecks the actual keyboard after the pending prompt.");
+                Check(fixture.Source.Writes == 0 && Same(fixture.Source.Current, external),
+                    "An approval for an earlier observation cannot overwrite external lighting or an onboard profile changed while the prompt was open.");
+                Check(!(bool)typeof(MainForm).GetProperty("RgbOverrideReady", Fields).GetValue(fixture.Form, null) && !String.IsNullOrWhiteSpace(fixture.State<string>("Error")),
+                    "A changed keyboard invalidates the approved proposal and keeps ordinary overrides paused.");
+                Console.WriteLine(changedProfile ? "PASS startup consent: an onboard profile change while awaiting approval prevents writes" :
+                    "PASS startup consent: a background change while awaiting approval prevents writes");
+            }
+        }
         [STAThread]
         public static int Main(string[] args)
         {
@@ -525,6 +836,21 @@ namespace Tk75.Tests
                 CloseRetriesTransientRestore(Path.Combine(root, "k"));
                 JournalPathBudget(root);
                 LegacyTimestampRecovery(Path.Combine(root, "j"));
+                StartupClearsDisabledMarkers(Path.Combine(root, "m"), false);
+                StartupClearsDisabledMarkers(Path.Combine(root, "n"), true);
+                StartupLeavesGlobalMarkerColor(Path.Combine(root, "o"));
+                StartupRebasesChangedBackground(Path.Combine(root, "p"));
+                StartupAmbiguousBackground(Path.Combine(root, "q"));
+                StartupCleanupInterrupted(Path.Combine(root, "r"));
+                StartupLeavesSharedExternalMarkerColor(Path.Combine(root, "s"));
+                StartupRejectsCorruptProvenance(Path.Combine(root, "t"));
+                StartupPreservesOtherKeyboardProfile(Path.Combine(root, "u"));
+                StartupApprovalOnce(Path.Combine(root, "v"));
+                StartupApprovalDeclined(Path.Combine(root, "w"));
+                StartupApprovalRemembered(Path.Combine(root, "x"));
+                StartupCloseWhileApprovalPending(Path.Combine(root, "y"));
+                StartupApprovalAfterExternalChange(Path.Combine(root, "z"), false);
+                StartupApprovalAfterExternalChange(Path.Combine(root, "za"), true);
                 Console.WriteLine("PASS: " + checks + " RGB lifecycle assertions; actual MainForm worker and ReaderSession, synthetic source only.");
                 return 0;
             }

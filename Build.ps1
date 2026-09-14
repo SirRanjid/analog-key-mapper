@@ -7,6 +7,8 @@ $ErrorActionPreference = 'Stop'
 $releaseMetadata = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'RELEASE_VERSION.json') -Raw | ConvertFrom-Json
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $compiler)) { throw '.NET Framework 4.x (64-bit) compiler not found.' }
+$applicationIcon = Join-Path $PSScriptRoot 'src\App\Assets\AnalogKeyMapper.ico'
+if (-not (Test-Path -LiteralPath $applicationIcon -PathType Leaf)) { throw 'Application icon source is missing.' }
 $target = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $OutputDirectory))
 $taskBuildRoot = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\') + '\'
 if (-not $target.StartsWith($taskBuildRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Build output must stay inside this repository.' }
@@ -25,7 +27,7 @@ Write-Host "Built: $target\Tk75Monitor.exe"
 $appSources = Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src\App'), (Join-Path $PSScriptRoot 'src\Core'), (Join-Path $PSScriptRoot 'src\Output') -Filter '*.cs' -File | ForEach-Object FullName
 $appBuildOptions = @()
 if ($AllowUnsignedMonitor) { $appBuildOptions += '/define:ALLOW_UNSIGNED_MONITOR' }
-& $compiler /nologo /target:winexe /platform:x64 /optimize+ /warnaserror+ /r:System.Web.Extensions.dll /r:System.Runtime.Serialization.dll /r:System.Xml.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll "/win32manifest:$PSScriptRoot\src\App\app.manifest" "/out:$target\AnalogKeyMapper.exe" @appBuildOptions $shared (Join-Path $PSScriptRoot 'src\Tk75RgbProtocol.cs') (Join-Path $PSScriptRoot 'src\Tk75RgbExchange.cs') $appSources
+& $compiler /nologo /target:winexe /platform:x64 /optimize+ /warnaserror+ /r:System.Web.Extensions.dll /r:System.Runtime.Serialization.dll /r:System.Xml.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll "/win32manifest:$PSScriptRoot\src\App\app.manifest" "/win32icon:$applicationIcon" "/out:$target\AnalogKeyMapper.exe" @appBuildOptions $shared (Join-Path $PSScriptRoot 'src\Tk75RgbProtocol.cs') (Join-Path $PSScriptRoot 'src\Tk75RgbExchange.cs') $appSources
 if ($LASTEXITCODE -ne 0) { throw 'Application build failed.' }
 $cursorLicenseDirectory = Join-Path $target 'licenses\chromium-cursors'
 New-Item -ItemType Directory -Force -Path $cursorLicenseDirectory | Out-Null

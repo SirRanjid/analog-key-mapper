@@ -100,6 +100,27 @@ namespace Tk75.Tests
             }
         }
 
+        static void TrayStatusPolicyChecks()
+        {
+            Check(TrayStatusPolicy.Resolve(true, false, false, false, false) == TrayStatus.Starting, "Pending startup is distinct from a disconnected input.");
+            Check(TrayStatusPolicy.Resolve(false, false, true, false, false) == TrayStatus.Disconnected, "Keyboard preference alone cannot claim an input connection.");
+            Check(TrayStatusPolicy.Resolve(false, true, false, false, false) == TrayStatus.Disconnected, "Ready input without a controller never gets the active-output badge.");
+            Check(TrayStatusPolicy.Resolve(false, true, true, false, false) == TrayStatus.KeyboardMode, "Connected input in keyboard mode retains its explicit mode.");
+            Check(TrayStatusPolicy.Resolve(true, true, false, true, false) == TrayStatus.ControllerActive, "An active peer controller remains visible while another controller connects.");
+            Check(TrayStatusPolicy.Resolve(false, true, true, true, false) == TrayStatus.KeyboardMode, "A connected neutral controller is displayed as keyboard mode, not active output.");
+            Check(TrayStatusPolicy.Resolve(false, true, false, true, true) == TrayStatus.Attention, "Actionable faults remain visible even alongside an active controller.");
+            Check(TrayStatusPolicy.Tooltip(TrayStatus.Disconnected, true, false, true) != TrayStatusPolicy.Tooltip(TrayStatus.Disconnected, false, false, true),
+                "The tooltip distinguishes ready input from a missing connection.");
+            Check(TrayStatusPolicy.Tooltip(TrayStatus.KeyboardMode, true, true, true) != TrayStatusPolicy.Tooltip(TrayStatus.KeyboardMode, true, false, true),
+                "The tooltip distinguishes a neutral connected controller from controllers being off.");
+            foreach (TrayStatus status in Enum.GetValues(typeof(TrayStatus)))
+            foreach (bool reading in new[] { false, true })
+            foreach (bool active in new[] { false, true })
+            foreach (bool english in new[] { false, true })
+                Check(TrayStatusPolicy.Tooltip(status, reading, active, english).Length <= 63,
+                    "Every localized status caption fits Windows' notification icon limit.");
+        }
+
         static void TrayPreferencePersistence(string directory)
         {
             string data = Path.Combine(directory, "tray-preference-data");
@@ -161,10 +182,13 @@ namespace Tk75.Tests
                 form.ShowInTaskbar = false; form.StartPosition = FormStartPosition.Manual;
                 form.Location = new Point(-30000, -30000);
                 Call(form, "InitializeTray", false);
+                Check(Field<TrayStatus?>(form, "displayedTrayStatus") == TrayStatus.Starting && form.Icon != null,
+                    "The application and tray receive distinct branded icons before startup.");
                 Call(form, "StartInBackground");
                 Check(form.IsHandleCreated && !form.Visible, "Background startup creates its message handle without showing the window.");
                 Check(Field<bool>(form, "sessionStarted"), "Background startup initializes the UI session.");
                 Check(!Field<NotifyIcon>(form, "trayIcon").Visible, "The synthetic test does not place an icon in the user's notification area.");
+                Check(Field<TrayStatus?>(form, "displayedTrayStatus") == TrayStatus.Disconnected, "Completed preview startup with no input is disconnected.");
                 CheckPassive(form);
                 Call(form, "StartInBackground");
                 Check(!form.Visible, "Repeated background initialization stays hidden.");
@@ -206,6 +230,21 @@ namespace Tk75.Tests
                     Check(Field<int>(form, "ticks") == ticks + 30, "Hidden maintenance continues advancing.");
                     Check(Field<string>(form, "lastRgbUiStatus") != "pending maintenance", "RGB maintenance continues while the window is hidden.");
                     Check(runtime.IsControllerEnabled(firstId) && runtime.IsControllerEnabled("second"), "Hiding preserves both independently connected synthetic controllers.");
+                    var notification = Field<NotifyIcon>(form, "trayIcon");
+                    Icon activeIcon = notification.Icon;
+                    Check(Field<TrayStatus?>(form, "displayedTrayStatus") == TrayStatus.ControllerActive,
+                        "Hidden maintenance publishes active controller status without a visible preview.");
+                    Tick(form);
+                    Check(Object.ReferenceEquals(activeIcon, notification.Icon), "Unchanged maintenance reuses the same icon instance.");
+                    runtime.KeyboardMode = true; Tick(form);
+                    Check(Field<TrayStatus?>(form, "displayedTrayStatus") == TrayStatus.KeyboardMode && !Object.ReferenceEquals(activeIcon, notification.Icon),
+                        "Switching to keyboard mode updates the hidden tray independently of window visibility.");
+                    runtime.KeyboardMode = false; Tick(form);
+                    Check(Object.ReferenceEquals(activeIcon, notification.Icon), "Returning to active output reuses its cached icon.");
+                    Set(form, "discoveryFailed", true); Tick(form);
+                    Check(Field<TrayStatus?>(form, "displayedTrayStatus") == TrayStatus.Attention, "An actionable discovery failure updates the hidden tray.");
+                    Set(form, "discoveryFailed", false); Tick(form);
+                    Check(Object.ReferenceEquals(activeIcon, notification.Icon), "Cleared attention restores the cached active icon.");
                     runtime.SelectedControllerId = cycle == 0 ? "second" : firstId;
                     Check(!first.PreviewActive && !second.PreviewActive, "Changing selection while hidden leaves all preview workers idle.");
                     FakeController selected = cycle == 0 ? second : first, other = cycle == 0 ? first : second;
@@ -303,6 +342,7 @@ namespace Tk75.Tests
             }
             finally { form.Dispose(); }
             Check(Field<NotifyIcon>(form, "trayIcon") == null, "Form disposal releases its notification icon.");
+            Check(Field<Dictionary<TrayStatus, Icon>>(form, "trayStatusIcons").Count == 0, "Form disposal releases every cached status icon.");
             Check(first != null && second != null && first.Disposed && second.Disposed, "Final disposal closes every synthetic controller session.");
             Check(created.All(c => c.Disposes == 1), "Every synthetic endpoint is disposed exactly once.");
         }
@@ -389,6 +429,7 @@ namespace Tk75.Tests
                 System.Threading.Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
                 StartupRegistration(Path.GetFullPath(args[0]));
                 ReconnectPreferences();
+                TrayStatusPolicyChecks();
                 TrayPreferencePersistence(Path.GetFullPath(args[0]));
                 ReconnectCancelsForPendingEdits(Path.GetFullPath(args[0]));
                 BackgroundAndRestore(Path.GetFullPath(args[0]));

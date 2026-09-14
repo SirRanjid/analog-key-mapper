@@ -119,14 +119,18 @@ namespace Tk75.App
                 attempt = pendingConnection;
                 if (attempt != null) attempt.Cancelled = true;
             }
-            if (attempt == null) return Task.FromResult(0);
+            QueueConnectionCancellation(attempt);
+            return attempt == null ? (Task)Task.FromResult(0) : attempt.Drained.Task;
+        }
+        void QueueConnectionCancellation(PendingConnection attempt)
+        {
+            if (attempt == null) return;
             // Cancellation callbacks may be third-party code. Never run them
             // under the worker gate, and never wait for a pending Connect here.
             ThreadPool.QueueUserWorkItem(delegate {
                 try { attempt.Cancellation.Cancel(); } catch (ObjectDisposedException) { }
                 catch (Exception ex) { Log("Connection cancellation failed: " + ex.Message); }
             });
-            return attempt.Drained.Task;
         }
         Task CancelPendingLocked()
         {
@@ -398,7 +402,7 @@ namespace Tk75.App
                 CheckConnectionInputLocked(false);
                 lock (connectionPublication)
                 {
-                    attempt = new PendingConnection { Generation = connectionGeneration, Kind = profile.Controller,
+                    attempt = new PendingConnection { Generation = Interlocked.Increment(ref connectionGeneration), Kind = profile.Controller,
                         Cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken) };
                     pendingConnection = attempt;
                 }
@@ -484,14 +488,29 @@ namespace Tk75.App
         { lock (gate) { if (!disposed) DisableLocked(reason ?? "Controller aus"); } }
         public ControllerRelease PrepareDisable(string reason)
         {
-            CancelPendingConnection();
+            PendingConnection attempt; IControllerOutput previous; long releaseGeneration;
+            lock (connectionPublication)
+            {
+                releaseGeneration = Interlocked.Increment(ref connectionGeneration);
+                attempt = pendingConnection;
+                if (attempt != null) attempt.Cancelled = true;
+                // Cancellation and detachment share the publication boundary;
+                // a newer connection cannot be detached by this older request.
+                previous = Interlocked.Exchange(ref output, null);
+            }
+            QueueConnectionCancellation(attempt);
             // Do not wait behind this slot's in-flight Submit before the group
             // can stop its other outputs. The neutral phase drains that Submit
             // under the worker gate, independently for every detached output.
-            IControllerOutput previous = Interlocked.Exchange(ref output, null);
             if (previous == null) return null;
             return new ControllerRelease(delegate {
-                lock (gate) { ResetDetachedOutputLocked(reason ?? "Controller aus"); }
+                lock (gate)
+                {
+                    // A deferred release owns only the detached output. It must
+                    // not erase a later connection's held-key gate or status.
+                    if (releaseGeneration == Interlocked.Read(ref connectionGeneration) && output == null)
+                        ResetDetachedOutputLocked(reason ?? "Controller aus");
+                }
                 previous.Neutral();
             }, delegate { try { previous.Dispose(); } finally { Log("Controller disabled: " + reason); } });
         }

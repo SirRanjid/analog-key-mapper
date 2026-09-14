@@ -187,6 +187,9 @@ public static class ReaderSessionHarness
                 Check(!failing.IsReading && failing.GetRawSnapshot(500).Count == 0, "failure immediately removes active values");
                 Check(!failing.GetSnapshot()[0].Known && failing.GetSnapshot()[0].RawValue == 250, "failure preserves diagnostic value as unknown");
                 Check(!string.IsNullOrWhiteSpace(failing.Status), "failure status available");
+                bool cleanupRejected = false;
+                try { failing.DisposeAndWait(1000); } catch (IOException) { cleanupRejected = true; }
+                Check(cleanupRejected, "shutdown drain retains a source disposal failure even after the worker exits");
             }
             finally { failing.Dispose(); }
         }
@@ -199,6 +202,17 @@ public static class ReaderSessionHarness
             Check(!unopened.IsReading && unopened.GetRawSnapshot(500).Count == 0, "open failure cannot produce active values");
         }
         finally { unopened.Dispose(); }
+        var cleanupOnOpen = new ReaderSession(Device(), new RongYuanTravel32(), delegate { throw new MonitorCleanupException("synthetic constructor cleanup failure"); });
+        int cleanupOpenFaults = 0;
+        try
+        {
+            cleanupOnOpen.Fault += delegate { Interlocked.Increment(ref cleanupOpenFaults); };
+            cleanupOnOpen.Start(); Until(delegate { return Volatile.Read(ref cleanupOpenFaults) == 1; }, "constructor cleanup failure reaches the reader");
+            bool cleanupRejected = false;
+            try { cleanupOnOpen.DisposeAndWait(1000); } catch (IOException) { cleanupRejected = true; }
+            Check(cleanupRejected, "shutdown cannot confirm cleanup when opening already failed to drain its helper");
+        }
+        finally { cleanupOnOpen.Dispose(); }
         return "PASS: " + assertions + " assertions; fake sources only; timeout, independent keys, watchdog, stop/restart, malformed/disconnected input and isolated subscribers; no hardware calls.";
     }
 }

@@ -17,12 +17,21 @@ namespace Tk75.App
         public bool NeedsRecovery, CanRestore, AtOriginal;
         public string Error;
         public static RgbRecoveryDecision Assess(Tk75RgbSnapshot original, Tk75RgbSnapshot current, IEnumerable<RgbRecoveryStep> steps)
+        { return Assess(original, current, steps, original); }
+
+        // A separately validated startup repair can have an observed starting
+        // state that differs from its clean restoration target. The caller owns
+        // that provenance check; the seed alone never authorizes a device write.
+        public static RgbRecoveryDecision Assess(Tk75RgbSnapshot original, Tk75RgbSnapshot current,
+            IEnumerable<RgbRecoveryStep> steps, Tk75RgbSnapshot initialExpected)
         {
             try
             {
                 if (steps == null) throw new InvalidDataException("The lighting journal step list is missing.");
                 Tk75RgbExchange.Validate(original, current);
                 Tk75RgbExchange.Validate(current, original);
+                Tk75RgbExchange.Validate(original, initialExpected);
+                Tk75RgbExchange.Validate(initialExpected, original);
                 RgbRecoveryStep previous = null;
                 int count = 0;
                 foreach (RgbRecoveryStep step in steps)
@@ -38,7 +47,7 @@ namespace Tk75.App
                         if (!Tk75RgbExchange.Equivalent(step.Confirmed, step.Desired))
                             throw new InvalidDataException("A confirmed lighting state does not match its requested state.");
                     }
-                    bool chained = previous == null ? Tk75RgbExchange.Equivalent(step.Expected, original) :
+                    bool chained = previous == null ? Tk75RgbExchange.Equivalent(step.Expected, initialExpected) :
                         previous.Confirmed != null ? Tk75RgbExchange.Equivalent(step.Expected, previous.Confirmed) :
                         Tk75RgbExchange.MatchesWritePrefix(previous.Expected, previous.Desired, step.Expected);
                     if (!chained && previous != null && previous.AutomaticRestore)

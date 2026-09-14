@@ -13,10 +13,12 @@ namespace Tk75.App
         // Windows is told why the final session response is pending. The wait
         // covers the existing 17s lighting restore and cancelled helper cleanup.
         const int SystemShutdownTimeoutMilliseconds = NormalCloseTimeoutMilliseconds;
+        const int ReaderCleanupTimeoutMilliseconds = 8000;
         int systemShutdownWaitMilliseconds = SystemShutdownTimeoutMilliseconds;
         ShutdownWork systemShutdownWork;
         bool closeProfileSaved, systemShutdownTimedOut, systemShutdownStarted;
         bool applicationResourcesDisposed, resourceCleanupFailed, shutdownReasonRegistered;
+        volatile bool normalReaderCleanupWaited;
         CloseProgressForm closeProgress;
         volatile ShutdownPhaseState systemLightingPhase, systemReaderPhase;
 
@@ -156,13 +158,14 @@ namespace Tk75.App
                             systemReaderPhase = ShutdownPhaseState.Running;
                             try
                             {
-                                DisposeLearnedInputs();
-                                if (ownedReader != null) ownedReader.Dispose();
-                                if (detachedReaderCleanup != null)
-                                {
-                                    detachedReaderCleanup.Wait();
-                                    if (deviceDetachCleanupFailure != null) throw deviceDetachCleanupFailure;
-                                }
+                                RunShutdownCleanup(
+                                    DisposeLearnedInputs,
+                                    delegate { if (ownedReader != null) ownedReader.DisposeAndWait(ReaderCleanupTimeoutMilliseconds); },
+                                    delegate {
+                                        if (detachedReaderCleanup == null) return;
+                                        detachedReaderCleanup.Wait();
+                                        if (deviceDetachCleanupFailure != null) throw deviceDetachCleanupFailure;
+                                    });
                                 systemReaderPhase = ShutdownPhaseState.Completed;
                             }
                             catch (Exception error) { systemReaderPhase = ShutdownPhaseState.Failed; LogShutdownFailure("Windows shutdown reader/helper cleanup", error); throw; }
@@ -274,7 +277,16 @@ namespace Tk75.App
             catch (Exception error) { resourceCleanupFailed = true; LogShutdownFailure("Controller cleanup", error); }
             try { DisposeLearnedInputs(); }
             catch (Exception error) { resourceCleanupFailed = true; LogShutdownFailure("Learned input cleanup", error); }
-            try { if (ownedReader != null) ownedReader.Dispose(); }
+            try
+            {
+                if (ownedReader != null)
+                {
+                    // The asynchronous normal-close lane already spent this
+                    // reader's budget. A timeout must not start another UI wait.
+                    if (normalReaderCleanupWaited) ownedReader.Dispose();
+                    else ownedReader.DisposeAndWait(ReaderCleanupTimeoutMilliseconds);
+                }
+            }
             catch (Exception error) { resourceCleanupFailed = true; LogShutdownFailure("Reader cleanup", error); }
             return !resourceCleanupFailed;
         }

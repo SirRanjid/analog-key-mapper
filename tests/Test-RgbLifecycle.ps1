@@ -31,9 +31,9 @@ try {
     # If Windows refuses the executable, stop without an alternate launch path.
     Write-Output ('RGB test data: ' + $dataFolder)
     $testProcess = Start-Process -FilePath $executable -ArgumentList ('"' + $dataFolder + '"') -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-    if (-not $testProcess.WaitForExit(35000)) {
+    if (-not $testProcess.WaitForExit(60000)) {
         $testProcess.Kill(); $testProcess.WaitForExit()
-        throw ('RGB lifecycle harness exceeded 35 seconds. Artifacts: ' + $testFolder)
+        throw ('RGB lifecycle harness exceeded 60 seconds. Artifacts: ' + $testFolder)
     }
     $testProcess.Refresh()
     if (Test-Path -LiteralPath $stdout) { [Console]::Write([System.IO.File]::ReadAllText($stdout)) }

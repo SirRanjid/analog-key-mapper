@@ -62,6 +62,7 @@ namespace Tk75.App
                     return Tr("Beleuchtungszugriff wird vorbereitet …", "Preparing lighting access …");
                 lock (work.Gate)
                 {
+                    if (work.StartupApprovalPending) return Tr("Bestätigung für erkannte Tastenfarben ausstehend", "Confirmation for recognized key colors is pending");
                     if (work.State == 0) return Tr("Normale Beleuchtung wird gesichert …", "Backing up normal lighting …");
                     if (work.Error != null)
                     {
@@ -102,6 +103,9 @@ namespace Tk75.App
                 rgbAttemptedReader = current; rgbAttemptedModel = model;
                 if (rgbBackupWork != null) lock (rgbBackupWork.Gate) { rgbBackupWork.Abort = true; Monitor.PulseAll(rgbBackupWork.Gate); }
                 var work = new RgbBackupWork(current, model.Value, store.Root);
+                work.StartupMarkerKeys = BuildRgbStartupMarkerKeys(UiReadProfile, model.Value);
+                LoadRgbStartupPreference(true);
+                work.StartupAutoRepair = rgbStartupAutoRepair;
                 rgbBackupWork = work;
                 try
                 {
@@ -110,6 +114,7 @@ namespace Tk75.App
                 }
                 catch (Exception ex) { lock (work.Gate) { work.Error = BoundedRgbError(ex); work.State = 2; work.Busy = false; work.Stopped = true; } }
             }
+            RefreshRgbStartupConfirmation();
             // The shortcut editor temporarily unregisters its hotkeys. Keep the
             // applied color plan while editing instead of restoring the original
             // picture and writing the same marker again when the dialog closes.
@@ -231,7 +236,13 @@ namespace Tk75.App
             internal string Error;
             internal string Prefix, IdentityHash, BackupFile, LastPlanKey;
             internal Dictionary<string, object> Identity;
-            internal Tk75RgbSnapshot Original, Current, Desired;
+            internal Tk75RgbSnapshot Original, Current, Desired, InitialExpected;
+            internal Dictionary<int, HashSet<int>> StartupMarkerKeys = new Dictionary<int, HashSet<int>>();
+            internal bool StartupRepairPending;
+            internal bool StartupAutoRepair, StartupApprovalPending, StartupApprovalShown;
+            internal int StartupApproval;
+            internal RgbStartupMarkerDecision StartupProposal;
+            internal Tk75RgbSnapshot StartupObserved;
             internal Thread Worker;
             internal bool Busy = true, Stopped, Abort, QuitAfterRestore, RestoreRequested, RecoveryRequired, Applied, SwitchKeyUnavailable;
             internal int Sequence, UnsupportedKeys, InitAttempts, CloseRestoreAttempts;
@@ -344,7 +355,9 @@ namespace Tk75.App
         sealed class RgbRecoveryGroup
         {
             internal string BackupFile, Prefix;
-            internal Tk75RgbSnapshot Original;
+            internal Tk75RgbSnapshot Original, InitialExpected;
+            internal string SupersedesBackup;
+            internal int SupersedesSequence;
             internal int Sequence;
             internal readonly List<RgbRecoveryStep> Steps = new List<RgbRecoveryStep>();
         }
@@ -364,6 +377,7 @@ namespace Tk75.App
                     if (RgbNumber(backup, "SchemaVersion") != 1 || RgbText(backup, "IdentitySha256") != work.IdentityHash || RgbText(backup, "Phase") != "Complete")
                         throw new InvalidDataException("Original lighting backup identity mismatch.");
                     group = new RgbRecoveryGroup { BackupFile = backupFile, Prefix = backupFile.Substring(0, backupFile.Length - ".backup.json".Length), Original = RgbJournalSnapshot(backup, "Snapshot") };
+                    ReadRgbStartupProvenance(group, backup, directory);
                     groups.Add(backupName, group);
                 }
                 if (RgbText(request, "OriginalSnapshotSha256") != RgbHash(Tk75RgbProtocol.EncodeSnapshot(group.Original))) throw new InvalidDataException("Lighting transaction refers to a different original snapshot.");
@@ -384,6 +398,7 @@ namespace Tk75.App
                 }
                 group.Steps.Add(step); group.Sequence = Math.Max(group.Sequence, step.Sequence);
             }
+            HashSet<string> superseded = SupersededRgbBackups(groups);
             RgbRecoveryGroup pending = null;
             foreach (RgbRecoveryGroup group in groups.Values)
             {
@@ -398,11 +413,13 @@ namespace Tk75.App
                     resolved = Math.Max(resolved, sequence);
                 }
                 group.Steps.RemoveAll(delegate(RgbRecoveryStep step) { return step.Sequence <= resolved; });
+                if (resolved != 0) group.InitialExpected = group.Original;
                 if (group.Steps.Count == 0) continue;
                 // Validate every retained chain even when its last confirmed
                 // operation restored the original; corruption never opens writes.
-                RgbRecoveryDecision valid = RgbRecoveryDecision.Assess(group.Original, group.Original, group.Steps);
+                RgbRecoveryDecision valid = RgbRecoveryDecision.Assess(group.Original, group.Original, group.Steps, group.InitialExpected);
                 if (!valid.AtOriginal) throw new InvalidDataException(valid.Error ?? "Invalid lighting recovery history.");
+                if (superseded.Contains(Path.GetFileName(group.BackupFile))) continue;
                 RgbRecoveryStep last = group.Steps[group.Steps.Count - 1];
                 if (last.Confirmed != null && Tk75RgbExchange.Equivalent(last.Confirmed, group.Original)) continue;
                 if (pending != null) throw new InvalidDataException("Several unfinished original lighting backups exist; automatic changes are paused.");
@@ -412,7 +429,7 @@ namespace Tk75.App
         }
         static void ResolveRgbAtOriginal(RgbBackupWork work, Tk75RgbSnapshot current)
         {
-            if (work.Steps.Count == 0) return;
+            if (work.Steps.Count == 0) { work.InitialExpected = work.Original; work.StartupRepairPending = false; return; }
             var resolution = new Dictionary<string, object> {
                 { "SchemaVersion", 2 }, { "IdentitySha256", work.IdentityHash }, { "OriginalBackup", Path.GetFileName(work.BackupFile) },
                 { "ResolvedThroughSequence", work.Sequence }, { "CompletedUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }
@@ -420,6 +437,8 @@ namespace Tk75.App
             PutRgbSnapshot(resolution, "Confirmed", current);
             WriteRgbJournal(work.Prefix + ".resolved-" + work.Sequence.ToString("D8", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N") + ".json", resolution);
             work.Steps.Clear();
+            work.InitialExpected = work.Original;
+            work.StartupRepairPending = false;
         }
         static void InitializeRgbWork(RgbBackupWork work)
         {
@@ -470,19 +489,30 @@ namespace Tk75.App
                 if (afterHash != identityHash || work.Reader.DeviceModelId != work.Model)
                     throw new InvalidDataException("The keyboard identity changed during lighting backup.");
                 RgbRecoveryGroup recovery = FindRgbRecovery(work, directory);
-                if (recovery != null)
+                RgbRecoveryDecision previousDecision = recovery == null ? null :
+                    RgbRecoveryDecision.Assess(recovery.Original, snapshot, recovery.Steps, recovery.InitialExpected);
+                // Exact journal evidence takes priority, including marker colors
+                // or key choices that no longer exist in the current profile.
+                bool sameRecoveryContext = recovery == null || recovery.Original.ModelId == snapshot.ModelId &&
+                    recovery.Original.Profile == snapshot.Profile && recovery.Original.Layer == snapshot.Layer;
+                RgbStartupMarkerDecision startup = !sameRecoveryContext || previousDecision != null && (previousDecision.AtOriginal || previousDecision.CanRestore)
+                    ? null : RgbStartupMarkers.Assess(snapshot, work.StartupMarkerKeys, recovery == null ? null : recovery.Original);
+                if (recovery != null && (startup == null || !startup.CanRepair))
                 {
                     journal["Phase"] = "RecoveryObserved";
                     journal["OriginalBackup"] = Path.GetFileName(recovery.BackupFile);
                     PutRgbSnapshot(journal, "Observed", snapshot);
                     WriteRgbJournal(prefix + ".recovery-observed.json", journal);
                     work.Prefix = recovery.Prefix; work.BackupFile = recovery.BackupFile; work.Original = recovery.Original;
+                    work.InitialExpected = recovery.InitialExpected;
                     work.Current = snapshot; work.Sequence = recovery.Sequence; work.Steps.AddRange(recovery.Steps);
-                    RgbRecoveryDecision decision = RgbRecoveryDecision.Assess(work.Original, snapshot, work.Steps);
+                    RgbRecoveryDecision decision = previousDecision;
                     if (decision.AtOriginal) ResolveRgbAtOriginal(work, snapshot);
                     lock (work.Gate)
                     {
-                        work.RecoveryRequired = decision.NeedsRecovery; work.Error = decision.CanRestore || decision.AtOriginal ? null : decision.Error;
+                        work.RecoveryRequired = decision.NeedsRecovery;
+                        work.Error = startup != null && startup.HasMarkers && !startup.CanRepair ? RgbStartupAmbiguous :
+                            decision.CanRestore || decision.AtOriginal ? null : decision.Error;
                         work.Applied = !decision.AtOriginal; work.State = 1;
                         // A matching unfinished transaction belongs to this
                         // saved override. Restore it through the usual journaled
@@ -492,19 +522,54 @@ namespace Tk75.App
                     }
                     return;
                 }
-                byte[] encoded = Tk75RgbProtocol.EncodeSnapshot(snapshot);
+                if (startup != null && startup.HasMarkers && !startup.CanRepair)
+                {
+                    journal["Phase"] = "StartupMarkerReview";
+                    PutRgbSnapshot(journal, "Observed", snapshot);
+                    journal["StartupCandidates"] = EncodeRgbStartupCandidates(work.StartupMarkerKeys);
+                    journal["Reason"] = startup.Reason;
+                    WriteRgbJournal(prefix + ".startup-observed.json", journal);
+                    throw new InvalidDataException(RgbStartupAmbiguous);
+                }
+                Tk75RgbSnapshot baseline = startup != null && startup.CanRepair ? startup.Repaired : snapshot;
+                if (!Object.ReferenceEquals(baseline, snapshot))
+                {
+                    if (!AwaitRgbStartupApproval(work, snapshot, startup))
+                        throw new InvalidDataException(RgbStartupDeclined);
+                    journal["Operation"] = "StartupLightingReconciliation";
+                    journal["StartupConsent"] = work.StartupAutoRepair ? "RememberedPreference" : "ConfirmedForThisConnection";
+                    journal["BaselineKind"] = "StartupMarkerReconciliation";
+                    PutRgbSnapshot(journal, "StartupObserved", snapshot);
+                    journal["StartupCandidates"] = EncodeRgbStartupCandidates(work.StartupMarkerKeys);
+                    if (recovery != null)
+                    {
+                        PutRgbSnapshot(journal, "StartupReference", recovery.Original);
+                        journal["SupersedesOriginalBackup"] = Path.GetFileName(recovery.BackupFile);
+                        journal["SupersedesThroughSequence"] = recovery.Sequence;
+                    }
+                }
+                byte[] encoded = Tk75RgbProtocol.EncodeSnapshot(baseline);
                 // Verify that the stored representation is independently
                 // decodable before publishing the immutable completed backup.
                 Tk75RgbSnapshot decoded = Tk75RgbProtocol.DecodeSnapshot(encoded);
-                if (decoded.ModelId != snapshot.ModelId || decoded.Profile != snapshot.Profile || decoded.Layer != snapshot.Layer ||
-                    !Tk75RgbProtocol.Equal(decoded.RawSettings, snapshot.RawSettings) || !Tk75RgbProtocol.Equal(decoded.Picture, snapshot.Picture))
+                if (decoded.ModelId != baseline.ModelId || decoded.Profile != baseline.Profile || decoded.Layer != baseline.Layer ||
+                    !Tk75RgbProtocol.Equal(decoded.RawSettings, baseline.RawSettings) || !Tk75RgbProtocol.Equal(decoded.Picture, baseline.Picture))
                     throw new InvalidDataException("The lighting backup representation failed its integrity check.");
                 journal["Phase"] = "Complete"; journal["CompletedUtc"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
                 journal["SnapshotFormat"] = "Tk75RgbProtocol-v1"; journal["SnapshotBytes"] = encoded.Length;
                 journal["SnapshotSha256"] = RgbHash(encoded); journal["SnapshotBase64"] = Convert.ToBase64String(encoded);
-                journal["BackupOnly"] = true;
+                journal["BackupOnly"] = Object.ReferenceEquals(baseline, snapshot);
                 WriteRgbJournal(prefix + ".backup.json", journal);
-                lock (work.Gate) { work.Prefix = prefix; work.BackupFile = prefix + ".backup.json"; work.Original = snapshot; work.Current = snapshot; work.State = 1; }
+                lock (work.Gate)
+                {
+                    work.Prefix = prefix; work.BackupFile = prefix + ".backup.json";
+                    work.Original = baseline; work.InitialExpected = snapshot; work.Current = snapshot; work.State = 1;
+                    if (!Object.ReferenceEquals(baseline, snapshot))
+                    {
+                        work.StartupRepairPending = true; work.RecoveryRequired = true; work.Applied = true;
+                        work.Desired = baseline; work.RestoreRequested = true;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -527,14 +592,18 @@ namespace Tk75.App
                 // A failed retry must describe the newly observed context too.
                 // Readiness remains closed until assessment and restore succeed.
                 lock (work.Gate) work.Current = expected;
-                RgbRecoveryDecision recovery = RgbRecoveryDecision.Assess(work.Original, expected, work.Steps);
+                RgbRecoveryDecision recovery = RgbRecoveryDecision.Assess(work.Original, expected, work.Steps, work.InitialExpected ?? work.Original);
                 if (recovery.AtOriginal)
                 {
                     ResolveRgbAtOriginal(work, expected);
                     lock (work.Gate) { work.Current = expected; work.RecoveryRequired = false; work.Applied = false; work.Error = null; work.State = 1; }
                     return;
                 }
-                if (!recovery.CanRestore) throw new InvalidDataException(recovery.Error ?? "Current keyboard lighting does not match the saved transaction; no unrelated changes were overwritten.");
+                // Before the first seeded transaction, the durable recognition
+                // proof authorizes only its exact freshly re-read observation.
+                bool initialStartupRepair = work.StartupRepairPending && work.Steps.Count == 0 &&
+                    Tk75RgbExchange.Equivalent(expected, work.InitialExpected);
+                if (!recovery.CanRestore && !initialStartupRepair) throw new InvalidDataException(recovery.Error ?? "Current keyboard lighting does not match the saved transaction; no unrelated changes were overwritten.");
                 desired = work.Original;
             }
             if (Tk75RgbExchange.Equivalent(expected, desired)) return;
@@ -573,7 +642,7 @@ namespace Tk75.App
             };
             PutRgbSnapshot(completion, "Confirmed", confirmed); WriteRgbJournal(path + ".confirmed.json", completion);
             step.Confirmed = confirmed;
-            lock (work.Gate) { work.Current = confirmed; work.RecoveryRequired = false; work.Error = null; work.State = 1; work.Applied = !Tk75RgbExchange.Equivalent(confirmed, work.Original); }
+            lock (work.Gate) { work.Current = confirmed; work.RecoveryRequired = false; work.StartupRepairPending = false; work.Error = null; work.State = 1; work.Applied = !Tk75RgbExchange.Equivalent(confirmed, work.Original); }
         }
         static void InitializeRgbWithRetry(RgbBackupWork work)
         {
@@ -675,7 +744,7 @@ namespace Tk75.App
             bool restoreLighting = work != null && source != null && Object.ReferenceEquals(work.Reader, source);
             SetClosePhase(2, restoreLighting ? ShutdownPhaseState.Running : ShutdownPhaseState.Completed);
             System.Threading.Tasks.Task connections = runtime.CancelPendingConnections();
-            if (!restoreLighting && connections.IsCompleted) return false;
+            if (!restoreLighting && source == null && connections.IsCompleted) return false;
             rgbClosePending = true; Enabled = false; uiTimer.Stop(); StopDeviceDiscovery();
             SetClosePhase(3, ShutdownPhaseState.Running);
             ThreadPool.QueueUserWorkItem(delegate
@@ -692,6 +761,11 @@ namespace Tk75.App
                                 restoreFailure = work.Error ?? "Lighting restoration did not finish before closing.";
                     if (restoreFailure != null) LogShutdownFailure("Lighting restoration incomplete; original backup retained", new IOException(restoreFailure));
                     SetClosePhase(2, restoreFailure == null ? ShutdownPhaseState.Completed : ShutdownPhaseState.Failed);
+                    // Keep the editor alive until OFF, fallback restore and the
+                    // helper's final exit are confirmed, even without RGB work.
+                    if (source != null)
+                        try { source.DisposeAndWait(ReaderCleanupTimeoutMilliseconds); }
+                        finally { normalReaderCleanupWaited = true; }
                     bool connectionsFinished = connections.Wait(Math.Max(0, NormalCloseTimeoutMilliseconds - (int)elapsed.ElapsedMilliseconds));
                     if (!connectionsFinished)
                     {

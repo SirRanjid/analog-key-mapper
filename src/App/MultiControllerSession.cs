@@ -47,6 +47,8 @@ namespace Tk75.App
         object inputSource;
         bool disposed, keyboardMode;
         bool previewActive = true;
+        // Includes detached output removals as well as private connections.
+        // Retain failed cleanup so a later shutdown cannot claim a clean exit.
         readonly List<Task> connectionCleanup = new List<Task>();
 
         sealed class Slot
@@ -130,13 +132,13 @@ namespace Tk75.App
             var asynchronous = session as IAsyncControllerSession;
             if (asynchronous == null) return Task.FromResult(0);
             Task cleanup = asynchronous.CancelPendingConnection();
-            connectionCleanup.RemoveAll(task => task.IsCompleted);
+            connectionCleanup.RemoveAll(task => task.Status == TaskStatus.RanToCompletion);
             if (!cleanup.IsCompleted && !connectionCleanup.Contains(cleanup)) connectionCleanup.Add(cleanup);
             return cleanup;
         }
         void CancelPendingConnectionsLocked()
         {
-            connectionCleanup.RemoveAll(task => task.IsCompleted);
+            connectionCleanup.RemoveAll(task => task.Status == TaskStatus.RanToCompletion);
             foreach (Slot slot in slots.Values) TrackConnectionCancellationLocked(slot.Session);
         }
         public bool AnyEnabled
@@ -385,19 +387,21 @@ namespace Tk75.App
         }
         public Task DisableControllerAsync(string controllerId, string reason)
         {
-            ControllerRelease release = null; Task cleanup;
             lock (gate)
             {
                 Slot slot;
                 if (disposed || controllerId == null || !slots.TryGetValue(controllerId, out slot)) return Task.FromResult(0);
-                cleanup = TrackConnectionCancellationLocked(slot.Session);
-                release = slot.Session.PrepareDisable(reason);
+                Task cleanup = TrackConnectionCancellationLocked(slot.Session);
+                ControllerRelease release = slot.Session.PrepareDisable(reason);
+                if (release == null) return cleanup;
+                Task removal = Task.Factory.StartNew(delegate {
+                    try { release.Neutral(); } finally { release.Dispose(); }
+                }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                // Register before releasing the gate: shutdown must also drain
+                // outputs already detached by an earlier disconnect click.
+                connectionCleanup.Add(removal);
+                return Task.WhenAll(cleanup, removal);
             }
-            if (release == null) return cleanup;
-            Task removal = Task.Factory.StartNew(delegate {
-                try { release.Neutral(); } finally { release.Dispose(); }
-            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-            return Task.WhenAll(cleanup, removal);
         }
         public void DisableSelected(string reason)
         { lock (gate) { DisableControllerLocked(selected, reason); } }

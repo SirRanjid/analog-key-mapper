@@ -55,6 +55,9 @@ namespace Tk75.App
         public MainForm(string dataPath, bool preview)
         {
             previewMode = preview;
+            Icon applicationIcon = AppStatusIcon.CreateApplication();
+            Icon = applicationIcon;
+            Disposed += delegate { applicationIcon.Dispose(); };
             Text = "Analog · Keyboard Mapper"; ClientSize = new Size(1440, 880); MinimumSize = new Size(1080, 740);
             Font = new Font("Segoe UI", 9.5f); BackColor = ModernTheme.Background; StartPosition = FormStartPosition.CenterScreen;
             store = new WorkspaceStore(dataPath); runtime = new MultiControllerSession(store);
@@ -364,7 +367,7 @@ namespace Tk75.App
         {
             UpdatePressureCapture();
             UpdateInputThresholdCapture();
-            if (closing || deviceDetachInProgress) return;
+            if (closing || deviceDetachInProgress) { RefreshTrayStatus(); return; }
             bool showLive = Visible && WindowState != FormWindowState.Minimized;
             runtime.SetPreviewActive(showLive);
             ++ticks;
@@ -375,6 +378,7 @@ namespace Tk75.App
             UpdateDetectedLayout();
             if (ticks % 30 == 0 && activeMappingDrag == null) CheckForeground();
             TryReconnectStartupControllers();
+            RefreshTrayStatus();
             if (!showLive) return;
 
             RefreshInputModeUi();

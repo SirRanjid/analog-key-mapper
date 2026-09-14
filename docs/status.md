@@ -1,6 +1,6 @@
 # Compatibility and validation
 
-Release-candidate validation, updated **13 September 2026**. [Downloads and release versions](https://github.com/SirRanjid/analog-key-mapper/releases) · [User guide](user-guide.md) · [Build instructions](building.md)
+Release-candidate validation, updated **14 September 2026**. [Downloads and release versions](https://github.com/SirRanjid/analog-key-mapper/releases) · [User guide](user-guide.md) · [Build instructions](building.md)
 
 This page describes implemented features and recorded validation. Release assets identify their own version; the observations below apply only to the builds and test setups stated here. A release candidate is not a stable 1.0 acceptance claim.
 
@@ -26,11 +26,15 @@ The successful two-Xbox/two-DualSense observations below apply to the preceding 
 | Xbox output | VIIPER-derived helper with usbip-win2 0.9.8.0; distinct Windows XInput packets were verified with two Xbox and two DualSense devices on a preceding build. | Windows exposes at most four XInput controllers, including physical ones. The final optimized helper is not live-validated. |
 | DualSense output | Separate Windows HID devices, common mapped buttons, triggers and sticks; neutral enumeration/readback, distinct packets and peer-preserving removal passed on the preceding mixed-device build. | Does not consume XInput slots. No PS5-console, touchpad, gyro or other extended-feature guarantee; game compatibility remains unverified. |
 | ViGEm | Retained adapter code. | Activation is disabled because of the documented nonneutral startup behavior. It is not the active Xbox backend. |
-| Lighting | Backups, guarded writes, supported static backgrounds and restore workflow. Hardware update/restore cycles were confirmed on the tested keyboard. | Unsupported animated backgrounds are rejected. A changed onboard profile or externally changed state can require recovery. |
+| Lighting | Backups, guarded writes, supported static backgrounds and restore workflow. rc.10 adds confirmation before cleanup of recognized leftover key colors and optional future automatic cleanup. Earlier update/restore cycles were confirmed on the tested keyboard. | New startup cleanup is synthetically tested. Identical external color patterns cannot prove ownership; ambiguous replacement colors remain unchanged. Unsupported animated backgrounds and changed onboard profiles can prevent recovery. |
 
 Profiles offer **32 output-capable slots in total**, each freely assigned to Xbox or DualSense, subject to the Xbox/XInput limit. This is the software's supported configuration limit; the recorded mixed-device acceptance used **two Xbox plus two DualSense**, not 32 connected devices. Larger configurations remain to be load-tested.
 
 ## Recorded automated checks
+
+The rc.10 lighting and lifecycle changes passed **1,765 targeted local checks**: marker recognition 92, recovery decisions 815, lighting lifecycle 517, background UI 205, shutdown 101, saved permission 14 and the confirmation dialog 21. They cover disabled lighting options and controllers, preserved external backgrounds, matching colors on unrelated keys, ambiguous replacements, interrupted writes, damaged recovery data, onboard profile changes, one-time and saved approval, and exit while a question is open. Both dialog languages are checked. These tests use simulated keyboard access and do not restart Windows or connect a physical device.
+
+The rc.10 release workflow discovers **62 offline suites**, including the three new startup suites, and also builds the Windows components, tests the controller helper and verifies source/binary packages. The [build workflow](https://github.com/SirRanjid/analog-key-mapper/actions/workflows/build.yml) and [rc.10 release notes](release-notes-1.0.0-rc.10.md) identify completed validation and the exact published source. The targeted local results above do not themselves establish a successful full rc.10 workflow. Real hardware, Windows shutdown and game acceptance remain open.
 
 The [recorded rc.9 validation](https://github.com/SirRanjid/analog-key-mapper/actions/runs/34781600962) passed **59 offline suites**, the Windows application/helper build, helper tests and checked packaging. Input learning adds 40,895 pure capture assertions, 145 profile checks, 1,048 routing checks, 121 HID parsing checks and 777 keyboard control checks. Native UI fixtures cover the actual modal assistant, Apply/Cancel ownership, selected-key scope, generic profile pressure isolation, source disconnection and reconnect races. Screenshots use synthetic devices. Physical hardware, game compatibility and native input timing remain unverified for these new sources.
 
@@ -64,7 +68,7 @@ The UI checks include original-size key and controller pixels, transparent conto
 
 The recorded UI revision includes 136 modifier-label checks, 66 output-summary checks and 147 SOCD-drag checks. Output summaries and selection outlines were also inspected in German and at minimum window size. A separate deterministic layout check covered 200 mixtures of all 24 controller targets in both styles, including 2,396 broad modifier labels, without creating a window or touching hardware. The background UI and visual-keyboard suites above also passed on this UI revision.
 
-The full offline command now discovers 54 suites. The initial finalization run exposed an RGB journal path-length failure; compact filenames fixed the underlying issue, with successful follow-up checks for ordinary download paths and legacy recovery. Packaging checks separately reject stale versions, changed executables, source/receipt mismatches and unlisted source files. The [GitHub workflow](https://github.com/SirRanjid/analog-key-mapper/actions/workflows/build.yml) builds both components, runs all offline suites and the Go protocol tests, then creates verified packages.
+The earlier rc.8 offline command discovered 54 suites. The initial finalization run exposed an RGB journal path-length failure; compact filenames fixed the underlying issue, with successful follow-up checks for ordinary download paths and legacy recovery. Packaging checks separately reject stale versions, changed executables, source/receipt mismatches and unlisted source files. The [GitHub workflow](https://github.com/SirRanjid/analog-key-mapper/actions/workflows/build.yml) builds both components, runs all offline suites and the Go protocol tests, then creates verified packages.
 
 These targeted runs use no real keyboard/controller and do not perform a complete native OLE drag. They do not establish that every suite in `Test-All.ps1` passed on every machine. A blocked or failed test must be reported as such.
 

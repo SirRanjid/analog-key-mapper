@@ -132,11 +132,14 @@ namespace Tk75.App
         }
         void DisposeLearnedInputs()
         {
-            ++learnedSourceGeneration; learnedSourcesOpening = false; CancelLearnedOpenBatches();
+            ++learnedSourceGeneration; learnedSourcesOpening = false;
             var view = learnedInputRouting; learnedInputRouting = null;
-            if (view != null) view.Dispose();
-            foreach (var source in learnedSources.Values) source.Dispose();
+            var sources = learnedSources.Values.ToArray();
             learnedSources.Clear();
+            var cleanup = new List<Action> { CancelLearnedOpenBatches };
+            if (view != null) cleanup.Add(view.Dispose);
+            foreach (var source in sources) cleanup.Add(source.Dispose);
+            RunShutdownCleanup(cleanup.ToArray());
         }
         void EnsureLearnedPressureRange()
         {

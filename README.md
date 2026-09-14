@@ -1,10 +1,12 @@
+<img src="docs/images/logo.png" alt="Analog Key Mapper logo" width="96" height="96">
+
 # Analog Key Mapper
 
 **Turn keyboard pressure and supported hardware inputs into controller controls — with visual mapping, editable response curves and optional key lighting.**
 
-**Free and open source · 1.0.0-rc.9 · Windows x64**
+**Free and open source · 1.0.0-rc.10 · Windows x64**
 
-**[Download Windows rc.9](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.9/AnalogKeyMapper-1.0.0-rc.9-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.9) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
+**[Download Windows rc.10](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.10/AnalogKeyMapper-1.0.0-rc.10-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.10) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
 
 ![Analog Key Mapper with WASD, Shift and Space mapped to a controller, beside its lighting and USB connection controls](docs/images/controller.png)
 
@@ -16,12 +18,12 @@
 - **See and tune each output.** Keys, Curve and Controller tabs keep the keyboard in place. A larger square graph, compact settings and directly editable Bézier handles let you refine any curve, including presets.
 - **Set key behavior together.** Configure Rapid Trigger and opposite-key handling (SOCD). Use Capture, then click the opposite key to pair it. Use Ctrl+click or a selection rectangle for bulk edits, with undo.
 - **Tune one key or a whole selection.** Set individual min/max pressure ranges, or calibrate selected keys with one press and release. The keyboard shares one adjustable scale. Two vertical controls set actuation and release; move away from a slider while dragging for finer adjustments.
-- **Save your setup and lighting.** Keep JSON profiles, signal presets and named controllers. Optional mapped-key colors include a backup and restore workflow. English and German are included.
-- **Keep the editor out of the way.** Use the tray or opt into Windows startup. Controller reconnection is a separate option that starts off. [Background startup guide](docs/background-startup.md).
+- **Save your setup and lighting.** Keep JSON profiles, signal presets and named controllers. Optional mapped-key colors include backups, restoration and a startup check for leftover key markers, with confirmation before cleanup. English and German are included.
+- **Read the status at a glance.** The app logo carries a compact tray badge for connection, keyboard mode, active controllers or an action needing attention. Use the tray or opt into Windows startup; controller reconnection starts off separately. [Background startup guide](docs/background-startup.md).
 
 ## Quick start
 
-1. [Download the Windows rc.9 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.9/AnalogKeyMapper-1.0.0-rc.9-windows-x64.zip) and extract it into a writable folder.
+1. [Download the Windows rc.10 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.10/AnalogKeyMapper-1.0.0-rc.10-windows-x64.zip) and extract it into a writable folder.
 2. Double-click **`Verify-Checksums.bat`** to check the included files.
 3. Open **`AnalogKeyMapper.exe`** inside the extracted `AnalogKeyMapper` folder, connect your keyboard by USB, and create a mapping.
 
@@ -33,16 +35,20 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 ## Release candidate
 
-**rc.9** adds guided input learning for unresolved keys. It recognizes standard keyboard positions automatically and can route supported standard HID controls into selected logical keys. A review step applies the selection together, with one undo; existing assignments and curve settings stay intact. The new routes are saved per profile and reconnect only to their matching device identity. [What's new](docs/release-notes-1.0.0-rc.9.md) · [How learning works](docs/input-learning.md).
+**rc.10** checks for leftover mode-switch and controller colors when the keyboard connects, even if those lighting options or controllers are currently off. It proposes cleanup only when each matching color is confined to its configured keys and the replacement colors are known. Other key colors remain intact. The confirmation offers optional automatic cleanup for future matching patterns; this starts off and can be disabled again in the menu. An identical externally configured pattern is indistinguishable, so recognition is not proof of who set the colors. [What's new](docs/release-notes-1.0.0-rc.10.md) · [Lighting guide](docs/user-guide.md#optional-keyboard-lighting).
 
-The Windows checks cover 59 offline suites, including the real learning dialog, profile routing, device loss, lighting and shutdown. Physical hardware and game acceptance of the new input backends remains open. Analog keyboard pressure still needs a supported protocol: the existing wired TK75 TMR path is included, while a standard keyboard's on/off events cannot supply pressure values. This is not universal HID or analog-keyboard compatibility.
+The update also waits for actual keyboard-helper cleanup during exit and Windows shutdown, and embeds the official logo in the application and tray. A pending lighting question does not hold up exit.
+
+The new lighting and lifecycle changes passed **1,765 targeted local checks**. The release workflow covers **62 offline suites**, the Windows builds, controller-helper checks and verified packaging; see [validation status](docs/status.md) for completed runs and their exact versions. Physical hardware, real Windows shutdown and game acceptance of rc.10 remain open.
+
+The rc.9 input-learning features remain: automatically identify standard keyboard positions, learn supported HID controls, review assignments and apply them together with one undo. Routes reconnect only to their saved device identity. Analog pressure still needs a supported protocol; standard keyboard on/off events cannot supply pressure values. [Input learning guide](docs/input-learning.md).
 
 The rc.8 curve improvements remain: a larger square graph beside actuation/release controls, compact settings, editable Bézier presets, and finer slider adjustment when dragging away from the track. See the [user guide](docs/user-guide.md).
 
 The release candidate also includes these connection and lifecycle safeguards:
 
 - Controller creation runs asynchronously. Cancelled or outdated requests cannot later activate a controller after its profile, input source or mode has changed.
-- Windows shutdown starts controller cleanup, profile saving and lighting restoration independently. The keyboard helper also restores the original lighting before releasing its connection; unfinished recovery retains its backup.
+- Windows shutdown starts controller cleanup, profile saving and lighting restoration independently, and waits for completed helper cleanup within its total time budget. The helper retains the approved baseline for restoration; unfinished recovery retains its backup.
 - Optional startup reconnection consumes the previous confirmed session once. A failed save or interrupted exit does not silently reuse an old controller list; the app explains when manual connection is needed.
 - Compact lighting journal names support normal extracted download folders while preserving recovery from older backups.
 
@@ -82,7 +88,20 @@ Select unresolved keys, choose the input device and work through the selection. 
 
 </details>
 
-Screenshots show **1.0.0-rc.9** with synthetic example data, the English interface and QWERTY key legends.
+<details>
+<summary>Startup lighting check and tray status</summary>
+
+Review detected key colors and their proposed replacements before cleanup:
+
+![Startup lighting confirmation listing affected keys and offering optional automatic cleanup](docs/images/startup-cleanup.png)
+
+The app logo stays recognizable while a small badge shows the current status:
+
+![Analog Key Mapper tray icons for connecting, controllers off, keyboard mode, active controller and action needed](docs/images/tray-status.png)
+
+</details>
+
+Screenshots show **1.0.0-rc.10** with synthetic example data, the English interface and QWERTY key legends. The tray-status image compares the app's rendered icon states.
 
 ## Contributing and license
 

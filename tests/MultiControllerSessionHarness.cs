@@ -152,6 +152,40 @@ public static class MultiControllerSessionHarness
     }
     static void AsyncReservationsAndRetiredCleanup()
     {
+        foreach (string change in new[] { "configure", "dispose" })
+        using (var f = new Fixture())
+        using (var entered = new ManualResetEvent(false))
+        using (var release = new ManualResetEvent(false))
+        {
+            var runtime = f.Runtime; runtime.Configure(TwoPlayers(), Calibration());
+            var old = f.Slot("player2");
+            old.RemoveHook = delegate { entered.Set(); if (!release.WaitOne(2000)) throw new TimeoutException("Synthetic output removal"); };
+            runtime.EnableController("player2");
+            Task disconnect = runtime.DisableControllerAsync("player2", "disconnect before shutdown");
+            try
+            {
+                Check(entered.WaitOne(1000) && !runtime.IsControllerEnabled("player2"), "A disconnect relinquishes its slot while the owned output removal is still pending.");
+                if (change == "configure") runtime.Configure(new Profile(), new Dictionary<int, Calibration>());
+                else runtime.Dispose();
+                Task drain = runtime.CancelPendingConnections();
+                Check(!drain.IsCompleted, change + " retains detached output removal in the shutdown drain.");
+                release.Set();
+                Check(drain.Wait(1500) && disconnect.Wait(1500) && old.RemoveCalls == 1,
+                    "Shutdown completes only after the original detached output was removed exactly once.");
+            }
+            finally { release.Set(); disconnect.Wait(1500); }
+        }
+        using (var f = new Fixture())
+        {
+            var runtime = f.Runtime; runtime.Configure(TwoPlayers(), Calibration());
+            f.Slot("main").RemoveHook = delegate { throw new InvalidOperationException("Synthetic removal failure"); };
+            runtime.EnableController("main");
+            Task disconnect = runtime.DisableControllerAsync("main", "failing removal");
+            Reject(delegate { disconnect.Wait(1500); }, "A failed output removal reaches its disconnect caller.");
+            Task drain = runtime.CancelPendingConnections();
+            Check(drain.IsFaulted, "A completed removal failure must still prevent a clean shutdown confirmation.");
+            Reject(delegate { drain.Wait(); }, "Shutdown observes the retained removal failure.");
+        }
         using (var f = new AsyncFixture(1))
         {
             var runtime = f.Runtime;

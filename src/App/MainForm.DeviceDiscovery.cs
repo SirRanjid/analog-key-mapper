@@ -189,7 +189,7 @@ namespace Tk75.App
                 catch (Exception ex) { deviceDetachCleanupFailure = ex; LogShutdownFailure("Disconnect runtime", ex); }
                 finally {
                     try { RestoreRgbBeforeDisconnect(removed, RgbCloseTimeoutMilliseconds); } catch (Exception ex) { deviceDetachCleanupFailure = ex; LogShutdownFailure("Disconnect lighting", ex); }
-                    try { removed.Dispose(); } catch (Exception ex) { deviceDetachCleanupFailure = ex; LogShutdownFailure("Disconnect reader", ex); }
+                    try { removed.DisposeAndWait(ReaderCleanupTimeoutMilliseconds); } catch (Exception ex) { deviceDetachCleanupFailure = ex; LogShutdownFailure("Disconnect reader", ex); }
                     finally { cleanup.TrySetResult(null); }
                 }
                 PostDiscovery(delegate {

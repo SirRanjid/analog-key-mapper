@@ -42,6 +42,7 @@ namespace Tk75.App
         readonly RawLiveView view = new RawLiveView();
         readonly Stopwatch clock = new Stopwatch();
         Thread worker;
+        Exception cleanupFailure;
         volatile bool stopRequested;
         bool disposed, isReading;
         long sampleCount;
@@ -58,6 +59,8 @@ namespace Tk75.App
         public string Fingerprint { get; private set; }
         public string Status { get { lock (gate) { return status; } } }
         public bool IsReading { get { lock (gate) { return isReading; } } }
+        internal bool IsStarting { get { lock (gate) { return worker != null && !stopRequested && !isReading; } } }
+        internal bool HasFault { get { lock (gate) { return faultRaised != 0; } } }
         public bool HasReceivedSamples { get { lock (gate) { return sampleCount != 0; } } }
         public long SampleCount { get { lock (gate) { return sampleCount; } } }
         public uint? DeviceModelId { get { lock (gate) { return deviceModelId; } } }
@@ -165,7 +168,7 @@ namespace Tk75.App
                 {
                     if (disposed) throw new ObjectDisposedException("ReaderSession");
                     if (worker != null) return;
-                    stopRequested = false; faultRaised = 0; isReading = false; sampleCount = 0; deviceModelId = null; rgbSource = null; eventSource = null; eventLeaseFailed = false;
+                    stopRequested = false; faultRaised = 0; cleanupFailure = null; isReading = false; sampleCount = 0; deviceModelId = null; rgbSource = null; eventSource = null; eventLeaseFailed = false;
                     view.Invalidate("Neue Lesesitzung; alte Werte sind unbekannt.");
                     clock.Restart(); status = "Tastatur-Zugriff wird geprüft und gestartet …";
                     worker = new Thread(ReadLoop) { IsBackground = true, Name = "TK75 managed input" };
@@ -229,13 +232,23 @@ namespace Tk75.App
                         try { handler(sample, elapsed); } catch (Exception) { }
                 }
             }
-            catch (Exception ex) { if (!stopRequested || ex is MonitorCleanupException) Fail("Inputfehler: " + ex.Message); }
+            catch (Exception ex)
+            {
+                // Source construction can itself have failed while draining an
+                // already launched helper. Preserve that cleanup failure too.
+                if (ex is MonitorCleanupException) lock (gate) cleanupFailure = ex;
+                if (!stopRequested || ex is MonitorCleanupException) Fail("Inputfehler: " + ex.Message);
+            }
             finally
             {
                 lock (gate) { rgbSource = null; eventSource = null; }
                 if (source != null)
                     try { source.Dispose(); }
-                    catch (Exception ex) { Fail("Inputquelle konnte nicht sauber geschlossen werden: " + ex.Message); }
+                    catch (Exception ex)
+                    {
+                        lock (gate) cleanupFailure = ex;
+                        Fail("Inputquelle konnte nicht sauber geschlossen werden: " + ex.Message);
+                    }
                 lock (gate)
                 {
                     isReading = false;
@@ -318,6 +331,24 @@ namespace Tk75.App
         {
             lock (gate) { disposed = true; }
             Stop();
+        }
+
+        // Stop/Dispose intentionally return promptly for interactive callers.
+        // Session-end and reconnect owners must also wait for source.Dispose:
+        // the HID helper can still be restoring lighting after Stop's 250ms join.
+        internal void DisposeAndWait(int timeoutMs)
+        {
+            if (timeoutMs < 0) throw new ArgumentOutOfRangeException("timeoutMs");
+            var elapsed = Stopwatch.StartNew();
+            Dispose();
+            Thread active;
+            lock (gate) active = worker;
+            if (active != null && (active == Thread.CurrentThread ||
+                !active.Join(Math.Max(0, timeoutMs - (int)elapsed.ElapsedMilliseconds))))
+                throw new TimeoutException("The keyboard reader/helper cleanup has not finished; lighting recovery remains unconfirmed.");
+            Exception failure;
+            lock (gate) failure = cleanupFailure;
+            if (failure != null) throw new IOException("The keyboard reader/helper did not close cleanly.", failure);
         }
     }
 }
