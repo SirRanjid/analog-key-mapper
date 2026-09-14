@@ -31,7 +31,7 @@ $arguments += $appSources
 $arguments += (Join-Path $PSScriptRoot 'DocumentationScreenshots.cs')
 $arguments += (Join-Path $PSScriptRoot 'PresentationEntry.cs')
 foreach ($harness in @('AppUiHarness','AppDialogHarness','KeyboardGestureUiHarness','ControllerModifierUiHarness',
-    'MappingSummaryUiHarness','SocdDragUiHarness','PressureRangeSliderUiHarness','ThemeControlsUiHarness',
+    'MappingSummaryUiHarness','SocdDragUiHarness','PressureRangeSliderUiHarness','ThemeControlsUiHarness','RebuildPaintUiHarness','ScrollbarInteractionUiHarness',
     'KeyAnnotationUiHarness','CurveSettingsSliderUiHarness','CurveShapePickerUiHarness','CurveDynamicsUiHarness',
     'CurveRangeRailUiHarness','SliderPrecisionUiHarness','InputThresholdUiHarness','InputThresholdCaptureUiHarness',
     'LearnInputsUiHarness','PresentationUiHarness')) {

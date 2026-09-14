@@ -242,7 +242,11 @@ namespace Tk75.App
             responseArea.SizeChanged += arrange; curveEditorScroll.SizeChanged += arrange;
         }
         void ScrollCurveSettingsTo(Control target)
-        { if (target == null || target.IsDisposed || !advancedPanel.Visible) return; curveEditorScroll.ScrollControlIntoView(target); }
+        {
+            if (target == null || target.IsDisposed || !advancedPanel.Visible) return;
+            curveEditorScroll.ScrollControlIntoView(target);
+            NativeSurfaceTheme.RefreshLayout(curveEditorScroll);
+        }
 
         void SetAdvancedVisible(bool visible)
         { SetDetailMode(visible ? "advanced" : null, true); }

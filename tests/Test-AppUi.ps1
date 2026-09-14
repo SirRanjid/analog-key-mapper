@@ -34,6 +34,8 @@ try {
     $arguments += (Join-Path $PSScriptRoot 'SocdDragUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'PressureRangeSliderUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'ThemeControlsUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'RebuildPaintUiHarness.cs')
+    $arguments += (Join-Path $PSScriptRoot 'ScrollbarInteractionUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'KeyAnnotationUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'CurveSettingsSliderUiHarness.cs')
     $arguments += (Join-Path $PSScriptRoot 'CurveShapePickerUiHarness.cs')

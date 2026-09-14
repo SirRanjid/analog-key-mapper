@@ -62,6 +62,8 @@ namespace Tk75.App
         static extern int BufferedPaintStopAllAnimations(IntPtr window);
         [DllImport("user32.dll", EntryPoint = "PostMessageW", ExactSpelling = true)]
         internal static extern bool PostMessage(IntPtr window, int message, IntPtr wparam, IntPtr lparam);
+        [DllImport("user32.dll", ExactSpelling = true)]
+        static extern bool RedrawWindow(IntPtr window, IntPtr update, IntPtr region, uint flags);
         [DllImport("user32.dll", EntryPoint = "SendMessageW", ExactSpelling = true)]
         static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wparam, IntPtr lparam);
         [DllImport("user32.dll", ExactSpelling = true)]
@@ -81,12 +83,30 @@ namespace Tk75.App
             // These surfaces are already completely drawn by the app. Leaving
             // the native theme renderer active also leaves its hover/fade paint
             // paths active. Disable that second painter on this owned HWND only;
-            // keep the native scrollbar range, geometry, input and accessibility.
+            // keep native range, geometry and accessible controls. Mouse input
+            // is owned centrally so the system cannot start a second painter.
             // The documented association lasts for this handle's lifetime.
             // https://learn.microsoft.com/windows/win32/api/uxtheme/nf-uxtheme-setwindowtheme
             SetWindowTheme(window, "", "");
             BufferedPaintStopAllAnimations(window);
         }
+
+        internal static void RefreshLayout(Control root)
+        {
+            if (root == null || root.IsDisposed || !root.IsHandleCreated || !root.Visible) return;
+            // Managed AutoScrollPosition / ScrollControlIntoView can draw a
+            // native scrollbar directly without raising Layout or a scroll
+            // message, even when the requested position has not changed.
+            // Complete the whole affected view after that managed operation:
+            // client-only Invalidate/Refresh would miss its non-client frame,
+            // and a frame-only pass would keep recycled child-control pixels.
+            // RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN |
+            // RDW_UPDATENOW; repaint through each control's usual paint owner.
+            RefreshWindow(root.Handle);
+        }
+
+        internal static void RefreshWindow(IntPtr window)
+        { if (window != IntPtr.Zero) RedrawWindow(window, IntPtr.Zero, IntPtr.Zero, 0x0001 | 0x0004 | 0x0400 | 0x0080 | 0x0100); }
 
         internal static bool TryClientPaint(ref Message message, Size size, Action<Graphics> paint)
         {
@@ -149,6 +169,8 @@ namespace Tk75.App
         static readonly ConditionalWeakTable<Control, ScrollSurface> Scrolls = new ConditionalWeakTable<Control, ScrollSurface>();
         static readonly ConditionalWeakTable<Control, ComboSurface> Combos = new ConditionalWeakTable<Control, ComboSurface>();
 
+        internal static void RefreshLayout(Control root) { NativeControlPaint.RefreshLayout(root); }
+
         internal static void AttachCombo(ComboBox control)
         {
             if (control is SleekComboBox) return;
@@ -169,8 +191,8 @@ namespace Tk75.App
         }
 
         // Each attachment follows one app-owned control through handle recreation.
-        // There are no global hooks, changed system colors, timers or hidden input
-        // controls. Every non-paint message reaches the original native procedure.
+        // There are no global hooks, changed system colors or hidden input
+        // controls. Scrollbars share one mouse owner; other input stays native.
         abstract class ControlSurface : NativeWindow, IDisposable
         {
             protected readonly Control Owner;
@@ -281,7 +303,7 @@ namespace Tk75.App
                 AttachList();
             }
             void Created(object sender, EventArgs e) { AttachList(); }
-            void Destroyed(object sender, EventArgs e) { list.Dispose(); }
+            void Destroyed(object sender, EventArgs e) { list.Detach(); }
             void AttachList()
             {
                 if (!combo.IsHandleCreated) return;
@@ -313,15 +335,26 @@ namespace Tk75.App
         sealed class ScrollSurface : ControlSurface
         {
             readonly bool standalone, vertical;
+            readonly ScrollbarInteraction interaction;
             public ScrollSurface(Control owner) : base(owner)
             {
                 standalone = owner is ScrollBar; vertical = owner is VScrollBar;
+                interaction = new ScrollbarInteraction(owner, standalone, vertical, Repaint);
+                interaction.Attach(Handle);
                 if (owner is ScrollableControl) owner.Layout += LayoutChanged;
                 owner.HandleCreated += ScrollHandleCreated;
+                owner.HandleDestroyed += ScrollHandleDestroyed;
                 owner.VisibleChanged += VisibilityChanged;
                 if (owner.IsHandleCreated) NativeControlPaint.OwnScrollbarPainting(owner.Handle);
             }
-            void ScrollHandleCreated(object sender, EventArgs e) { NativeControlPaint.OwnScrollbarPainting(Handle); }
+            void ScrollHandleCreated(object sender, EventArgs e)
+            { interaction.Attach(Handle); NativeControlPaint.OwnScrollbarPainting(Handle); }
+            void ScrollHandleDestroyed(object sender, EventArgs e) { interaction.Detach(); }
+            void Repaint()
+            {
+                if (Handle == IntPtr.Zero || Owner.IsDisposed || !Owner.Visible) return;
+                if (standalone) PaintStandaloneWindow(); else ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero);
+            }
             void VisibilityChanged(object sender, EventArgs e)
             {
                 if (!Owner.Visible) return;
@@ -341,16 +374,29 @@ namespace Tk75.App
             {
                 if (Owner is ScrollableControl) Owner.Layout -= LayoutChanged;
                 Owner.HandleCreated -= ScrollHandleCreated;
+                Owner.HandleDestroyed -= ScrollHandleDestroyed;
                 Owner.VisibleChanged -= VisibilityChanged;
+                interaction.Dispose();
                 base.Dispose();
             }
             protected override void WndProc(ref Message message)
             {
+                if (interaction != null && interaction.Process(ref message)) return;
+                if (interaction != null && (ScrollbarDrawing.IsScrollInput(message.Msg) || standalone && (message.Msg == 0x0007 || message.Msg == 0x0008)))
+                {
+                    Message update = message;
+                    interaction.Update(delegate { base.WndProc(ref update); });
+                    message.Result = update.Result; return;
+                }
                 if (standalone && NativeControlPaint.TryClientPaint(ref message, Owner.ClientSize, PaintStandalone)) return;
                 if (standalone && SuppressNativeRedraw(ref message)) return;
                 if (!standalone && message.Msg == 0x0085)
                 { ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero); message.Result = IntPtr.Zero; return; }
                 base.WndProc(ref message);
+                // A managed scroll/layout performed inside a paint callback can
+                // overwrite the frame after WM_NCPAINT has already finished.
+                if (!standalone && message.Msg == NativeControlPaint.Paint)
+                { ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero); return; }
                 if (!standalone && (message.Msg == NativeControlPaint.Print || message.Msg == NativeControlPaint.PrintClient))
                 { if (message.Msg == NativeControlPaint.Print) ScrollbarDrawing.PaintFrame(Handle, message.WParam); return; }
                 if (ScrollbarDrawing.ChangesScrollAppearance(message.Msg))
@@ -418,21 +464,35 @@ namespace Tk75.App
         // us; destroying/recreating the ComboBox detaches this object explicitly.
         internal sealed class ComboListSurface : NativeWindow, IDisposable
         {
+            readonly ScrollbarInteraction interaction;
+            internal ComboListSurface()
+            { interaction = new ScrollbarInteraction(null, false, true, delegate { ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero); }); }
             public void Attach(IntPtr handle)
             {
                 if (Handle == handle) return;
-                ReleaseHandle(); if (handle != IntPtr.Zero) AssignHandle(handle);
+                interaction.Detach(); ReleaseHandle(); if (handle != IntPtr.Zero) AssignHandle(handle);
+                interaction.Attach(handle);
                 NativeControlPaint.OwnScrollbarPainting(handle);
             }
             protected override void WndProc(ref Message message)
             {
+                if (interaction.Process(ref message)) return;
+                if (ScrollbarDrawing.IsScrollInput(message.Msg))
+                {
+                    Message update = message;
+                    interaction.Update(delegate { base.WndProc(ref update); });
+                    message.Result = update.Result; return;
+                }
                 if (message.Msg == 0x0085)
                 { ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero); message.Result = IntPtr.Zero; return; }
                 base.WndProc(ref message);
                 if (message.Msg == NativeControlPaint.Print) ScrollbarDrawing.PaintFrame(Handle, message.WParam);
                 else if (ScrollbarDrawing.ChangesFrameAppearance(message.Msg)) ScrollbarDrawing.PaintFrame(Handle, IntPtr.Zero);
             }
-            public void Dispose() { ReleaseHandle(); }
+            // Detach permits handle recreation; final disposal also releases
+            // the interaction's auto-repeat timer and its native resources.
+            internal void Detach() { interaction.Detach(); ReleaseHandle(); }
+            public void Dispose() { interaction.Dispose(); ReleaseHandle(); }
         }
     }
 
@@ -496,6 +556,8 @@ namespace Tk75.App
 
     internal static class ScrollbarDrawing
     {
+        internal static bool IsScrollInput(int message)
+        { return message == 0x0114 || message == 0x0115 || message == 0x020A || message == 0x020E || message == 0x0100; }
         [StructLayout(LayoutKind.Sequential)]
         internal struct ScrollInfo
         {
@@ -544,25 +606,42 @@ namespace Tk75.App
                 {
                     GraphicsState state = graphics.Save();
                     graphics.ExcludeClip(clientBounds);
-                    using (Brush surface = new SolidBrush(ModernTheme.Border)) graphics.FillRectangle(surface, 0, 0, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
+                    ScrollInfo vertical, horizontal;
+                    bool hasVertical = Read(window, 0xFFFFFFFB, out vertical), hasHorizontal = Read(window, 0xFFFFFFFA, out horizontal);
                     Point offset = new Point(-bounds.Left, -bounds.Top);
-                    Paint(graphics, window, 0xFFFFFFFB, true, offset);
-                    Paint(graphics, window, 0xFFFFFFFA, false, offset);
+                    Rectangle verticalArea = vertical.Area.Bounds; verticalArea.Offset(offset);
+                    Rectangle horizontalArea = horizontal.Area.Bounds; horizontalArea.Offset(offset);
+                    // Never erase a visible track/thumb before painting it.
+                    // Only the frame border/corner is drawn directly; each bar
+                    // is composed offscreen and copied in one operation.
+                    if (hasVertical) graphics.ExcludeClip(verticalArea);
+                    if (hasHorizontal) graphics.ExcludeClip(horizontalArea);
+                    using (Brush surface = new SolidBrush(ModernTheme.Border)) graphics.FillRectangle(surface, 0, 0, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
                     graphics.Restore(state);
+                    if (hasVertical) PaintBuffered(graphics, window, 0xFFFFFFFB, true, offset, verticalArea);
+                    if (hasHorizontal) PaintBuffered(graphics, window, 0xFFFFFFFA, false, offset, horizontalArea);
                 }
             }
             finally { if (suppliedDc == IntPtr.Zero) NativeControlPaint.ReleaseDC(window, dc); }
         }
 
-        // GetScrollBarInfo is the documented native geometry/state contract. The
-        // thumb drawn here is the actual native thumb, including DPI and RTL;
-        // no replacement range, scroll calculation or hit-test rectangle exists.
+        static void PaintBuffered(Graphics target, IntPtr window, uint objectId, bool vertical, Point offset, Rectangle area)
+        {
+            if (area.Width < 1 || area.Height < 1) return;
+            using (BufferedGraphics buffer = BufferedGraphicsManager.Current.Allocate(target, area))
+            { Paint(buffer.Graphics, window, objectId, vertical, offset); buffer.Render(target); }
+        }
+
+        // Native geometry retains the actual DPI/RTL layout and thumb size.
+        // The shared input owner contributes hover/pressed state and the pending
+        // thumb position when content scrolling is deferred until mouse-up.
         // https://learn.microsoft.com/windows/win32/api/winuser/ns-winuser-scrollbarinfo
         internal static void Paint(Graphics graphics, IntPtr window, uint objectId, bool vertical, Point offset)
         {
             ScrollInfo info;
             if (!Read(window, objectId, out info))
             { if (objectId == 0xFFFFFFFC) graphics.Clear(ModernTheme.SurfaceAlt); return; }
+            ScrollbarInteraction.Appearance(window, objectId, ref info);
             if (objectId == 0xFFFFFFFC) offset = new Point(-info.Area.Left, -info.Area.Top);
             Rectangle area = info.Area.Bounds; area.Offset(offset);
             using (Brush track = new SolidBrush(ModernTheme.SurfaceAlt)) graphics.FillRectangle(track, area);
@@ -580,11 +659,13 @@ namespace Tk75.App
             if (end <= start) return;
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
             using (GraphicsPath path = SurfaceDrawing.Round(thumb, Math.Min(thumb.Width, thumb.Height) / 2f))
-            using (Brush fill = new SolidBrush((info.Thumb & 8) != 0 ? ModernTheme.AccentHover : SurfaceDrawing.Blend(ModernTheme.Border, ModernTheme.Accent, .45f))) graphics.FillPath(fill, path);
+            using (Brush fill = new SolidBrush((info.Thumb & 8) != 0 ? ModernTheme.Accent : (info.Thumb & 128) != 0 ? ModernTheme.AccentHover : SurfaceDrawing.Blend(ModernTheme.Border, ModernTheme.Accent, .45f))) graphics.FillPath(fill, path);
         }
         static void PaintArrow(Graphics graphics, Rectangle area, bool vertical, bool forward, uint state)
         {
-            if ((state & 8) != 0) using (Brush fill = new SolidBrush(ModernTheme.AccentSoft)) graphics.FillRectangle(fill, area);
+            if ((state & 136) != 0)
+                using (Brush fill = new SolidBrush((state & 8) != 0 ? ModernTheme.AccentSoft : SurfaceDrawing.Blend(ModernTheme.SurfaceAlt, ModernTheme.Foreground, .06f)))
+                    graphics.FillRectangle(fill, area);
             NativeControlPaint.Chevron(graphics, area, vertical, forward, (state & 1) != 0 ? ModernTheme.Border : ModernTheme.Muted);
         }
     }

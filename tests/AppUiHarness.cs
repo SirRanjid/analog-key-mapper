@@ -1861,6 +1861,8 @@ namespace Tk75.Tests
                 // failed draft or focus transition cannot contaminate the next.
                 var featureFailures = new List<string>();
                 RunIsolatedFeature("native-theme", artifacts, featureFailures, delegate(MainForm preview, string output) { RunNativeThemeControls(output); });
+                RunIsolatedFeature("rebuild-paint", artifacts, featureFailures, RunRebuildPainting);
+                RunIsolatedFeature("scrollbar-interaction", artifacts, featureFailures, RunScrollbarInteraction);
                 RunIsolatedFeature("curve-shape", artifacts, featureFailures, CheckCurveShapePicker);
                 RunIsolatedFeature("curve-dynamics", artifacts, featureFailures, RunCurveDynamicsUi);
                 RunIsolatedFeature("curve-ranges", artifacts, featureFailures, RunCurveRangeRailUi);

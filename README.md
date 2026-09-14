@@ -4,9 +4,9 @@
 
 **Turn keyboard pressure and supported hardware inputs into controller controls — with visual mapping, editable response curves and optional key lighting.**
 
-**Free and open source · 1.0.0-rc.10 · Windows x64**
+**Free and open source · 1.0.0-rc.11 · Windows x64**
 
-**[Download Windows rc.10](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.10/AnalogKeyMapper-1.0.0-rc.10-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.10) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
+**[Download Windows rc.11](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.11/AnalogKeyMapper-1.0.0-rc.11-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.11) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
 
 ![Analog Key Mapper with WASD, Shift and Space mapped to a controller, beside its lighting and USB connection controls](docs/images/controller.png)
 
@@ -23,7 +23,7 @@
 
 ## Quick start
 
-1. [Download the Windows rc.10 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.10/AnalogKeyMapper-1.0.0-rc.10-windows-x64.zip) and extract it into a writable folder.
+1. [Download the Windows rc.11 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.11/AnalogKeyMapper-1.0.0-rc.11-windows-x64.zip) and extract it into a writable folder.
 2. Double-click **`Verify-Checksums.bat`** to check the included files.
 3. Open **`AnalogKeyMapper.exe`** inside the extracted `AnalogKeyMapper` folder, connect your keyboard by USB, and create a mapping.
 
@@ -35,11 +35,11 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 ## Release candidate
 
-**rc.10** checks for leftover mode-switch and controller colors when the keyboard connects, even if those lighting options or controllers are currently off. It proposes cleanup only when each matching color is confined to its configured keys and the replacement colors are known. Other key colors remain intact. The confirmation offers optional automatic cleanup for future matching patterns; this starts off and can be disabled again in the menu. An identical externally configured pattern is indistinguishable, so recognition is not proof of who set the colors. [What's new](docs/release-notes-1.0.0-rc.10.md) · [Lighting guide](docs/user-guide.md#optional-keyboard-lighting).
+**rc.11** gives the app's scrollbars shared input handling and buffered drawing. They keep their themed appearance during hover, thumb dragging, held arrow/page clicks and view rebuilds, including tables and open drop-downs. Large scroll ranges, keyboard focus and existing selections are preserved. [What's new](docs/release-notes-1.0.0-rc.11.md).
 
-The update also waits for actual keyboard-helper cleanup during exit and Windows shutdown, and embeds the official logo in the application and tray. A pending lighting question does not hold up exit.
+Startup lighting review and the cleanup improvements from rc.10 remain included. Matching leftover key colors require confirmation before cleanup unless you have explicitly saved permission for future matching patterns. Exit and Windows shutdown wait for actual keyboard-helper cleanup. [Lighting guide](docs/user-guide.md#optional-keyboard-lighting) · [Background startup](docs/background-startup.md).
 
-The new lighting and lifecycle changes passed **1,765 targeted local checks**. The release workflow covers **62 offline suites**, the Windows builds, controller-helper checks and verified packaging; see [validation status](docs/status.md) for completed runs and their exact versions. Physical hardware, real Windows shutdown and game acceptance of rc.10 remain open.
+The current application UI passed **16,655 local assertions**, including **2,318 scrollbar interaction checks**. Background/tray and shutdown checks also passed. The release workflow covers **62 offline suites**, Windows builds, controller-helper checks and verified packaging; see [validation status](docs/status.md) for completed runs and their exact versions. Physical hardware, real Windows shutdown and game acceptance of rc.11 remain open.
 
 The rc.9 input-learning features remain: automatically identify standard keyboard positions, learn supported HID controls, review assignments and apply them together with one undo. Routes reconnect only to their saved device identity. Analog pressure still needs a supported protocol; standard keyboard on/off events cannot supply pressure values. [Input learning guide](docs/input-learning.md).
 
@@ -101,7 +101,7 @@ The app logo stays recognizable while a small badge shows the current status:
 
 </details>
 
-Screenshots show **1.0.0-rc.10** with synthetic example data, the English interface and QWERTY key legends. The tray-status image compares the app's rendered icon states.
+Screenshots show **1.0.0-rc.11** with synthetic example data, the English interface and QWERTY key legends. The tray-status image compares the app's rendered icon states.
 
 ## Contributing and license
 

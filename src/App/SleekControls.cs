@@ -128,7 +128,7 @@ namespace Tk75.App
             ItemHeight = 28; IntegralHeight = false; DropDownHeight = 300;
         }
         protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); AttachListSurface(); }
-        protected override void OnHandleDestroyed(EventArgs e) { listSurface.Dispose(); base.OnHandleDestroyed(e); }
+        protected override void OnHandleDestroyed(EventArgs e) { listSurface.Detach(); base.OnHandleDestroyed(e); }
         protected override void Dispose(bool disposing) { if (disposing) listSurface.Dispose(); base.Dispose(disposing); }
         void AttachListSurface()
         {

@@ -109,9 +109,14 @@ namespace Tk75.App
             }
             finally { detailsHost.ResumeLayout(true); }
             UpdateDetailsButtons(); UpdateDetailsTitle();
+            NativeSurfaceTheme.RefreshLayout(detailsHost);
         }
         void ScrollKeySettingsTo(Control target)
-        { if (target == null || target.IsDisposed || !keyCard.Visible) return; keyCardScroll.ScrollControlIntoView(target); }
+        {
+            if (target == null || target.IsDisposed || !keyCard.Visible) return;
+            keyCardScroll.ScrollControlIntoView(target);
+            NativeSurfaceTheme.RefreshLayout(keyCardScroll);
+        }
         void UpdateDetailsTitle()
         {
             string title = detailsMode == "controller" ? ControllerDisplayName : detailsMode == "advanced" ? Tr("Feinabstimmung", "Fine tuning") : Tr("Tasteneinstellungen", "Key settings");

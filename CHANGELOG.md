@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0-rc.11
+
+- Use shared scrollbar input handling for editor panels, tables, lists, text fields and drop-downs. Hover, dragging and held arrow/page clicks no longer enter Windows' separate scrollbar tracking painter.
+- Buffer complete scrollbar frames and coordinate content redraws, including wheel input and view rebuilds, so the thumb stays themed throughout interaction.
+- Preserve full 32-bit scroll positions, keyboard focus, existing selections and scroll notifications. Handle capture loss, disabled controls, changed ranges and controls recreated or closed during a gesture.
+- Refresh the documentation screenshots from the current build with the official logo.
+
+The local application UI run passed 16,655 assertions, including 2,318 scrollbar interaction checks and 354 rebuild checks. Background/tray checks passed 205 assertions and shutdown checks passed 101. The release workflow retains 62 offline suites plus controller-helper and package checks. See [rc.11 release notes](docs/release-notes-1.0.0-rc.11.md) and [validation status](docs/status.md).
+
 ## 1.0.0-rc.10
 
 - Check for leftover mode-switch and controller colors at startup or keyboard reconnection, independently of currently enabled lighting options and controller connections.
