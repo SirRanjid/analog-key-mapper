@@ -13,13 +13,14 @@ namespace Tk75.App
         ControllerReconnectSettings controllerStartup = new ControllerReconnectSettings();
         ControllerReconnectSettings shutdownControllerStartup;
         ControllerReconnectStore controllerReconnectStore;
-        bool startupReconnectPending, startupReconnectSaved;
+        bool startupReconnectSaved, controllerReconnectReady, controllerReconnectSuspended, controllerReconnectClosing;
         bool startupReconnectBusy;
+        int controllerReconnectPauseDepth;
         int startupReconnectGeneration;
         CancellationTokenSource startupReconnectCancellation;
-        Queue<string> startupReconnectQueue;
-        string startupReconnectProfile;
-        object startupReconnectSnapshot;
+        readonly ControllerConnectionPolicy controllerConnectionPolicy = new ControllerConnectionPolicy();
+        string startupReconnectController;
+        readonly Dictionary<string, string> controllerReconnectErrors = new Dictionary<string, string>();
         string controllerReconnectNotice;
         readonly List<ToolStripMenuItem> controllerReconnectNotices = new List<ToolStripMenuItem>();
 
@@ -31,29 +32,20 @@ namespace Tk75.App
                     delegate(string file) { string path = Path.Combine(store.Root, file); return File.Exists(path) ? File.ReadAllText(path) : null; },
                     delegate(string file, string content) { WorkspaceStore.WriteAtomic(Path.Combine(store.Root, file), content); });
                 controllerReconnectStore.BeginSession();
-                controllerStartup = controllerReconnectStore.StartupSnapshot ?? controllerReconnectStore.Preferences;
-                if (controllerReconnectStore.RecoveryRequired)
-                    ReportControllerReconnectNotice(Tr("Die letzte Controller-Sitzung wurde nicht bestätigt. Bitte manuell verbinden; die Startoption bleibt gespeichert.",
-                        "The last controller session was not confirmed. Connect manually; your startup preference is still saved."), null);
-                // BeginSession has already consumed the last clean exit. Legacy,
-                // interrupted, or mismatched records never reach this path.
-                if (controllerReconnectStore.StartupSnapshot != null && controllerStartup.ProfileFile != null)
+                controllerStartup = controllerReconnectStore.Preferences;
+                // Resolve current configured routes, not a list of devices from
+                // the last exit. Interrupted exits do not disable this preference.
+                if (controllerStartup.ProfileFile != null)
                 {
                     string savedProfile = store.RequireLocalProfile(controllerStartup.ProfileFile);
                     if (File.Exists(savedProfile) && savedProfile != profilePath) LoadProfile(savedProfile);
-                    startupReconnectPending = File.Exists(savedProfile);
-                    if (startupReconnectPending)
-                    {
-                        startupReconnectProfile = profilePath;
-                        startupReconnectSnapshot = history.SnapshotToken;
-                    }
-                    if (!startupReconnectPending)
-                        ReportControllerReconnectNotice(Tr("Das gespeicherte Startprofil fehlt. Bitte Profil wählen und Controller manuell verbinden.",
-                            "The saved startup profile is missing. Choose a profile and connect controllers manually."), null);
                 }
+                controllerReconnectReady = true;
+                ConfigureControllerConnections();
             }
             catch (Exception ex)
             {
+                controllerReconnectReady = false;
                 controllerStartup = controllerReconnectStore == null ? new ControllerReconnectSettings() : controllerReconnectStore.Preferences;
                 CancelStartupReconnect();
                 ReportControllerReconnectNotice(Tr("Der Controller-Startstatus konnte nicht sicher gespeichert werden. Automatisches Verbinden ist für diese Sitzung pausiert; bitte manuell verbinden.",
@@ -63,7 +55,7 @@ namespace Tk75.App
 
         void AddReconnectStartupItem(ContextMenuStrip menu)
         {
-            var item = new ToolStripMenuItem(Tr("Controller beim Start wiederverbinden", "Reconnect controllers at startup"));
+            var item = new ToolStripMenuItem(Tr("Controller automatisch verbinden", "Connect controllers automatically"));
             item.Enabled = !previewMode;
             menu.Items.Add(item);
             var notice = new ToolStripMenuItem { Enabled = false, Visible = false };
@@ -72,8 +64,8 @@ namespace Tk75.App
             menu.Opening += delegate
             {
                 item.Checked = controllerStartup.Enabled;
-                item.ToolTipText = Tr("Optional: die beim letzten Beenden verbundenen Controller einmalig wiederverbinden, sobald die Tastatur bereit ist.",
-                    "Optional: reconnect the controllers connected at the last exit, once the keyboard is ready.");
+                item.ToolTipText = Tr("Konfigurierte Controller beim Start verbinden und bei Verbindungsverlust erneut versuchen. Manuelles Trennen bleibt wirksam.",
+                    "Connect configured controllers at startup and retry lost connections. Manually disconnected controllers stay off.");
             };
             item.Click += delegate
             {
@@ -84,6 +76,7 @@ namespace Tk75.App
                         throw new InvalidOperationException(Tr("Bitte Speicherzugriff prüfen und die App neu starten.", "Check access to the data folder and restart the app."));
                     controllerReconnectStore.SetEnabled(!controllerStartup.Enabled);
                     controllerStartup = controllerReconnectStore.Preferences;
+                    ConfigureControllerConnections();
                     controllerReconnectNotice = null; RefreshControllerReconnectNotices();
                 }
                 catch (Exception ex)
@@ -97,8 +90,9 @@ namespace Tk75.App
 
         void SaveControllerReconnectState()
         {
-            if (previewMode || startupReconnectSaved || !controllerStartup.Enabled || controllerReconnectStore == null || !controllerReconnectStore.SessionReady) return;
+            controllerReconnectClosing = true;
             CancelStartupReconnect();
+            if (previewMode || startupReconnectSaved || !controllerStartup.Enabled || controllerReconnectStore == null || !controllerReconnectStore.SessionReady) return;
             // Capture before Disable detaches the controllers. Commit only once
             // the profile save/exit prompt has accepted closing the application.
             shutdownControllerStartup = ControllerReconnectSettings.Capture(true, Path.GetFileName(profilePath), UiReadProfile, runtime.ActiveControllerIds);
@@ -112,13 +106,14 @@ namespace Tk75.App
             try { controllerReconnectStore.PrepareExit(next); }
             catch (Exception ex)
             {
-                ReportControllerReconnectNotice(Tr("Die verbundenen Controller konnten nicht für den nächsten Start gespeichert werden. Beim nächsten Start bitte manuell verbinden.",
-                    "Connected controllers could not be saved for the next startup. Connect manually next time."), ex);
+                ReportControllerReconnectNotice(Tr("Das zuletzt verwendete Controller-Profil konnte nicht für den nächsten Start gespeichert werden.",
+                    "The last controller profile could not be saved for the next startup."), ex);
             }
         }
 
         void CancelControllerReconnectSave()
         {
+            controllerReconnectClosing = false;
             shutdownControllerStartup = null; startupReconnectSaved = false;
             if (controllerReconnectStore != null) controllerReconnectStore.CancelExit();
         }
@@ -131,8 +126,8 @@ namespace Tk75.App
             try { controllerReconnectStore.ConfirmExit(); }
             catch (Exception ex)
             {
-                ReportControllerReconnectNotice(Tr("Der saubere Controller-Abschluss konnte nicht bestätigt werden. Beim nächsten Start bitte manuell verbinden.",
-                    "The clean controller shutdown could not be confirmed. Connect manually next time."), ex);
+                ReportControllerReconnectNotice(Tr("Der Controller-Abschluss konnte nicht bestätigt werden. Die Startoption bleibt gespeichert.",
+                    "Controller shutdown could not be confirmed. The startup preference is still saved."), ex);
             }
         }
 
@@ -157,73 +152,89 @@ namespace Tk75.App
             }
         }
 
+        void ConfigureControllerConnections()
+        {
+            if (controllerReconnectReady)
+            {
+                controllerConnectionPolicy.Configure(UiReadProfile, controllerStartup.Enabled);
+                foreach (string id in new List<string>(controllerReconnectErrors.Keys))
+                    if (!controllerConnectionPolicy.IsDesired(id)) ClearControllerReconnectError(id);
+            }
+        }
+
+        void ClearControllerReconnectError(string id)
+        {
+            if (controllerReconnectErrors.Remove(id) && controllerReconnectErrors.Count == 0)
+            { controllerReconnectNotice = null; RefreshControllerReconnectNotices(); }
+        }
+
+        // Cancels only in-flight work. Desired connections survive profile edits,
+        // temporary input loss and suspend; explicit stops have their own path.
         void CancelStartupReconnect()
         {
             ++startupReconnectGeneration;
             var cancellation = startupReconnectCancellation;
-            startupReconnectPending = false;
-            startupReconnectQueue = null;
-            startupReconnectProfile = null;
-            startupReconnectSnapshot = null;
             if (cancellation != null) cancellation.Cancel();
+        }
+
+        void StopControllerReconnect()
+        {
+            controllerConnectionPolicy.StopAll();
+            CancelStartupReconnect();
+            foreach (string id in new List<string>(controllerReconnectErrors.Keys)) ClearControllerReconnectError(id);
         }
 
         async void TryReconnectStartupControllers()
         {
-            if (!startupReconnectPending && startupReconnectQueue == null) return;
-            if (!controllerStartup.Enabled || closing || rgbClosePending || deviceDetachInProgress)
-            { CancelStartupReconnect(); return; }
-            // A numeric/property edit can still be a UI draft, so its profile
-            // snapshot may not have changed yet. Do not let the connection
-            // wrapper flush that edit and automatically use the new settings.
-            if (inputDirty || settings.IsCurrentCellDirty || startupReconnectProfile != profilePath || !Object.ReferenceEquals(startupReconnectSnapshot, history.SnapshotToken))
-            { CancelStartupReconnect(); return; }
-            if (!LiveInputReading || !LiveInputSamples)
-            {
-                // Waiting for the first keyboard is intentional. Losing input
-                // after connection started cancels the remaining startup work.
-                if (startupReconnectQueue != null) CancelStartupReconnect();
-                return;
-            }
-            if (startupReconnectPending)
-            {
-                startupReconnectPending = false;
-                startupReconnectQueue = new Queue<string>(controllerStartup.Targets(Path.GetFileName(profilePath), UiReadProfile));
-            }
-            if (startupReconnectQueue == null || (!startupReconnectBusy && startupReconnectQueue.Count == 0) ||
-                startupReconnectProfile != profilePath || !Object.ReferenceEquals(startupReconnectSnapshot, history.SnapshotToken))
-            { CancelStartupReconnect(); return; }
-            if (startupReconnectBusy) return;
-            // Exactly one asynchronous connection can be pending. Cancellation
-            // owns only this startup request, leaving manual peers untouched.
-            string id = startupReconnectQueue.Dequeue();
+            if (!controllerReconnectReady || startupReconnectBusy || closing || rgbClosePending || deviceDetachInProgress ||
+                controllerReconnectClosing || controllerReconnectSuspended || controllerReconnectPauseDepth != 0 || previewMode || applicationResourcesDisposed) return;
+            // Wait for drafts to be committed normally; background work must not
+            // force a partly entered number into the live mapping configuration.
+            // Ready event-driven keyboards may not have emitted a key value yet.
+            // MappingSession already keeps never-observed inputs unavailable and
+            // starts the device neutral, so no first key press is required here.
+            if (inputDirty || settings.IsCurrentCellDirty || !LiveInputReading) return;
+            string id = controllerConnectionPolicy.Next(DateTime.UtcNow, runtime.IsControllerEnabled, runtime.IsControllerConnecting);
+            if (id == null) return;
             int generation = startupReconnectGeneration;
             var cancellation = new CancellationTokenSource();
+            startupReconnectController = id;
             startupReconnectCancellation = cancellation; startupReconnectBusy = true;
             try
             {
-                var definition = ControllerRouting.ForController(UiReadProfile, id);
-                string error = ControllerOutputs.AvailabilityError(definition.Controller);
-                if (error != null) throw new InvalidOperationException(UiText.Get(error));
-                if (!runtime.IsControllerEnabled(id)) await RequestControllerConnectionAsync(id, true, cancellation.Token);
+                await RequestControllerConnectionAsync(id, true, cancellation.Token);
+                if (generation == startupReconnectGeneration)
+                {
+                    controllerConnectionPolicy.Succeeded(id);
+                    controllerReconnectErrors.Remove(id);
+                    if (controllerReconnectErrors.Count == 0) { controllerReconnectNotice = null; RefreshControllerReconnectNotices(); }
+                }
             }
-            catch (OperationCanceledException) { if (generation == startupReconnectGeneration) CancelStartupReconnect(); }
+            catch (OperationCanceledException)
+            {
+                if (generation == startupReconnectGeneration) controllerConnectionPolicy.Failed(id, DateTime.UtcNow);
+            }
             catch (Exception ex)
             {
                 if (generation == startupReconnectGeneration && !IsDisposed && !closing)
                 {
-                    CancelStartupReconnect();
-                    ReportControllerReconnectNotice(Tr("Ein Controller konnte nicht automatisch verbunden werden. Die Startsequenz wurde gestoppt; bitte manuell verbinden.",
-                        "A controller could not reconnect automatically. The startup sequence stopped; connect manually."), ex);
+                    controllerConnectionPolicy.Failed(id, DateTime.UtcNow);
+                    string previous;
+                    if (!controllerReconnectErrors.TryGetValue(id, out previous) || previous != ex.Message)
+                    {
+                        controllerReconnectErrors[id] = ex.Message;
+                        ReportControllerReconnectNotice(Tr("Ein Controller ist noch nicht verbunden. Die Verbindung wird automatisch erneut versucht.",
+                            "A controller is not connected yet. Connection will be retried automatically."), ex);
+                    }
                 }
             }
             finally
             {
-                if (Object.ReferenceEquals(startupReconnectCancellation, cancellation)) startupReconnectCancellation = null;
+                if (Object.ReferenceEquals(startupReconnectCancellation, cancellation))
+                { startupReconnectCancellation = null; startupReconnectController = null; }
                 startupReconnectBusy = false; cancellation.Dispose();
             }
             if (generation != startupReconnectGeneration || IsDisposed || closing) return;
-            if (startupReconnectQueue != null && startupReconnectQueue.Count == 0) CancelStartupReconnect();
             RefreshKeyboardSuppression(false);
         }
     }

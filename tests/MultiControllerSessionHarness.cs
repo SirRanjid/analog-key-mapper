@@ -24,9 +24,10 @@ public static class MultiControllerSessionHarness
         public PreviewSnapshot Preview { get { return Inner.Preview; } }
         public string Status { get { return Connecting ? "connecting" : Inner.Status; } }
         public void SetPreviewActive(bool value) { Inner.SetPreviewActive(value); }
-        public void Configure(Profile profile, IDictionary<int, Calibration> calibration) { CancelPendingConnection(); Inner.Configure(profile, calibration); }
+        public void Configure(Profile profile, IDictionary<int, Calibration> calibration)
+        { if (Inner.Profile != null && Inner.Profile.Controller != profile.Controller) CancelPendingConnection(); Inner.Configure(profile, calibration); }
         public void SetInputSource(object source) { CancelPendingConnection(); Inner.SetInputSource(source); }
-        public void SetKeyboardMode(bool value) { if (Inner.KeyboardMode != value) CancelPendingConnection(); Inner.SetKeyboardMode(value); }
+        public void SetKeyboardMode(bool value) { Inner.SetKeyboardMode(value); }
         public void Enable() { throw new Exception("Async endpoint must use its async API."); }
         public Task EnableAsync(CancellationToken cancellationToken)
         {
@@ -55,8 +56,9 @@ public static class MultiControllerSessionHarness
     {
         internal readonly List<AsyncFake> Created = new List<AsyncFake>();
         internal readonly MultiControllerSession Runtime;
+        internal Action<AsyncFake> OnCreate;
         internal AsyncFixture(int limit)
-        { Runtime = new MultiControllerSession(delegate { var value = new AsyncFake(); Created.Add(value); return value; }, limit); }
+        { Runtime = new MultiControllerSession(delegate { var value = new AsyncFake(); Created.Add(value); if (OnCreate != null) OnCreate(value); return value; }, limit); }
         internal AsyncFake Slot(string id)
         { foreach (var value in Created) if (!value.Inner.Disposed && value.Inner.Profile.Controllers[0].Id == id) return value; throw new Exception("Missing async slot " + id); }
         public void Dispose()
@@ -75,6 +77,7 @@ public static class MultiControllerSessionHarness
         public bool PreviewActive;
         public int PreviewDemandCalls;
         public Profile Profile;
+        public IDictionary<int, Calibration> ConfiguredCalibration;
         public object Source;
         public string LastReason;
         public ControllerFrame CurrentFrame = new ControllerFrame();
@@ -87,9 +90,11 @@ public static class MultiControllerSessionHarness
         public void Configure(Profile profile, IDictionary<int, Calibration> calibration)
         {
             if (Disposed) throw new ObjectDisposedException("Fake");
-            ConfigureCalls++; Active = false;
+            ConfigureCalls++;
+            if (Profile != null && Profile.Controller != profile.Controller) Active = false;
             if (FailConfigure) throw new InvalidOperationException("configure failure");
             Profile = ProfileJson.Clone(profile);
+            ConfiguredCalibration = calibration;
         }
         public void SetInputSource(object source)
         {
@@ -219,7 +224,7 @@ public static class MultiControllerSessionHarness
             Check(disconnect.IsCompleted && !other.IsCompleted && !second.Cancelled, "One slot's disconnect never waits for an unrelated pending controller.");
             second.Finish(); Check(second.Enabled && runtime.IsControllerEnabled("player2"), "Untouched pending peer can complete normally.");
         }
-        foreach (string change in new[] { "configure", "source", "mode", "dispose" })
+        foreach (string change in new[] { "configure", "source", "dispose" })
         using (var f = new AsyncFixture(4))
         {
             var runtime = f.Runtime; runtime.Configure(TwoPlayers(), Calibration());
@@ -227,13 +232,26 @@ public static class MultiControllerSessionHarness
             Task pending = runtime.EnableControllerAsync("player2", CancellationToken.None);
             if (change == "configure") runtime.Configure(new Profile(), new Dictionary<int, Calibration>());
             else if (change == "source") runtime.SetInputSource(new object());
-            else if (change == "mode") runtime.KeyboardMode = true;
             else runtime.Dispose();
             Check(old.Cancelled && !pending.IsCompleted, change + " invalidates pending work without waiting for candidate completion.");
             Task drain = runtime.CancelPendingConnections();
             Check(!drain.IsCompleted, "Cleanup remains owned even after a connecting slot was removed or disposed.");
             old.Finish();
             Check(drain.IsCompleted && pending.IsCanceled && !runtime.IsControllerEnabled("player2"), change + " cannot publish a stale late candidate.");
+        }
+        using (var f = new AsyncFixture(4))
+        {
+            var runtime = f.Runtime; runtime.Configure(TwoPlayers(), Calibration());
+            var first = f.Slot("main"); var second = f.Slot("player2");
+            Task pending = runtime.EnableControllerAsync("player2", CancellationToken.None);
+            Task connected = runtime.EnableControllerAsync("main", CancellationToken.None); first.Finish();
+            runtime.Configure(ControllerRouting.Rename(TwoPlayers(), "player2", "Guest"), Calibration());
+            runtime.KeyboardMode = true;
+            Check(!second.Cancelled && !pending.IsCompleted && runtime.IsControllerConnecting("player2") && first.Enabled,
+                "Settings and mode edits preserve both a confirmed peer and a same-kind pending candidate.");
+            second.Finish();
+            Check(connected.IsCompleted && pending.IsCompleted && !pending.IsCanceled && second.Enabled && second.Inner.KeyboardMode && second.Starts == 1,
+                "A retained candidate completes exactly once with the updated mode.");
         }
     }
     static void PreviewDemandFollowsVisibilityAndSelection()
@@ -341,8 +359,9 @@ public static class MultiControllerSessionHarness
             Reject(delegate { runtime.DisableController("player2", "row cleanup failure"); }, "An ID-based disconnect failure remains visible.");
             Check(second.Disposed && !runtime.IsControllerEnabled("player2") && first.Enabled && runtime.SelectedControllerId == "main", "A failed ID-based disconnect retires only its target and preserves the selected output.");
             int beforeRetry = second.EnableCalls;
-            Reject(delegate { runtime.EnableController("player2"); }, "A retired controller ID rejects reactivation until reconfigured.");
-            Check(second.EnableCalls == beforeRetry, "ID-based retry never calls the disposed endpoint.");
+            runtime.EnableController("player2");
+            Check(runtime.IsControllerEnabled("player2") && first.Enabled && runtime.SelectedControllerId == "main", "A retired controller ID recovers on request without changing the selected peer.");
+            Check(second.EnableCalls == beforeRetry && !Object.ReferenceEquals(second, fixture.Slot("player2")), "ID-based retry creates a replacement and never calls the disposed endpoint.");
         }
         using (var fixture = new Fixture())
         {
@@ -394,12 +413,81 @@ public static class MultiControllerSessionHarness
             Check(runtime.Frame.Errors.Count == 1, "Failed group release retires and explains only its failing route.");
         }
     }
+    static void FailedModeRecovery()
+    {
+        using (var f = new AsyncFixture(4))
+        {
+            var runtime = f.Runtime; var profile = TwoPlayers(); var calibration = Calibration();
+            object source = new object(); runtime.SetInputSource(source); runtime.Configure(profile, calibration);
+            var first = f.Slot("main"); var failed = f.Slot("player2");
+            runtime.EnableControllerAsync("main", CancellationToken.None); first.Finish();
+            runtime.EnableControllerAsync("player2", CancellationToken.None); failed.Finish();
+            failed.Inner.FailMode = true;
+            Reject(delegate { runtime.KeyboardMode = true; }, "A failed mode transition still reports and retires only its endpoint.");
+            Check(failed.Inner.Disposed && first.Enabled && first.Inner.KeyboardMode && !runtime.IsControllerEnabled("player2"),
+                "Retirement preserves the connected peer and excludes the failed route.");
+            runtime.KeyboardMode = false; runtime.SelectedControllerId = "player2"; runtime.SetPreviewActive(false);
+            int peerConfigurations = first.Inner.ConfigureCalls;
+            profile.Bindings[1].Target = OutputTarget.A; calibration[2].Bottom = 900;
+            Task recovered = runtime.EnableControllerAsync("player2", CancellationToken.None);
+            var replacement = f.Slot("player2");
+            Check(!Object.ReferenceEquals(replacement, failed) && !recovered.IsCompleted && replacement.Starts == 1,
+                "A new enable request rebuilds a failed endpoint without an unrelated configuration edit.");
+            Check(Object.ReferenceEquals(replacement.Inner.Source, source) && !replacement.Inner.KeyboardMode && !replacement.Inner.PreviewActive,
+                "Recovery inherits current input, mode and display demand.");
+            Check(replacement.Inner.Profile.Bindings[0].Target == OutputTarget.RightTrigger && replacement.Inner.ConfiguredCalibration[2].Bottom == 385,
+                "Recovery uses detached last-successful mapping and calibration, immune to caller mutation.");
+            replacement.Finish();
+            Check(recovered.IsCompleted && !recovered.IsFaulted && runtime.IsControllerEnabled("player2") && first.Enabled && first.Inner.ConfigureCalls == peerConfigurations,
+                "Recovered output becomes connected while the peer keeps its original session and settings.");
+            Check(runtime.ActiveKeyIndices.Length == 2 && failed.Starts == 1,
+                "Recovery restores suppression metadata and never reconnects the disposed endpoint.");
+        }
+        using (var f = new AsyncFixture(4))
+        {
+            var runtime = f.Runtime; runtime.Configure(TwoPlayers(), Calibration());
+            var failed = f.Slot("player2"); failed.Inner.FailMode = true;
+            Reject(delegate { runtime.KeyboardMode = true; }, "A mode failure can be retried using a later input source.");
+            object source = new object(); runtime.SetInputSource(source);
+            var first = f.Slot("main"); runtime.EnableControllerAsync("main", CancellationToken.None); first.Finish();
+            using (var canceled = new CancellationTokenSource())
+            {
+                canceled.Cancel(); int before = f.Created.Count;
+                Reject(delegate { runtime.EnableControllerAsync("player2", canceled.Token); }, "Canceled recovery does not create an endpoint.");
+                Check(f.Created.Count == before && first.Enabled, "Cancellation preserves the existing peer and failed slot.");
+            }
+            f.OnCreate = value => value.Inner.FailConfigure = true;
+            Reject(delegate { runtime.EnableControllerAsync("player2", CancellationToken.None); }, "A failed recovery configuration remains visible to the retry caller.");
+            Check(f.Created[f.Created.Count - 1].Inner.Disposed && !runtime.IsControllerEnabled("player2") && first.Enabled,
+                "A failed replacement is disposed without changing the connected peer.");
+            f.OnCreate = null;
+            Task recovered = runtime.EnableControllerAsync("player2", CancellationToken.None); var replacement = f.Slot("player2");
+            Check(Object.ReferenceEquals(replacement.Inner.Source, source) && replacement.Inner.KeyboardMode && !replacement.Inner.PreviewActive,
+                "A later recovery uses the new input and current mode while a hidden route remains hidden.");
+            replacement.Finish();
+            Check(recovered.IsCompleted && replacement.Enabled && first.Enabled, "Transient replacement failure can recover on the next enable request.");
+        }
+        using (var f = new AsyncFixture(4))
+        {
+            var runtime = f.Runtime; runtime.Configure(TwoPlayers(), Calibration());
+            var retired = f.Slot("player2"); Task oldRequest = runtime.EnableControllerAsync("player2", CancellationToken.None);
+            retired.Inner.FailMode = true;
+            Reject(delegate { runtime.KeyboardMode = true; }, "Retiring a pending endpoint reports the failed mode transition.");
+            Task newRequest = runtime.EnableControllerAsync("player2", CancellationToken.None); var replacement = f.Slot("player2");
+            Task drain = runtime.CancelPendingConnections(); replacement.Finish();
+            Check(!drain.IsCompleted && retired.Cancelled && newRequest.IsCanceled,
+                "Replacing a failed endpoint retains its unpublished candidate cleanup in the shutdown drain.");
+            retired.Finish();
+            Check(drain.IsCompleted && oldRequest.IsCanceled, "Shutdown finishes only after both retired and replacement candidates drain.");
+        }
+    }
     public static string Run()
     {
         checks = 0;
         ControllerOperationsById();
         PreviewDemandFollowsVisibilityAndSelection();
         AsyncReservationsAndRetiredCleanup();
+        FailedModeRecovery();
         GroupReleasePhases();
         using (var fixture = new Fixture(1))
         {
@@ -438,7 +526,8 @@ public static class MultiControllerSessionHarness
             runtime.KeyboardMode = true;
             profile = ControllerRouting.Add(profile, "third", "Player 3", ControllerKind.DualSense);
             runtime.Configure(profile, Calibration());
-            Check(runtime.KeyboardMode && fixture.Slot("third").KeyboardMode && first.KeyboardMode && !runtime.AnyEnabled, "Reconfiguration and new endpoints inherit mode while preserving normal disarm behavior");
+            Check(runtime.KeyboardMode && fixture.Slot("third").KeyboardMode && first.KeyboardMode && first.Enabled && second.Enabled && !fixture.Slot("third").Enabled,
+                "Reconfiguration preserves connected devices and new disconnected endpoints inherit the current mode");
             runtime.SelectedControllerId = "main"; runtime.Enable(); runtime.SelectedControllerId = "player2"; runtime.Enable();
             second.FailMode = true;
             Reject(delegate { runtime.KeyboardMode = false; }, "One failed mode transition is reported after fanout");
@@ -494,8 +583,12 @@ public static class MultiControllerSessionHarness
             Check(!first.Enabled && !second.Enabled && !runtime.AnyEnabled, "F8 must stop all players.");
             Check(first.LastReason == "F8" && second.LastReason == "F8", "Global stop reason must reach every worker.");
             runtime.SelectedControllerId = "main"; runtime.Enable(); runtime.SelectedControllerId = "player2"; runtime.Enable();
+            int firstDisables = first.DisableCalls, secondDisables = second.DisableCalls;
+            runtime.SetInputSource(input);
+            Check(first.Enabled && second.Enabled && first.DisableCalls == firstDisables && second.DisableCalls == secondDisables,
+                "Reapplying the same reader cannot disconnect any existing controller.");
             runtime.Configure(ControllerRouting.Rename(TwoPlayers(), "player2", "Guest"), Calibration());
-            Check(!runtime.AnyEnabled && runtime.SelectedControllerId == "player2", "Profile edits disarm every slot and preserve valid selection.");
+            Check(first.Enabled && second.Enabled && runtime.SelectedControllerId == "player2", "Profile edits retain connected slots and preserve valid selection.");
             Check(fixture.Slot("player2").Profile.Controllers[0].Name == "Guest", "Renamed profile must reach the correct route.");
             runtime.Enable(); runtime.SetInputSource(null);
             Check(!runtime.AnyEnabled && first.Source == null && second.Source == null, "Input disconnect must disarm and reach every worker.");
@@ -505,6 +598,21 @@ public static class MultiControllerSessionHarness
             Check(runtime.SelectedControllerId == "main", "Rejected selection must preserve previous selection.");
             runtime.Dispose(); runtime.Dispose();
             Check(first.Disposed && !runtime.AnyEnabled && !runtime.Enabled, "Dispose must remove all endpoints and be repeatable.");
+        }
+        using (var fixture = new Fixture())
+        {
+            var runtime = fixture.Runtime; runtime.Configure(TwoPlayers(), Calibration());
+            Fake first = fixture.Slot("main"), second = fixture.Slot("player2");
+            runtime.EnableController("main"); runtime.EnableController("player2");
+            Profile changed = TwoPlayers();
+            changed.Controllers[1].Kind = ControllerKind.DualSense;
+            runtime.Configure(changed, Calibration());
+            Check(first.Enabled && !second.Enabled && first.EnableCalls == 1 && first.DisableCalls == 0,
+                "Changing one controller protocol preserves an unrelated connected controller.");
+            runtime.EnableController("player2");
+            runtime.Configure(ControllerRouting.Remove(changed, "player2"), Calibration());
+            Check(first.Enabled && second.Disposed && first.EnableCalls == 1,
+                "Removing one route retains a surviving controller without reconnecting it.");
         }
         using (var fixture = new Fixture())
         {
@@ -533,10 +641,11 @@ public static class MultiControllerSessionHarness
             runtime.Enable(); runtime.SelectedControllerId = "player2"; runtime.Enable(); second.FailDisable = true;
             Reject(delegate { runtime.DisableSelected("unplug failure"); }, "Selected cleanup failure must remain visible.");
             Check(second.Disposed && first.Enabled, "Failed selected cleanup must dispose that output and preserve other players.");
-            Check(runtime.Frame.Errors.Count == 1 && runtime.Status.Contains("Einstellungen erneut anwenden"), "Disposed slot must present an explicit failed state rather than stale output.");
+            Check(runtime.Frame.Errors.Count == 1 && runtime.Status.Contains("Verbindungsfehler getrennt"), "Disposed slot must present an explicit failed state rather than stale output.");
             int beforeRetry = second.EnableCalls;
-            Reject(runtime.Enable, "Disposed slot must reject reconnect with its explicit failure.");
-            Check(second.EnableCalls == beforeRetry, "Reconnect must not call a disposed endpoint.");
+            runtime.Enable();
+            Check(second.EnableCalls == beforeRetry && runtime.Enabled && first.Enabled && !Object.ReferenceEquals(second, fixture.Slot("player2")),
+                "An explicit reconnect replaces its failed endpoint without calling the disposed session or interrupting its peer.");
             object newSource = new object(); runtime.SetInputSource(newSource);
             runtime.Configure(TwoPlayers(), Calibration());
             Check(fixture.Created.Count == 3 && !fixture.Slot("player2").Disposed && Object.ReferenceEquals(fixture.Slot("player2").Source, newSource), "Next explicit configuration must rebuild failed slot with current input.");
@@ -568,11 +677,13 @@ public static class MultiControllerSessionHarness
             Fake first = fixture.Slot("main"), second = fixture.Slot("player2");
             runtime.Enable(); first.FailDisable = true;
             Profile renamed = ControllerRouting.Rename(TwoPlayers(), "main", "Changed route");
-            Reject(delegate { runtime.Configure(renamed, Calibration()); }, "Pre-configuration disable failure must propagate.");
-            Check(first.Disposed && second.Disposed && !runtime.AnyEnabled, "Failed pre-configuration disable must discard every old route.");
-            Check(runtime.Frame.Errors.Count == 1, "Pre-configuration failure must be reported instead of showing old frame.");
+            int disables = first.DisableCalls;
             runtime.Configure(renamed, Calibration());
-            Check(fixture.Created.Count == 4 && fixture.Slot("main").Profile.Controllers[0].Name == "Changed route", "A later configure must build the new profile, not reuse stale routes.");
+            Check(first.Enabled && !first.Disposed && !second.Disposed && first.DisableCalls == disables,
+                "An ordinary settings edit never enters the device disconnect path.");
+            Check(fixture.Created.Count == 2 && fixture.Slot("main").Profile.Controllers[0].Name == "Changed route",
+                "An ordinary settings edit applies to the original retained route.");
+            first.FailDisable = false;
         }
         using (var fixture = new Fixture())
         {

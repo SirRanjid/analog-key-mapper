@@ -49,7 +49,7 @@ namespace Tk75.App
             trayMenu.Items.Add(open);
             trayMenu.Items.Add(Tr("Alle Controller ausschalten", "Turn all controllers off"), null, delegate
             {
-                CancelStartupReconnect();
+                StopControllerReconnect();
                 try { Attempt(delegate { runtime.Disable("Manuell deaktiviert"); }); }
                 finally { RefreshKeyboardSuppression(false); UpdateControllerConnectionUi(); }
             });

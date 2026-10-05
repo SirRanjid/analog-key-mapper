@@ -347,38 +347,96 @@ namespace Tk75.Tests
             Check(created.All(c => c.Disposes == 1), "Every synthetic endpoint is disposed exactly once.");
         }
 
-        static void ReconnectCancelsForPendingEdits(string directory)
+        static void ReconnectSurvivesPendingEdits(string directory)
         {
             using (var form = new MainForm(Path.Combine(directory, "startup-edit-data"), true))
             {
                 var history = Field<EditHistory>(form, "history");
-                var startup = new ControllerReconnectSettings { Enabled = true };
-                Set(form, "controllerStartup", startup);
-                Set(form, "startupReconnectPending", true);
-                Set(form, "startupReconnectProfile", Field<string>(form, "profilePath"));
-                Set(form, "startupReconnectSnapshot", history.SnapshotToken);
+                Set(form, "controllerStartup", new ControllerReconnectSettings { Enabled = true });
+                Set(form, "controllerReconnectReady", true);
+                Call(form, "ConfigureControllerConnections");
+                var policy = Field<ControllerConnectionPolicy>(form, "controllerConnectionPolicy");
+                string id = ControllerRouting.EffectiveControllers(history.Current)[0].Id;
+                Check(policy.IsDesired(id), "A configured controller is desired at startup without a previous connection snapshot.");
                 Call(form, "TryReconnectStartupControllers");
-                Check(Field<bool>(form, "startupReconnectPending"), "Without input or edits, startup waits for the keyboard without discarding the request.");
+                Check(policy.IsDesired(id), "Waiting for input retains startup connection intent.");
                 string original = ProfileJson.Serialize(history.Current);
                 Set(form, "inputDirty", true);
                 Call(form, "TryReconnectStartupControllers");
-                Check(!Field<bool>(form, "startupReconnectPending") && Field<Queue<string>>(form, "startupReconnectQueue") == null,
-                    "A pending input draft cancels startup even though the profile snapshot has not changed.");
+                Call(form, "ConfigureControllerConnections");
+                Check(policy.IsDesired(id), "A pending input draft does not discard startup connection intent.");
                 Check(Field<bool>(form, "inputDirty") && ProfileJson.Serialize(history.Current) == original,
-                    "Cancelling startup neither flushes nor discards the user's draft.");
-                Check(!Field<MultiControllerSession>(form, "runtime").AnyEnabled, "Draft cancellation opens no controller output.");
+                    "Waiting to reconnect neither flushes nor discards the user's draft.");
+                Check(!Field<MultiControllerSession>(form, "runtime").AnyEnabled, "A pending draft opens no controller output in preview mode.");
 
                 Set(form, "inputDirty", false);
-                Set(form, "startupReconnectPending", true);
-                Set(form, "startupReconnectProfile", Field<string>(form, "profilePath"));
-                Set(form, "startupReconnectSnapshot", history.SnapshotToken);
-                Profile edited = history.Current; edited.Name = "Manual edit while waiting"; history.Commit(edited);
+                Profile edited = history.Current; edited.Bindings[0].Processing.Scale = .7;
+                Call(form, "Commit", edited);
                 Call(form, "TryReconnectStartupControllers");
-                Check(!Field<bool>(form, "startupReconnectPending") && Field<Queue<string>>(form, "startupReconnectQueue") == null,
-                    "A committed profile edit cancels startup before a keyboard is available.");
-                Check(history.Current.Name == "Manual edit while waiting", "The cancelled startup leaves the new profile edit intact.");
+                Check(policy.IsDesired(id) && policy.Next(DateTime.UtcNow, value => false, value => false) == id,
+                    "A committed mapping edit remains eligible for automatic connection when input returns.");
+                Check(history.Current.Bindings[0].Processing.Scale == .7, "Reconnection preserves the committed mapping edit.");
+
+                policy.SetDesired(id, false);
+                edited = history.Current; edited.Bindings[0].Processing.Scale = .6; Call(form, "Commit", edited);
+                Check(!policy.IsDesired(id), "A settings edit respects a manually disconnected controller.");
+                policy.SetDesired(id, true);
+                Call(form, "StopControllerReconnect");
+                edited = history.Current; edited.Bindings[0].Processing.Scale = .5; Call(form, "Commit", edited);
+                Call(form, "TryReconnectStartupControllers");
+                Check(!policy.IsDesired(id) && policy.Next(DateTime.UtcNow, value => false, value => false) == null,
+                    "Stop all remains effective through settings edits and later maintenance.");
                 Check(Field<ReaderSession>(form, "reader") == null && !Field<MultiControllerSession>(form, "runtime").AnyEnabled,
-                    "Both cancellation paths remain entirely device-free.");
+                    "The reconnect-intent checks remain entirely device-free.");
+            }
+        }
+
+        static object[] RuntimeInputCallbacks(MainForm form)
+        {
+            var result = new List<object>();
+            foreach (System.Collections.DictionaryEntry slot in Field<System.Collections.IDictionary>(Field<MultiControllerSession>(form, "runtime"), "slots"))
+            {
+                object session = slot.Value.GetType().GetField("Session").GetValue(slot.Value);
+                result.Add(Field<object>(Field<MappingSession>(session, "inner"), "copyRawSnapshot"));
+            }
+            return result.ToArray();
+        }
+
+        static void LearnedRoutingSurvivesMappingEdits(string directory)
+        {
+            using (var form = new MainForm(Path.Combine(directory, "routing-edit-data"), true))
+            {
+                var history = Field<EditHistory>(form, "history");
+                Profile configured = history.Current;
+                configured.LearnedInputs = new List<LearnedKeyBinding> {
+                    new LearnedKeyBinding { KeyIndex = 14, Backend = "hid", SourceDeviceId = new string('a', 64),
+                        SourceName = "Synthetic pedal", ControlId = "pedal", Kind = (int)InputControlKind.Absolute,
+                        Minimum = 0, Maximum = 1000, Rest = 0, Active = 1000, Direction = 1 } };
+                Call(form, "Commit", configured);
+                var routing = Field<LearnedInputRouting>(form, "learnedInputRouting");
+                object[] callbacks = RuntimeInputCallbacks(form);
+                Check(routing != null && callbacks.Length != 0 && callbacks.All(value => value != null),
+                    "The synthetic learned binding installs a routed input view in the real controller sessions.");
+                int generation = Field<int>(form, "learnedSourceGeneration");
+
+                Profile edited = history.Current; edited.Bindings[0].Processing.Scale = .65;
+                Call(form, "Commit", edited);
+                Check(Object.ReferenceEquals(routing, Field<LearnedInputRouting>(form, "learnedInputRouting")),
+                    "Changing a mapping preserves the learned routing view when its input definitions did not change.");
+                object[] current = RuntimeInputCallbacks(form);
+                Check(current.Length == callbacks.Length && current.Where((value, index) => !Object.ReferenceEquals(value, callbacks[index])).Count() == 0,
+                    "A mapping edit does not replace controller input callbacks or trigger an input-source disconnect.");
+                Check(Field<int>(form, "learnedSourceGeneration") == generation,
+                    "A mapping edit does not cancel an unrelated learned-source connection attempt.");
+                Call(form, "Undo"); Call(form, "Redo");
+                Check(Object.ReferenceEquals(routing, Field<LearnedInputRouting>(form, "learnedInputRouting")),
+                    "Undo and redo of a mapping also retain the unchanged learned routing view.");
+
+                edited = history.Current; edited.LearnedInputs[0].ControlId = "another-pedal";
+                Call(form, "Commit", edited);
+                Check(!Object.ReferenceEquals(routing, Field<LearnedInputRouting>(form, "learnedInputRouting")),
+                    "Changing the learned input definition still replaces its routing view.");
+                CheckPassive(form);
             }
         }
 
@@ -431,7 +489,8 @@ namespace Tk75.Tests
                 ReconnectPreferences();
                 TrayStatusPolicyChecks();
                 TrayPreferencePersistence(Path.GetFullPath(args[0]));
-                ReconnectCancelsForPendingEdits(Path.GetFullPath(args[0]));
+                ReconnectSurvivesPendingEdits(Path.GetFullPath(args[0]));
+                LearnedRoutingSurvivesMappingEdits(Path.GetFullPath(args[0]));
                 BackgroundAndRestore(Path.GetFullPath(args[0]));
                 BackgroundMessageLoop(Path.GetFullPath(args[0]));
                 Console.WriteLine("PASS: " + assertions + " background UI assertions (no hardware, hooks, registry or helper processes).");

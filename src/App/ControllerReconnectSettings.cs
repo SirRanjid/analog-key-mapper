@@ -7,11 +7,10 @@ using Tk75.Mapping;
 
 namespace Tk75.App
 {
-    // Startup preferences are separate from mappings and are never enabled by
-    // importing a profile. Only a normal exit records the connected devices.
+    // The automatic connection preference is separate from imported mappings.
     public sealed class ControllerReconnectSettings
     {
-        public bool Enabled;
+        public bool Enabled = true;
         // A controller list is eligible only when the separate session journal
         // confirms this exact session's completed, successful normal exit.
         public string SessionId;

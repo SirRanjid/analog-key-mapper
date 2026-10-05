@@ -57,6 +57,8 @@ namespace Tk75.App
             public IControllerSession Session;
             public string Failure;
             public int[] ActiveKeys;
+            public Profile ConfiguredProfile;
+            public Dictionary<int, Calibration> Calibration;
         }
         sealed class PendingRelease
         {
@@ -255,7 +257,6 @@ namespace Tk75.App
                 var created = new List<IControllerSession>();
                 try
                 {
-                    DisableLocked("Einstellungen geändert – alle Controller aus");
                     if (calibration == null) throw new ArgumentNullException("calibration");
                     // Resolve every route before changing an existing worker.
                     List<ControllerDefinition> definitions = ControllerRouting.EffectiveControllers(profile);
@@ -279,15 +280,30 @@ namespace Tk75.App
                             if (demand != null) demand.SetPreviewActive(false);
                             endpoint.SetInputSource(inputSource);
                         }
+                        else if (slot.Definition.Kind != definition.Kind)
+                        {
+                            // Retain cleanup ownership when a protocol change
+                            // invalidates an unpublished connection candidate.
+                            TrackConnectionCancellationLocked(slot.Session);
+                        }
+                        // Retain detached, last-successful settings so a failed
+                        // endpoint can recover without another editor commit.
+                        Profile configuredProfile = ProfileJson.Clone(routes[definition.Id]);
+                        var configuredCalibration = CopyCalibration(calibration);
                         slot.Session.Configure(routes[definition.Id], calibration);
                         slot.Session.SetKeyboardMode(keyboardMode);
                         var activeKeys = new HashSet<int>();
                         foreach (Binding binding in routes[definition.Id].Bindings) if (binding.Enabled) activeKeys.Add(binding.KeyIndex);
                         int[] keyIndices = new int[activeKeys.Count]; activeKeys.CopyTo(keyIndices); Array.Sort(keyIndices);
-                        next.Add(definition.Id, new Slot { Definition = definition, Session = slot.Session, ActiveKeys = keyIndices });
+                        next.Add(definition.Id, new Slot { Definition = definition, Session = slot.Session, ActiveKeys = keyIndices,
+                            ConfiguredProfile = configuredProfile, Calibration = configuredCalibration });
                     }
                     foreach (KeyValuePair<string, Slot> old in slots)
-                        if (!next.ContainsKey(old.Key)) old.Value.Session.Dispose();
+                        if (!next.ContainsKey(old.Key))
+                        {
+                            TrackConnectionCancellationLocked(old.Value.Session);
+                            old.Value.Session.Dispose();
+                        }
                     slots.Clear(); foreach (KeyValuePair<string, Slot> item in next) slots.Add(item.Key, item.Value);
                     if (!slots.ContainsKey(selected)) selected = definitions[0].Id;
                     UpdatePreviewDemandLocked();
@@ -296,8 +312,10 @@ namespace Tk75.App
                 catch (Exception ex)
                 {
                     // A partially configured set must not keep stale outputs alive.
-                    foreach (IControllerSession endpoint in created) QuietClose(endpoint);
-                    foreach (Slot old in slots.Values) QuietClose(old.Session);
+                    foreach (IControllerSession endpoint in created)
+                    { TrackConnectionCancellationLocked(endpoint); QuietClose(endpoint); }
+                    foreach (Slot old in slots.Values)
+                    { TrackConnectionCancellationLocked(old.Session); QuietClose(old.Session); }
                     slots.Clear(); configurationError = "Controller-Einrichtung fehlgeschlagen: " + ex.Message;
                     throw;
                 }
@@ -310,6 +328,7 @@ namespace Tk75.App
             lock (gate)
             {
                 CheckDisposed();
+                if (Object.ReferenceEquals(inputSource, value)) return;
                 try
                 {
                     DisableLocked("Tastaturverbindung geändert – alle Controller aus");
@@ -336,6 +355,7 @@ namespace Tk75.App
             {
                 CheckDisposed(); cancellationToken.ThrowIfCancellationRequested(); Slot slot;
                 if (controllerId == null || !slots.TryGetValue(controllerId, out slot)) throw new ArgumentException("Unknown controller.", "controllerId");
+                RecoverSlotLocked(slot);
                 var asynchronous = slot.Session as IAsyncControllerSession;
                 if (asynchronous == null) throw new NotSupportedException("This controller session does not support asynchronous connection.");
                 if (slot.Failure != null) throw new InvalidOperationException(slot.Failure);
@@ -359,7 +379,7 @@ namespace Tk75.App
         }
         void EnableSlot(Slot slot)
         {
-            if (slot.Failure != null) throw new InvalidOperationException(slot.Failure);
+            RecoverSlotLocked(slot);
             if (slot.Session.Enabled) return;
             CheckCapacityLocked(slot);
             try { slot.Session.Enable(); }
@@ -369,6 +389,37 @@ namespace Tk75.App
                 catch (Exception cleanupError) { FailSlot(slot, cleanupError); }
                 throw;
             }
+        }
+        static Dictionary<int, Calibration> CopyCalibration(IDictionary<int, Calibration> source)
+        {
+            var copy = new Dictionary<int, Calibration>();
+            foreach (var item in source)
+                copy.Add(item.Key, item.Value == null ? null : new Calibration(item.Value.Rest, item.Value.Bottom) {
+                    UsableMin = item.Value.UsableMin, UsableMax = item.Value.UsableMax, MeasuredTravel = item.Value.MeasuredTravel });
+            return copy;
+        }
+        void RecoverSlotLocked(Slot slot)
+        {
+            if (slot.Failure == null) return;
+            IControllerSession endpoint = createSession();
+            if (endpoint == null) throw new InvalidOperationException("Controller session factory returned no session.");
+            // A bad factory must never cause recovery to close an existing peer.
+            foreach (Slot existing in slots.Values)
+                if (Object.ReferenceEquals(existing.Session, endpoint)) throw new InvalidOperationException("A controller session cannot belong to multiple slots.");
+            try
+            {
+                var demand = endpoint as IPreviewDemandSession;
+                if (demand != null) demand.SetPreviewActive(false);
+                endpoint.SetInputSource(inputSource);
+                endpoint.Configure(ProfileJson.Clone(slot.ConfiguredProfile), CopyCalibration(slot.Calibration));
+                endpoint.SetKeyboardMode(keyboardMode);
+                if (demand != null) demand.SetPreviewActive(previewActive && slot.Definition.Id == selected);
+            }
+            catch
+            {
+                TrackConnectionCancellationLocked(endpoint); QuietClose(endpoint); throw;
+            }
+            slot.Session = endpoint; slot.Failure = null;
         }
         void CheckCapacityLocked(Slot slot)
         {
@@ -467,9 +518,10 @@ namespace Tk75.App
         }
         static void QuietClose(IControllerSession endpoint)
         { try { endpoint.Disable("Controller aus"); } catch (Exception) { } try { endpoint.Dispose(); } catch (Exception) { } }
-        static void FailSlot(Slot slot, Exception error)
+        void FailSlot(Slot slot, Exception error)
         {
-            slot.Failure = "Controller nach Verbindungsfehler beendet. Einstellungen erneut anwenden: " + error.Message;
+            slot.Failure = "Controller nach Verbindungsfehler getrennt: " + error.Message;
+            TrackConnectionCancellationLocked(slot.Session);
             QuietClose(slot.Session);
         }
         void CheckDisposed() { if (disposed) throw new ObjectDisposedException("MultiControllerSession"); }

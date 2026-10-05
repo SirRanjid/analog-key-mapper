@@ -252,14 +252,17 @@ namespace Tk75.App
         async void SetControllerConnectionForId(string controllerId, bool connect)
         {
             if (closing || deviceDetachInProgress || rgbClosePending) return;
-            CancelStartupReconnect();
             try
             {
                 if (connect && runtime.IsControllerConnecting(controllerId)) connect = false;
+                controllerConnectionPolicy.SetDesired(controllerId, connect);
+                ClearControllerReconnectError(controllerId);
+                if (startupReconnectController == controllerId) CancelStartupReconnect();
                 await RequestControllerConnectionAsync(controllerId, connect, System.Threading.CancellationToken.None);
+                if (connect) controllerConnectionPolicy.Succeeded(controllerId);
             }
             catch (OperationCanceledException) { }
-            catch (Exception ex) { if (!closing && !IsDisposed) Attempt(delegate { throw ex; }); }
+            catch (Exception ex) { controllerConnectionPolicy.Failed(controllerId, DateTime.UtcNow); if (!closing && !IsDisposed) Attempt(delegate { throw ex; }); }
         }
         // Called by the owner's live refresh after a global stop, input loss or a profile edit.
         // Never query MappingSession while its reader-detach transition is pending.

@@ -158,7 +158,6 @@ namespace Tk75.App
             lock (gate)
             {
                 CheckDisposed(); if (keyboardMode == value) return;
-                CancelPendingLocked();
                 keyboardMode = value; ResetProcessing(); frame = new ControllerFrame();
                 if (!value) ResetPreview(null);
                 if (output == null) return;
@@ -214,9 +213,6 @@ namespace Tk75.App
             lock (gate)
             {
                 CheckDisposed();
-                // Rejected edits must also disarm the previous configuration.
-                DisableLocked("Einstellungen geaendert - Controller aus");
-                ResetPreview(null);
                 try
                 {
                     Profile copy = ProfileJson.Deserialize(ProfileJson.Serialize(value));
@@ -231,14 +227,36 @@ namespace Tk75.App
                     }
                     Profile newAvailableProfile = ProfileJson.Clone(copy);
                     HashSet<int> newNeededKeys = NeededKeys(copy);
+                    // Mapping changes do not change the virtual device's identity.
+                    // Only a different controller protocol needs a fresh backend.
+                    if (profile.Controller != copy.Controller)
+                        DisableLocked("Controllertyp geaendert - Controller aus");
+                    else if (output != null)
+                    {
+                        output.Neutral();
+                        if (!output.IsConnected) throw new InvalidOperationException("Controllerverbindung beim Neutralisieren verloren.");
+                    }
                     profile = copy;
                     availableProfile = newAvailableProfile;
                     neededKeys = newNeededKeys;
                     calibrations = newCalibration;
+                    startupHeldKeys.Clear(); startupReleasedKeys.Clear();
+                    ResetProcessing(); ResetPreview(null); frame = new ControllerFrame();
+                    if (output != null)
+                    {
+                        // Held inputs cannot jump to a newly assigned action.
+                        // The same connected device resumes each key on release.
+                        CheckConnectionInputLocked(true, false);
+                        RefreshConnectedStatusLocked();
+                    }
                     changed.Set();
                 }
                 catch (Exception ex)
-                { status = "Einstellungen ungueltig - Controller aus: " + ex.Message; throw; }
+                {
+                    // Rejected edits and failed neutralization must fail closed.
+                    DisableLocked("Einstellungen ungueltig - Controller aus: " + ex.Message);
+                    ResetPreview(ex.Message); throw;
+                }
             }
         }
 
@@ -316,8 +334,10 @@ namespace Tk75.App
             return availableProfile;
         }
         void CheckConnectionInputLocked(bool captureHeldKeys)
+        { CheckConnectionInputLocked(captureHeldKeys, true); }
+        void CheckConnectionInputLocked(bool captureHeldKeys, bool requireActiveBinding)
         {
-            if (!profile.Bindings.Exists(b => b.Enabled)) throw new InvalidOperationException("Das Profil hat keine aktive Zuordnung.");
+            if (requireActiveBinding && !profile.Bindings.Exists(b => b.Enabled)) throw new InvalidOperationException("Das Profil hat keine aktive Zuordnung.");
             var raw = CurrentInputLocked();
             var check = MappingEngine.Compose(raw, calibrations, AvailableProfileLocked(raw), new Dictionary<string, SignalState>(), new Dictionary<int, KeyInputState>(), 0);
             if (check.Errors.Count != 0)

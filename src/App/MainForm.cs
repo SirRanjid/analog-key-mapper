@@ -95,7 +95,12 @@ namespace Tk75.App
             Disposed += delegate { DisposeDeviceDiscovery(); Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPower; uiTimer.Dispose(); DisposeApplicationResources(); };
         }
         void OnPower(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
-        { if (e.Mode == Microsoft.Win32.PowerModes.Suspend) { CancelStartupReconnect(); runtime.Disable("Ruhezustand – Controller aus"); } }
+        {
+            if (InvokeRequired) { BeginInvoke((Action)delegate { OnPower(sender, e); }); return; }
+            if (e.Mode == Microsoft.Win32.PowerModes.Suspend)
+            { controllerReconnectSuspended = true; CancelStartupReconnect(); runtime.Disable("Ruhezustand – Controller aus"); }
+            else if (e.Mode == Microsoft.Win32.PowerModes.Resume) controllerReconnectSuspended = false;
+        }
         static DataGridView Grid(bool liveValues = false)
         {
             DataGridView grid = liveValues ? new BufferedValueGrid() : new DataGridView();
@@ -123,7 +128,7 @@ namespace Tk75.App
             panel.Controls.Add(new Label { Text = "Achse invertieren: am Mapping das entsprechende + / − Ziel wählen.\nKeine Ausgabe an einer losgelassenen Taste, auch bei Minimum > 0.", Width = 650, Height = 55 });
             panel.Controls.Add(focusEnabled); focusEnabled.CheckedChanged += delegate { if (!updating) Attempt(delegate { bool enabled = focusEnabled.Checked; ChangeFocus(next => next.Enabled = enabled); }); };
             var bar = Bar(); bar.Dock = DockStyle.None; Add(bar, Tr("Programmregel hinzufügen", "Add application rule"), AddFocusRule); Add(bar, Tr("Dieses Profil als Standard", "Use this profile by default"), delegate { ChangeFocus(next => next.DefaultProfileFile = Path.GetFileName(profilePath)); }); Add(bar, Tr("Programmregeln anzeigen / entfernen", "View / remove application rules"), EditFocusRules); panel.Controls.Add(bar);
-            panel.Controls.Add(new Label { Text = "Es werden nur Programmname oder Programmpfad im Vordergrund gelesen.\nEin automatischer Profilwechsel neutralisiert und deaktiviert den Controller.\nDas gewählte Profil wird danach bewusst wieder aktiviert.", Width = 700, Height = 80 });
+            panel.Controls.Add(new Label { Text = "Es werden nur Programmname oder Programmpfad im Vordergrund gelesen.\nBeim Profilwechsel bleiben passende Controller verbunden.\nGehaltene Tasten werden erst nach dem Loslassen wieder aktiv.", Width = 700, Height = 80 });
         }
         void Connect()
         {
@@ -316,6 +321,11 @@ namespace Tk75.App
         }
         void Configure()
         {
+            bool nextKeyboardMode = inputModePreferenceProfile == profilePath && configuredInputModePreference == UiReadProfile.ControllerInputEnabled
+                ? runtime.KeyboardMode : !UiReadProfile.ControllerInputEnabled;
+            // Keep output neutral until the new mapping and its keyboard
+            // suppression lease have both been published.
+            runtime.KeyboardMode = true;
             CancelMappingDrag(); EnsureLearnedPressureRange(); sharedPressureRange = new KeyboardPressureRange(calibration);
             if (sharedPressureRange.HasIgnoredLegacyValues && !Object.ReferenceEquals(reportedLegacyPressureRange, calibration))
             {
@@ -324,7 +334,11 @@ namespace Tk75.App
             }
             keyboardSuppression.UpdateEligibility(new SuppressionKey[0], false, true); runtime.Configure(history.Current, sharedPressureRange.Resolve());
             ConfigureLearnedInputs(); RefreshKeySources();
-            ApplyProfileInputModePreference(); RefreshModeShortcutRegistration(); ApplyKeyboardSuppressionPreference(); SyncOutputMode();
+            ConfigureControllerConnections();
+            RefreshModeShortcutRegistration(); ApplyKeyboardSuppressionPreference();
+            if (!nextKeyboardMode) RefreshKeyboardSuppression(true);
+            runtime.KeyboardMode = nextKeyboardMode;
+            ApplyProfileInputModePreference(); RefreshKeyboardSuppression(false); SyncOutputMode();
             RefreshKeyBehaviorAnnotations();
         }
         void Commit(Profile profile)
@@ -380,9 +394,13 @@ namespace Tk75.App
         void LearnKey()
         {
             if (reader == null || !reader.IsReading) throw new InvalidOperationException(Tr("Zuerst die analoge Tastatur verbinden.", "Connect the analog keyboard first."));
-            string label = Ask("Welche Taste anlernen?", "W"); if (label == null) return; runtime.Disable("Tastenlernen – Controller aus");
+            string label = Ask("Welche Taste anlernen?", "W"); if (label == null) return;
+            ++controllerReconnectPauseDepth; CancelStartupReconnect();
+            try {
+            runtime.Disable("Tastenlernen – Controller aus");
             using (var dialog = new LearnDialog(reader, label)) if (dialog.ShowDialog(this) == DialogResult.OK)
             { var next = KeyMapStore.SetLabel(keymap, dialog.KeyIndex, label); KeyMapStore.Save(store.KeyMapPath(reader.Fingerprint), next); keymap = next; RefreshKeys(); RefreshBindings(); store.Event("Key label learned"); }
+            } finally { --controllerReconnectPauseDepth; }
         }
         void RequireReader() { if (!LiveInputReading) throw new InvalidOperationException("Zuerst die Tastatur verbinden."); }
         void UpdateLive()
@@ -492,7 +510,7 @@ namespace Tk75.App
         protected override void WndProc(ref Message message)
         {
             if (HandleSystemSessionMessage(ref message)) return;
-            if (message.Msg == 0x0312 && message.WParam.ToInt32() == DisableHotkey && !deviceDetachInProgress && IsCurrentShortcutMessage(message, true)) { CancelStartupReconnect(); runtime.Disable("Abschalter – Controller aus"); RefreshKeyboardSuppression(false); }
+            if (message.Msg == 0x0312 && message.WParam.ToInt32() == DisableHotkey && !deviceDetachInProgress && IsCurrentShortcutMessage(message, true)) { StopControllerReconnect(); runtime.Disable("Abschalter – Controller aus"); RefreshKeyboardSuppression(false); }
             if (message.Msg == 0x0312 && message.WParam.ToInt32() == ModeHotkey && !deviceDetachInProgress && IsCurrentShortcutMessage(message, false)) Attempt(ToggleInputMode);
             if (message.Msg == 0x0219) OnDeviceChange(message);
             base.WndProc(ref message);

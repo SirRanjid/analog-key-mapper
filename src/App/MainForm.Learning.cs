@@ -13,6 +13,9 @@ namespace Tk75.App
         readonly Dictionary<string, ILearnedInputDeviceSource> learnedSources = new Dictionary<string, ILearnedInputDeviceSource>(StringComparer.Ordinal);
         LearnedInputRouting learnedInputRouting;
         ReaderSession routingReader;
+        string routingBindings;
+        double routingScale;
+        ILearnedInputDeviceSource[] routingSources = new ILearnedInputDeviceSource[0];
         int learnedSourceGeneration;
         bool learnedSourcesOpening, rebuildingInputRouting;
         string learnedPressureIdentity;
@@ -55,20 +58,31 @@ namespace Tk75.App
         void RebuildInputRouting()
         {
             if (rebuildingInputRouting) return;
+            string bindings = new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(UiReadProfile.LearnedInputs ?? new List<LearnedKeyBinding>());
+            var sources = learnedSources.Values.ToArray();
+            if (InputRoutingMatches(bindings, sources)) return;
             rebuildingInputRouting = true;
             try {
             CancelPressureCapture(); CancelInputThresholdCapture();
             var old = learnedInputRouting;
             routingReader = reader;
             learnedInputRouting = new LearnedInputRouting(reader, UiReadProfile.LearnedInputs ?? new List<LearnedKeyBinding>(),
-                sharedPressureRange.ScaleMaximum, learnedSources.Values);
+                sharedPressureRange.ScaleMaximum, sources);
             if (!deviceDetachInProgress) { if (HasLearnedInputs) runtime.SetInputSource(learnedInputRouting); else runtime.SetReader(reader); }
+            routingBindings = bindings; routingScale = sharedPressureRange.ScaleMaximum; routingSources = sources;
             if (old != null) old.Dispose();
             rgbPlanCache = null;
             } finally { rebuildingInputRouting = false; }
         }
+        bool InputRoutingMatches(string bindings, ILearnedInputDeviceSource[] sources)
+        {
+            return learnedInputRouting != null && Object.ReferenceEquals(routingReader, reader) && routingBindings == bindings &&
+                routingScale == sharedPressureRange.ScaleMaximum && routingSources.SequenceEqual(sources);
+        }
         void ConfigureLearnedInputs()
         {
+            if (HasLearnedInputs && InputRoutingMatches(new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(UiReadProfile.LearnedInputs), learnedSources.Values.ToArray()))
+            { if (!previewMode) OpenSavedLearnedSources(); return; }
             ++learnedSourceGeneration; learnedSourcesOpening = false; CancelLearnedOpenBatches();
             var needed = new HashSet<string>((UiReadProfile.LearnedInputs ?? new List<LearnedKeyBinding>()).Where(binding => binding.Backend != "travel").Select(binding => binding.SourceDeviceId));
             foreach (string obsolete in learnedSources.Keys.Where(id => !needed.Contains(id)).ToArray())
@@ -212,6 +226,8 @@ namespace Tk75.App
         {
             int[] unknown = UnknownSelectedInputs(); if (unknown.Length == 0) return;
             FlushInputDraft(); CancelPressureCapture(); CancelInputThresholdCapture(); CancelMappingDrag();
+            ++controllerReconnectPauseDepth; CancelStartupReconnect();
+            try {
             runtime.Disable(Tr("Eingaben lernen – Controller aus", "Learning inputs – controllers off"));
             int[] selection = SelectedKeys(); var originalHistory = history; var token = history.SnapshotToken; var input = reader;
             var layout = keyboard.LayoutModel; string path = profilePath;
@@ -254,6 +270,7 @@ namespace Tk75.App
                 Commit(edited); RefreshKeySources(); UpdateKeyCard();
                 store.Event("Learned input batch saved: " + dialog.Bindings.Length + " keys");
             }
+            } finally { --controllerReconnectPauseDepth; }
         }
         void RefreshKeySources()
         {

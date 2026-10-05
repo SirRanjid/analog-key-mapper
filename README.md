@@ -20,7 +20,7 @@
 - **Set key behavior together.** Configure Rapid Trigger and opposite-key handling (SOCD). Use Capture, then click the opposite key to pair it. Use Ctrl+click or a selection rectangle for bulk edits, with undo.
 - **Tune one key or a whole selection.** Set individual min/max pressure ranges, or calibrate selected keys with one press and release. The keyboard shares one adjustable scale. Two vertical controls set actuation and release; move away from a slider while dragging for finer adjustments.
 - **Save your setup and lighting.** Keep JSON profiles, signal presets and named controllers. Optional mapped-key colors include backups, restoration and a startup check for leftover key markers, with confirmation before cleanup. English and German are included.
-- **Read the status at a glance.** The app logo carries a compact tray badge for connection, keyboard mode, active controllers or an action needing attention. Use the tray or opt into Windows startup; controller reconnection starts off separately. [Background startup guide](docs/background-startup.md).
+- **Read the status at a glance.** The app logo carries a compact tray badge for connection, keyboard mode, active controllers or an action needing attention. Use the tray or opt into Windows startup. Automatic controller connections are configured separately; see the [background startup guide](docs/background-startup.md) for current source behavior.
 
 ## Quick start
 
@@ -33,6 +33,12 @@ The editor needs Windows x64 and .NET Framework 4.x; no installer or compiler is
 This is an **unsigned release candidate**, not stable 1.0. Windows application control may block the app or a helper. Checksums verify file integrity; they are not a code signature. If Windows blocks a file, stop that attempt and keep the error. Do not disable protections to run it.
 
 Prefer to compile it yourself? Download the separate **source ZIP**, verify its checksums, and run **`Build.bat`**. The source package includes the controller-helper source and its vendored dependencies; Go is needed only when building that helper. See [build instructions](docs/building.md).
+
+## Unreleased source update
+
+The **5 October 2026 controller connection update** connects configured controllers automatically once input is ready, retries lost connections, and keeps matching controllers connected while mappings, curves, calibration or profiles change. Automatic connection defaults to on when no preference has been saved; an existing off preference is respected. Manual disconnect and **Turn all controllers off** remain effective. [Behavior and validation](docs/controller-connections-2026-10-05.md).
+
+These changes are in the source checkout. The latest published download remains **rc.11** and does not include this update.
 
 ## Release candidate
 

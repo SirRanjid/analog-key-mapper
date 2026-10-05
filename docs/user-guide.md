@@ -40,14 +40,16 @@ The controller preview displays assigned keyboard keys beside their outputs. Mod
 
 The two controller selectors stay synchronized. Add or rename slots in **Controller** and choose **Xbox 360** or **DualSense** for each. This selects the actual virtual-device type as well as its presentation. Selecting a slot changes the editing context; it does not activate output.
 
-Once the [output dependencies](building.md#virtual-controller-output) are installed, use the slot's illustrated USB connector:
+In the current source, **Connect controllers automatically** connects slots with enabled mappings once input is ready and the [output dependencies](building.md#virtual-controller-output) are available. It defaults to on when no preference has been saved; a saved off preference remains off. Failed or lost connections are retried with a delay. These [controller connection changes](controller-connections-2026-10-05.md) are unreleased and are not included in the rc.11 download.
+
+Use the slot's illustrated USB connector to control connections manually:
 
 - Click its plug or socket to connect or disconnect.
 - Slide the plug in to connect, or pull it out to disconnect.
 - Use the small footer connector to operate a slot without changing your selection.
-- Use **All off** to neutralize all outputs before their devices are removed.
+- Use **All off** to neutralize all outputs before their devices are removed and stop automatic connection for the session.
 
-Profiles support **32 output-capable slots in total**, freely assigned to Xbox or DualSense. Connect each slot you want to use; disconnecting one leaves the others connected. Xbox output is limited by Windows to **four XInput controllers in total, including physical controllers**. DualSense uses a separate HID path and does not consume that four-slot allowance.
+Profiles support **32 output-capable slots in total**, freely assigned to Xbox or DualSense. Manually disconnecting one leaves the others connected and keeps that slot off until manual connection or the next app start. Xbox output is limited by Windows to **four XInput controllers in total, including physical controllers**. DualSense uses a separate HID path and does not consume that four-slot allowance.
 
 The recorded mixed-device test is **two Xbox plus two DualSense controllers** on a preceding helper build. Windows blocked the optimized helper's recorded live-validation attempt; see [release-candidate limits](status.md#release-candidate-limits). The 32-slot software limit is not a completed load test of every possible configuration. See [the acceptance record](multi-controller-acceptance.md). DualSense supports the common mapped buttons, triggers and sticks; this does not promise PS5-console compatibility, touchpad or motion-sensor support.
 
@@ -107,6 +109,8 @@ Choosing the opposite key or resolution policy in the dropdowns also applies imm
 
 The menu offers new, duplicate and renamed profiles, JSON import/export, signal presets and application-specific profile rules. **Ctrl+S** saves the current profile.
 
+The current source keeps controller connections during settings changes and profile switches when a controller's ID and type still match. Output is neutralized while settings are applied; held keys must be released before they become active again. Removing a slot disconnects it, and changing its type requires a new connection. Unchanged input sources are reused.
+
 The app stores local data under `data/` beside its executable. Keep that folder when updating or moving your setup. Exporting a profile does not include all local calibration, learned key maps or lighting backups. Controller names identify slots inside the app; they do not rename Windows devices.
 
 ## Optional keyboard lighting
@@ -141,7 +145,7 @@ If recovery pauses, keep the backups and follow the displayed reason. An onboard
 
 ## Background startup
 
-Use the optional **Start with Windows · in tray** setting and the separate **Reconnect controllers at startup** option. **Minimize to tray** is a saved checkbox: when enabled, the window's **X** hides the editor and keeps controllers running. Tray **Exit**, or **X** with the option disabled, closes the app and restores lighting. Reconnection starts off and only uses a confirmed previous session. See [background startup and tray controls](background-startup.md).
+Use the optional **Start with Windows · in tray** setting and the separate **Connect controllers automatically** option. Automatic connection uses the loaded profile's enabled mappings once input is ready; it defaults to on unless an off preference was saved. An interrupted previous exit no longer prevents it. **Minimize to tray** is a saved checkbox: when enabled, the window's **X** hides the editor and keeps controllers running. Tray **Exit**, or **X** with the option disabled, closes the app and restores lighting. See [background startup and tray controls](background-startup.md) for the unreleased controller policy and its limits.
 
 The tray uses the official app logo with a small status badge: a blue arc while connecting, gray minus when controllers are off or input is disconnected, amber pause in keyboard mode, green check with active controller output, and a red warning triangle when attention is needed. Hover for the specific status, or click to open the editor. A startup lighting question also appears when the editor starts hidden.
 

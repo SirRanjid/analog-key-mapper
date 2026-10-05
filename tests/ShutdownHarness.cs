@@ -308,13 +308,22 @@ namespace Tk75.Tests
         {
             using (var fixture = new Fixture(directory))
             {
-                Set(fixture.Form, "startupReconnectPending", true);
-                Set(fixture.Form, "startupReconnectQueue", new Queue<string>(new[] { "main" }));
+                var policy = Field<ControllerConnectionPolicy>(fixture.Form, "controllerConnectionPolicy");
+                var profile = Field<EditHistory>(fixture.Form, "history").Current;
+                policy.Configure(profile, true);
+                using (var cancellation = new CancellationTokenSource()) {
+                Set(fixture.Form, "startupReconnectCancellation", cancellation);
                 typeof(MainForm).GetMethod("OnPower", Private).Invoke(fixture.Form,
                     new object[] { null, new Microsoft.Win32.PowerModeChangedEventArgs(Microsoft.Win32.PowerModes.Suspend) });
-                Check(!Field<bool>(fixture.Form, "startupReconnectPending") && Field<object>(fixture.Form, "startupReconnectQueue") == null,
-                    "Suspend cancels both initial startup waiting and queued automatic connections.");
+                Check(Field<bool>(fixture.Form, "controllerReconnectSuspended") && cancellation.IsCancellationRequested,
+                    "Suspend pauses reconnection and cancels the in-flight automatic connection.");
                 Check(!fixture.Controller.Active && fixture.Controller.NeutralCalls == 1, "Suspend also neutralizes the connected controller.");
+                typeof(MainForm).GetMethod("OnPower", Private).Invoke(fixture.Form,
+                    new object[] { null, new Microsoft.Win32.PowerModeChangedEventArgs(Microsoft.Win32.PowerModes.Resume) });
+                Check(!Field<bool>(fixture.Form, "controllerReconnectSuspended") && !fixture.Controller.Active,
+                    "Resume permits future retries without enabling output before input is ready.");
+                Set(fixture.Form, "startupReconnectCancellation", null);
+                }
             }
         }
 

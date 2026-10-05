@@ -52,7 +52,7 @@ namespace Tk75.Tests
         static void DefaultsAndLegacy()
         {
             var disk = new Disk(); var fresh = disk.Open();
-            Check(fresh.SessionReady && !fresh.Preferences.Enabled && Targets(fresh).Length == 0, "Fresh installations require manual connection.");
+            Check(fresh.SessionReady && fresh.Preferences.Enabled && Targets(fresh).Length == 0, "Fresh installations enable configured-controller startup without inventing a previous session list.");
             Check(disk.Writes == 1 && disk.Files.ContainsKey(ControllerReconnectStore.SessionFile), "Startup writes the consumption guard before exposing targets.");
             fresh.SetEnabled(true);
             Check(fresh.Preferences.Enabled && Targets(fresh).Length == 0, "Opt-in stores a preference without scheduling existing controllers.");

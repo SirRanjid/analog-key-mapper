@@ -32,7 +32,7 @@ namespace Tk75.App
             if (SessionReady) throw new InvalidOperationException("Controller startup session was already initialized.");
             string settingsJson = read(SettingsFile);
             var settings = settingsJson == null ? new ControllerReconnectSettings() : ControllerReconnectSettings.Parse(settingsJson);
-            Preferences = new ControllerReconnectSettings { Enabled = settings.Enabled };
+            Preferences = Clone(settings);
             Session previous = null;
             try { previous = ParseSession(read(SessionFile)); }
             catch (InvalidDataException) { }
@@ -52,7 +52,10 @@ namespace Tk75.App
         {
             prepared = false; StartupSnapshot = null;
             RequireSession();
-            var next = new ControllerReconnectSettings { Enabled = enabled };
+            var next = Clone(Preferences);
+            next.Enabled = enabled;
+            next.SessionId = null;
+            next.Controllers.Clear();
             WriteSettings(next);
             Preferences = next; RecoveryRequired = false;
         }

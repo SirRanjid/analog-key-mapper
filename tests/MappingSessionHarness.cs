@@ -528,7 +528,7 @@ public static class MappingSessionHarness
                 Check(canceled && isolated.HostProcessId == null, "Canceled isolated connection never starts or opens an output host.");
             }
         }
-        foreach (string mutation in new[] { "cancel", "disable", "configure", "source", "mode", "dispose" })
+        foreach (string mutation in new[] { "cancel", "disable", "kind", "invalid", "source", "dispose" })
         using (var f = new Fixture(false))
         using (var entered = new ManualResetEvent(false))
         using (var release = new ManualResetEvent(false))
@@ -547,9 +547,9 @@ public static class MappingSessionHarness
                     string status = f.Session.Status; var frame = f.Session.Frame; var preview = f.Session.Preview;
                     if (mutation == "cancel") f.Session.CancelPendingConnection();
                     else if (mutation == "disable") f.Session.Disable("cancel pending");
-                    else if (mutation == "configure") f.Session.Configure(f.Profile, f.Calibrations);
+                    else if (mutation == "kind") { f.Profile.Controller = ControllerKind.DualSense; f.Session.Configure(f.Profile, f.Calibrations); }
+                    else if (mutation == "invalid") Reject(delegate { f.Session.Configure(null, f.Calibrations); }, "Invalid configuration cancels a pending output.");
                     else if (mutation == "source") f.Session.SetReader(new ReaderSession { IsReading = true, Snapshot = delegate { return new Dictionary<int, double> { { 14, 0 } }; } });
-                    else if (mutation == "mode") f.Session.SetKeyboardMode(true);
                     else f.Session.Dispose();
                 });
                 Check(action.Wait(1500), mutation + " returns while the candidate is still blocked inside Connect.");
@@ -563,6 +563,39 @@ public static class MappingSessionHarness
                     "Canceled unpublished candidate is neutralized and disposed exactly once, without mapped frames.");
                 if (mutation == "cancel") Check(f.Session.Status == "Controller-Verbindung abgebrochen.",
                     "Finished direct cancellation does not leave a stale connecting status.");
+            }
+            finally { release.Set(); }
+        }
+        foreach (string mutation in new[] { "configure", "mode" })
+        using (var f = new Fixture(false))
+        using (var entered = new ManualResetEvent(false))
+        using (var release = new ManualResetEvent(false))
+        {
+            f.PreparingOutput = delegate(FakeOutput candidate) {
+                candidate.CancellableConnectHook = delegate(CancellationToken token) { entered.Set(); release.WaitOne(); token.ThrowIfCancellationRequested(); };
+            };
+            Task connection = f.Session.EnableAsync(CancellationToken.None);
+            try
+            {
+                Check(entered.WaitOne(1500), "A candidate is still connecting before editing " + mutation + ".");
+                if (mutation == "configure")
+                {
+                    f.Profile.Bindings[0].Target = OutputTarget.RightYPositive;
+                    f.Session.Configure(f.Profile, f.Calibrations);
+                }
+                else f.Session.SetKeyboardMode(true);
+                f.Input.Set(14, 80, 0);
+                release.Set();
+                Check(connection.Wait(1500) && f.Session.Enabled && f.Outputs.Count == 1 && f.Outputs[0].DisposeCalls == 0,
+                    "Editing " + mutation + " preserves the original in-flight connection.");
+                var output = f.Outputs[0];
+                Wait(delegate { return output.Submits >= 3; }, "The retained candidate starts neutral heartbeat frames.");
+                Check(output.Nonzero == 0, "The candidate uses fresh held-key and mode state at publication.");
+                f.Input.Set(14, 0, 0);
+                Wait(delegate { return !f.Session.Status.Contains("Loslassen"); }, "Release after a pending edit rearms the updated mapping.");
+                f.Input.Set(14, 50, 0);
+                if (mutation == "configure") Wait(delegate { return output.Last.RightY == .5 && output.Last.LeftY == 0; }, "The pending candidate publishes the updated target.");
+                else Check(f.Session.KeyboardMode && Neutral(output.Last), "The pending candidate respects the latest keyboard mode.");
             }
             finally { release.Set(); }
         }
@@ -638,9 +671,10 @@ public static class MappingSessionHarness
                 candidate.ConnectHook = delegate { f.Input.SnapshotHook = delegate { f.Session.SetKeyboardMode(true); }; };
             };
             Task pending = f.Session.EnableAsync(CancellationToken.None);
-            Wait(delegate { return pending.IsCompleted; }, "A mode change during final input validation completes its canceled candidate.");
-            Check(pending.IsCanceled && !f.Session.Enabled && f.Session.KeyboardMode && f.Outputs[0].Submits == 0 && f.Outputs[0].DisposeCalls == 1,
-                "Generation is rechecked after the final snapshot, so a validation-time mode change cannot publish stale output.");
+            Check(pending.Wait(1500) && f.Session.Enabled && f.Session.KeyboardMode && f.Outputs[0].DisposeCalls == 0,
+                "A mode change during final input validation preserves the candidate and publishes the latest safe mode.");
+            Wait(delegate { return f.Outputs[0].Submits >= 3; }, "The latest safe mode continues neutral heartbeat frames.");
+            Check(f.Outputs[0].Nonzero == 0, "No mapped output escapes a validation-time keyboard-mode change.");
         }
     }
 
@@ -1079,8 +1113,14 @@ public static class MappingSessionHarness
             Wait(delegate { return output.Last.LeftY == 0.5; }, "Configuration uses copies of profile and calibration");
             Check(output.Last.RightY == 0, "Mutating caller-owned profile cannot alter active target");
             f.Session.Configure(f.Profile, f.Calibrations);
-            Check(!f.Session.Enabled && output.DisposeCalls == 1 && Neutral(output.Last), "Valid Configure immediately neutralizes existing output");
-            f.RemainsOff(1, "Configuration change requires explicit Enable");
+            Check(f.Session.Enabled && output.DisposeCalls == 0 && Neutral(output.Last), "Valid Configure neutralizes and preserves the existing output");
+            int submits = output.Submits;
+            Wait(delegate { return output.Submits >= submits + 3; }, "Settings edits preserve the same output heartbeat");
+            Check(Neutral(output.Last) && f.Outputs.Count == 1, "A held key cannot activate its newly configured target before release");
+            f.Input.Set(14, 0, 0);
+            Wait(delegate { return !f.Session.Status.Contains("Loslassen"); }, "Release rearms the changed mapping");
+            f.Input.Set(14, 200, 0);
+            Wait(delegate { return output.Last.RightY == .5 && output.Last.LeftY == 0; }, "The same device uses the new target and calibration without Enable");
         }
         using (var f = new Fixture(false))
         {
@@ -1088,6 +1128,31 @@ public static class MappingSessionHarness
             Reject(delegate { f.Session.Configure(null, f.Calibrations); }, "Invalid Configure is rejected");
             Check(!f.Session.Enabled && output.DisposeCalls == 1 && Neutral(output.Last), "Rejected Configure still disarms old output");
             f.RemainsOff(1, "Rejected configuration does not revive old output");
+        }
+        using (var f = new Fixture(false))
+        {
+            var output = f.Arm();
+            f.Profile.Bindings.Clear(); f.Session.Configure(f.Profile, f.Calibrations);
+            int submits = output.Submits;
+            Wait(delegate { return output.Submits >= submits + 3; }, "Removing the last mapping retains a connected neutral heartbeat");
+            Check(f.Session.Enabled && output.DisposeCalls == 0 && Neutral(output.Last), "An empty mapping does not remove an already connected device");
+            f.Input.Set(9, 80, 0);
+            f.Profile.Bindings.Add(new Binding { BindingId = "new", KeyIndex = 9, Target = OutputTarget.RightTrigger });
+            f.Session.Configure(f.Profile, f.Calibrations);
+            submits = output.Submits;
+            Wait(delegate { return output.Submits >= submits + 3; }, "A newly added held key remains on the same controller");
+            Check(Neutral(output.Last) && f.Session.Status.Contains("Loslassen"), "Adding a held key to an empty connected controller waits for release");
+            f.Input.Set(9, 0, 0);
+            Wait(delegate { return !f.Session.Status.Contains("Loslassen"); }, "The newly added key rearms on release");
+            f.Input.Set(9, 45, 0);
+            Wait(delegate { return output.Last.RightTrigger == .45; }, "The newly added binding works without connecting again");
+            Check(f.Outputs.Count == 1 && output.DisposeCalls == 0, "Removing and replacing all mappings preserves device identity");
+        }
+        using (var f = new Fixture(false))
+        {
+            var output = f.Arm(); output.ThrowNeutral = true;
+            Reject(delegate { f.Session.Configure(f.Profile, f.Calibrations); }, "Live edit reports failed neutralization");
+            Check(!f.Session.Enabled && output.DisposeCalls == 1, "Failed neutralization cannot leave the old device active after a live edit");
         }
         using (var f = new Fixture(false))
         {
@@ -1130,8 +1195,10 @@ public static class MappingSessionHarness
             try { Check(!configured.WaitOne(20), "Configure serializes behind in-flight Submit"); }
             finally { release.Set(); }
             Check(configured.WaitOne(1000) && editor.Join(1000), "Configure finishes after Submit drains");
-            Check(editError == null && !f.Session.Enabled && output.DisposeCalls == 1 && Neutral(output.Last), "Configure leaves final output neutral after concurrent Submit");
-            Thread.Sleep(20); Check(output.AfterDispose == 0, "No later worker Submit reaches disposed output");
+            Check(editError == null && f.Session.Enabled && output.DisposeCalls == 0 && Neutral(output.Last), "Configure keeps the device connected and neutral after concurrent Submit");
+            int submits = output.Submits;
+            Wait(delegate { return output.Submits >= submits + 3; }, "The retained output resumes heartbeat after a concurrent edit");
+            Check(f.Outputs.Count == 1 && output.AfterDispose == 0, "Concurrent configuration never recreates or disposes the output");
         }
         return "PASS: " + checks + " fake MappingSession checks; no hardware, DLL load, driver, real reader, file store or virtual controller.";
     }
