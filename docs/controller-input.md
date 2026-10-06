@@ -2,7 +2,7 @@
 
 [Back to the project](../README.md) · [User guide](user-guide.md) · [Virtual output setup](building.md#virtual-controller-output)
 
-The **6 October 2026 source update** adds Xbox and PlayStation input modes. The left side becomes an interactive controller, while the existing mapping and response editors remain on the right. This feature is in the source checkout; the published **rc.11** download does not include it.
+**1.0.0-rc.12 includes Xbox and PlayStation input modes.** The left side becomes an interactive controller, while the existing mapping and response editors remain on the right. Use the [Windows rc.12 download](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.12) or build the same version from source.
 
 ## Choose the input
 
@@ -48,7 +48,7 @@ The source includes synthetic controller-report, profile and UI checks. Run `tes
 
 The local runs on **6 October 2026** passed **4,836 profile checks**, **175 routing checks**, **237 backend checks**, **80 source-lifecycle checks**, and **355 controller UI checks**, including the passive checks used when exporting all three screenshots. The publication checkout also passed its complete **16,920-check application UI suite**. These are synthetic checks, not physical-device or game acceptance.
 
-The images above show the real English application UI with synthetic example profiles and disconnected devices. They illustrate the new source update, not the rc.11 binary or a completed physical-controller acceptance test. To regenerate them, run:
+The images above show the real English application UI with synthetic example profiles and disconnected devices. They were captured during development on 6 October 2026 and illustrate the functionality included in rc.12. They do not establish physical-controller acceptance. To regenerate them, run:
 
 ```powershell
 .\tests\Test-GamepadUi.ps1 -ScreenshotDirectory .\docs\images

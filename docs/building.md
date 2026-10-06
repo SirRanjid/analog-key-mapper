@@ -2,7 +2,7 @@
 
 [Back to the project](../README.md) · [User guide](user-guide.md) · [Current status](status.md)
 
-**1.0.0-rc.8 is a free, unsigned release candidate.** Final hardware and game acceptance is pending before stable 1.0. Use the version shown on the release asset; compiling these sources does not sign or publish a release.
+**1.0.0-rc.12 is a free, unsigned release candidate.** Final hardware and game acceptance is pending before stable 1.0. Use the version shown on the release asset; compiling these sources does not sign or publish a release.
 
 ## What the download contains
 
@@ -10,14 +10,14 @@ Choose a package from [Releases](https://github.com/SirRanjid/analog-key-mapper/
 
 | Package | Contents |
 | --- | --- |
-| `AnalogKeyMapper-1.0.0-rc.8-windows-x64.zip` | The unsigned Windows app, keyboard monitor, diagnostic tool and Xbox/DualSense output helper, plus licenses and checksum verification scripts. No compiler is required to open the editor. |
-| `AnalogKeyMapper-1.0.0-rc.8-source.zip` | Complete application and controller-helper sources, vendored Go dependencies, build scripts, tests, documentation, licenses and checksum verification scripts. |
+| `AnalogKeyMapper-1.0.0-rc.12-windows-x64.zip` | The unsigned Windows app, keyboard monitor, diagnostic tool and Xbox/DualSense output helper, plus licenses and checksum verification scripts. No compiler is required to open the editor. |
+| `AnalogKeyMapper-1.0.0-rc.12-source.zip` | Complete application and controller-helper sources, vendored Go dependencies, build scripts, tests, documentation, licenses and checksum verification scripts. |
 
 Both ZIPs contain an `AnalogKeyMapper` folder and `SHA256SUMS.txt`. Neither includes a driver installer, personal profiles or private device captures. Source test fixtures include sanitized sample pressure reports, with their provenance documented separately.
 
 Extract the ZIP before running a script or executable. Use a short, writable folder: the app keeps local data in `data/` beside its executable, or `bin/data/` after a source build. Keep that folder when updating. To use the Windows package, verify it as described below and open `AnalogKeyMapper.exe`.
 
-Back up your existing `data/` folder and close the mapper and its helpers before replacing application files. Do not copy example profiles over your saved setup. Opening the executable normally shows the editor; Windows startup and controller reconnection each require a separate opt-in. See [background startup](background-startup.md).
+Back up your existing `data/` folder and close the mapper and its helpers before replacing application files. Do not copy example profiles over your saved setup. Opening the executable normally shows the editor; Windows startup is opt-in. **Connect controllers automatically** is a separate preference that defaults to on unless an off preference was saved. See [background startup](background-startup.md).
 
 Windows application control may block the unsigned app or a helper. Such blocks occurred on the development machine; final candidate execution and hardware/game acceptance remain pending. Keep the actual error and stop the blocked attempt. The package does not change security policy or require protection to be disabled.
 
@@ -43,8 +43,8 @@ This checks the files listed in the selected package folder's `SHA256SUMS.txt`. 
 The release also provides a separate `SHA256SUMS.txt` for the two ZIP downloads. Compare those entries with the ZIP hashes from PowerShell before extraction if you want to check the archives themselves:
 
 ```powershell
-Get-FileHash .\AnalogKeyMapper-1.0.0-rc.8-windows-x64.zip -Algorithm SHA256
-Get-FileHash .\AnalogKeyMapper-1.0.0-rc.8-source.zip -Algorithm SHA256
+Get-FileHash .\AnalogKeyMapper-1.0.0-rc.12-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\AnalogKeyMapper-1.0.0-rc.12-source.zip -Algorithm SHA256
 ```
 
 Checksums detect file changes. They are not a code signature or independent proof of the publisher's identity when the files and manifest come from the same download.
@@ -106,7 +106,7 @@ The application offers **32 configured output slots in total**, which can mix Xb
 
 Each connected slot owns its own isolated helper and USB/IP attachment. Connecting or disconnecting one does not intentionally alter other slots or unrelated devices. Installing ViGEm does not enable this backend. The tested dependency versions do not establish compatibility with arbitrary other driver versions, games or PS5 consoles; see [status and limits](status.md).
 
-Connection work is asynchronous and cancellable. The unreleased source update automatically connects slots with enabled mappings once input is ready and retries lost connections with a delay. The preference defaults to on when none has been saved; a saved off preference is respected. Settings changes preserve matching connections, and manual disconnect and **Turn all controllers off** remain effective. Windows shutdown limits the total cleanup wait rather than waiting indefinitely. These mechanisms improve handling of failures; they are not a guarantee of completed restoration after power loss or forced termination, or a promise of zero latency. See [startup and shutdown behavior](background-startup.md) for the current source behavior and its distinction from the published rc.11 download.
+Connection work is asynchronous and cancellable. rc.12 automatically connects slots with enabled mappings once input is ready and retries lost connections with a delay. The preference defaults to on when none has been saved; a saved off preference is respected. Settings changes preserve matching connections, and manual disconnect and **Turn all controllers off** remain effective. Windows shutdown limits the total cleanup wait rather than waiting indefinitely. These mechanisms improve handling of failures; they are not a guarantee of completed restoration after power loss or forced termination, or a promise of zero latency. See [startup and shutdown behavior](background-startup.md) for the connection policy included in rc.12.
 
 ## Verify your local build
 
@@ -151,4 +151,4 @@ The packager never overwrites an existing release directory and excludes persona
 
 These ordinary suites cover pure calculations, synthetic input sources, synthetic helper processes, Windows calls and app-owned UI controls. They do not install a driver or create a real virtual controller. Most UI fixtures are offscreen; native scrollbar tests use small nonactivating visible test windows to inspect pixels already drawn to their own controls. Run UI suites when those temporary windows will not interrupt your work. Separate opt-in live acceptance tests create actual devices and are excluded from the offline GitHub workflow.
 
-The rc.8 checks cover curve fitting and editable handles, shared fine-drag behavior, compact settings, concise help and scrollbar lifecycle/redraw paths. Windows desktop support is required for the UI suites. A CI pass does not establish behavior under every Windows desktop theme, or final hardware and game acceptance. Record failed or blocked suites accurately; see [the recorded validation and its limits](status.md).
+The offline checks cover controller-input report parsing, profiles, routing, source lifecycle and the real editor, alongside curve fitting, editable handles, fine-drag behavior and scrollbar handling. Windows desktop support is required for the UI suites. A CI pass does not establish behavior under every Windows desktop theme, or final hardware and game acceptance. Record failed or blocked suites accurately; see [the recorded validation and its limits](status.md).

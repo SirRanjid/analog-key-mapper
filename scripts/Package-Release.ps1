@@ -74,11 +74,14 @@ Analog Key Mapper $Version - Windows x64 ($packageChannel)
 
 1. Extract the entire folder to a writable location.
 2. Run Verify-Checksums.bat to check the included files.
-3. Open AnalogKeyMapper.exe and connect a supported TK75 TMR by USB.
+3. Open AnalogKeyMapper.exe and choose Keyboard, Xbox or PlayStation input.
+   For analog keyboard pressure, connect a supported TK75 TMR by USB.
+   For controller input, select your physical controller and choose Connect.
 
 Xbox and DualSense output additionally require the separate usbip-win2 driver.
 Setup: https://github.com/SirRanjid/analog-key-mapper/blob/main/docs/building.md
 Guide: https://github.com/SirRanjid/analog-key-mapper/blob/main/docs/user-guide.md
+Controller remapping: https://github.com/SirRanjid/analog-key-mapper/blob/main/docs/controller-input.md
 Status: https://github.com/SirRanjid/analog-key-mapper/blob/main/docs/status.md
 
 This free community build is unsigned. Windows may block the application or
@@ -95,6 +98,7 @@ acceptance. Automated checks and synthetic mapping measurements do not replace
 that test. See the status link above for the exact tested scope.
 Common buttons, triggers and sticks are supported. No PS5-console, touchpad,
 motion-sensor or other DualSense-extra compatibility is guaranteed.
+The physical controller remains visible to games; this app does not hide it.
 Update: exit the mapper through its tray menu, back up the entire old folder,
 extract this download into a new folder, then copy the old data/ folder into it.
 Keep that original backup until your mappings and lighting work as expected.

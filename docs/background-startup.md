@@ -1,6 +1,6 @@
 # Background startup and tray controls
 
-**Current source · controller connections updated 5 October 2026.** The controller connection changes below are unreleased and are not included in the published rc.11 download. [Controller update and validation](controller-connections-2026-10-05.md) · [Release validation status](status.md).
+**Included in rc.12 · controller connections updated 5 October 2026.** The Windows rc.12 download includes the connection behavior described below. [Controller update and validation](controller-connections-2026-10-05.md) · [Release validation status](status.md).
 
 ## Open or hide the window
 

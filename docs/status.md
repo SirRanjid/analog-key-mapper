@@ -1,6 +1,6 @@
 # Compatibility and validation
 
-Release-candidate validation, updated **14 September 2026**. [Downloads and release versions](https://github.com/SirRanjid/analog-key-mapper/releases) · [User guide](user-guide.md) · [Build instructions](building.md)
+Release-candidate validation, updated **6 October 2026**. [Downloads and release versions](https://github.com/SirRanjid/analog-key-mapper/releases) · [User guide](user-guide.md) · [Build instructions](building.md)
 
 This page describes implemented features and recorded validation. Release assets identify their own version; the observations below apply only to the builds and test setups stated here. A release candidate is not a stable 1.0 acceptance claim.
 
@@ -20,6 +20,7 @@ The successful two-Xbox/two-DualSense observations below apply to the preceding 
 | --- | --- | --- |
 | Platform | Native Windows x64 application using .NET Framework 4.x and WinForms. | No complete Windows-version, display-scaling or accessibility compatibility matrix. |
 | Keyboard input | Wired TK75 TMR protocol; model 3591 ISO input was observed on hardware. The tested cable device used VID `3151`, PID `5030`. | Shared VID/PID alone does not prove a model. Other keyboards, wireless operation and every firmware are not validated. |
+| Controller input | Xbox XUSB 1.1 and supported Sony DualShock 4 / DualSense / DualSense Edge HID formats; 24 common logical inputs with freely assigned output targets. Included in rc.12. | Report parsing, mappings and lifecycle are synthetically tested. Physical controller input and game acceptance remain open; no controller hiding, Xbox Bluetooth-only HID, legacy XUSB 1.0 or extra Xbox 360 pads on one receiver. [Exact scope](controller-input.md#supported-inputs-and-boundaries). |
 | Learned inputs | Guided assignment of unresolved logical keys from standard keyboard on/off events and supported HID buttons, axes, hats and relative controls. Profiles retain source/control identity. | Native backends are implemented and synthetically tested; physical devices and games still require acceptance. Unknown vendor protocols and arbitrary wrapping counters are not decoded by learning. |
 | Layouts | Manufacturer-derived model 3590 ANSI and 3591 ISO layouts, with separate QWERTY/QWERTZ legends. | An illustrated key does not establish analog reports for it. Fn, knob and special-key pressure support is not fully verified. |
 | Pressure processing | Per-key min/max ranges, calibration for selected keys, a keyboard-wide scale, response curves, Rapid Trigger and opposite-key handling. | The default raw range 0–385 is an estimate. It is not a measured travel distance or factory calibration. |
@@ -31,6 +32,10 @@ The successful two-Xbox/two-DualSense observations below apply to the preceding 
 Profiles offer **32 output-capable slots in total**, each freely assigned to Xbox or DualSense, subject to the Xbox/XInput limit. This is the software's supported configuration limit; the recorded mixed-device acceptance used **two Xbox plus two DualSense**, not 32 connected devices. Larger configurations remain to be load-tested.
 
 ## Recorded automated checks
+
+The integrated controller-input revision on **6 October 2026** passed [**68 offline suites** in the GitHub workflow](https://github.com/SirRanjid/analog-key-mapper/actions/runs/37487109888) for commit `40520fb72051bd9f51a411743f7a18ac05113f48`, before the rc.12 version and release-documentation update. This validates the controller-input and automatic-connection implementation; the rc.12 release workflow separately builds and verifies its exact downloadable revision. [rc.12 release notes](release-notes-1.0.0-rc.12.md) · [Workflows](https://github.com/SirRanjid/analog-key-mapper/actions/workflows/build.yml).
+
+Targeted local controller-input checks passed **4,836 profile assertions**, **175 routing assertions**, **237 backend assertions**, **80 source-lifecycle assertions** and **355 controller UI assertions**, including screenshot export. The publication checkout passed **16,920 application UI assertions**. These cover every 24 × 24 standard input/output pairing, binary button endpoints, axis swaps, Sony report formats, Xbox state decoding, device loss, stale input invalidation, source selection, undo/redo, independent input/output styles and preservation of keyboard profiles. Screenshots use synthetic profiles and disconnected devices. None of these checks establishes physical controller or game acceptance.
 
 The rc.11 candidate keeps the current tab and scroll position when selecting another key, and retains scroll positions when returning to a tab. Existing rows, cells and choices are updated for the selection; only a change in mapping count adds or removes rows. Complete hint updates avoid intermediate layout changes. Edit and capture scope protections remain, and disconnected input sources no longer leave obsolete raw values in reused rows.
 

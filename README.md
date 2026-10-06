@@ -2,16 +2,17 @@
 
 # Analog Key Mapper
 
-**Turn keyboard pressure and supported hardware inputs into controller controls — with visual mapping, editable response curves and optional key lighting.**
+**Remap keyboard pressure, Xbox controllers and PlayStation controllers — with visual mapping, editable response curves and optional key lighting.**
 
-**Free and open source · 1.0.0-rc.11 · Windows x64**
+**Free and open source · 1.0.0-rc.12 · Windows x64**
 
-**[Download Windows rc.11](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.11/AnalogKeyMapper-1.0.0-rc.11-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.11) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
+**[Download Windows rc.12](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.12/AnalogKeyMapper-1.0.0-rc.12-windows-x64.zip)** · [Release notes and source ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.12) · [User guide](docs/user-guide.md) · [Build from source](docs/building.md#compile-from-source)
 
 ![Analog Key Mapper with WASD, Shift and Space mapped to a controller, beside its lighting and USB connection controls](docs/images/controller.png)
 
-## Make each key work your way
+## Make each input work your way
 
+- **Remap controllers freely.** Choose Xbox or PlayStation input to replace the keyboard picture with a selectable controller. Swap stick axes, invert directions, map axes to triggers or use buttons as 0/1 axis inputs. Input and virtual output types are independent. [Controller input guide](docs/controller-input.md).
 - **Map in both directions.** Drag a key onto a controller output, or an output onto a key. The grabbed shape follows your pointer; readable left/right labels and numbered key badges identify assignments.
 - **Learn missing inputs together.** Select unresolved keys, right-click and choose **Learn unknown inputs…**. Pick the source device, then press or move each input in turn. Standard keyboard keys are identified automatically; supported buttons, axes, hats and relative controls can fill the remaining gaps. [Input learning guide](docs/input-learning.md).
 - **Keep controller setups separate.** Mix Xbox 360 and DualSense slots, each with its own mappings, color and USB connection control. Pending connections stay visible and can be cancelled.
@@ -20,13 +21,13 @@
 - **Set key behavior together.** Configure Rapid Trigger and opposite-key handling (SOCD). Use Capture, then click the opposite key to pair it. Use Ctrl+click or a selection rectangle for bulk edits, with undo.
 - **Tune one key or a whole selection.** Set individual min/max pressure ranges, or calibrate selected keys with one press and release. The keyboard shares one adjustable scale. Two vertical controls set actuation and release; move away from a slider while dragging for finer adjustments.
 - **Save your setup and lighting.** Keep JSON profiles, signal presets and named controllers. Optional mapped-key colors include backups, restoration and a startup check for leftover key markers, with confirmation before cleanup. English and German are included.
-- **Read the status at a glance.** The app logo carries a compact tray badge for connection, keyboard mode, active controllers or an action needing attention. Use the tray or opt into Windows startup. Automatic controller connections are configured separately; see the [background startup guide](docs/background-startup.md) for current source behavior.
+- **Read the status at a glance.** The app logo carries a compact tray badge for connection, keyboard mode, active controllers or an action needing attention. Use the tray or opt into Windows startup. Automatic controller connections are configured separately; see the [background startup guide](docs/background-startup.md) for connection behavior.
 
 ## Quick start
 
-1. [Download the Windows rc.11 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.11/AnalogKeyMapper-1.0.0-rc.11-windows-x64.zip) and extract it into a writable folder.
+1. [Download the Windows rc.12 ZIP](https://github.com/SirRanjid/analog-key-mapper/releases/download/v1.0.0-rc.12/AnalogKeyMapper-1.0.0-rc.12-windows-x64.zip) and extract it into a writable folder.
 2. Double-click **`Verify-Checksums.bat`** to check the included files.
-3. Open **`AnalogKeyMapper.exe`** inside the extracted `AnalogKeyMapper` folder, connect your keyboard by USB, and create a mapping.
+3. Open **`AnalogKeyMapper.exe`** inside the extracted `AnalogKeyMapper` folder, choose **Keyboard**, **Xbox** or **PlayStation** below the left-hand picture, connect a supported input device, and create a mapping.
 
 The editor needs Windows x64 and .NET Framework 4.x; no installer or compiler is required for this download. The Xbox/DualSense helper is included, but actual virtual-controller output also needs the separate compatible USB/IP driver. Follow [the output setup instructions](docs/building.md#virtual-controller-output).
 
@@ -34,9 +35,11 @@ This is an **unsigned release candidate**, not stable 1.0. Windows application c
 
 Prefer to compile it yourself? Download the separate **source ZIP**, verify its checksums, and run **`Build.bat`**. The source package includes the controller-helper source and its vendored dependencies; Go is needed only when building that helper. See [build instructions](docs/building.md).
 
-## Unreleased source update
+<a id="unreleased-source-update"></a>
 
-The **6 October 2026 controller input update** adds **Xbox and PlayStation input modes**. Choose the input source below the left-hand picture to open its own profile. A clickable controller replaces the keyboard, with remappable buttons, stick directions and triggers. Use the existing input/output drag-and-drop, response curves and multiple output slots; input and virtual output types are selected independently. [Controller input guide and current limits](docs/controller-input.md).
+## New in rc.12: controller inputs
+
+**rc.12 includes Xbox and PlayStation input modes in the Windows download.** Choose the input source below the left-hand picture to open its own profile. A clickable controller replaces the keyboard, with remappable buttons, stick directions and triggers. Use the existing input/output drag-and-drop, response curves and multiple output slots; input and virtual output types are selected independently. [Controller input guide and current limits](docs/controller-input.md).
 
 ![Xbox input controller on the left and independently configured DualSense output on the right](docs/images/controller-input-xbox.png)
 
@@ -51,19 +54,19 @@ Replace a button's normal action with an analog direction, then tune its respons
 
 </details>
 
-These controller-input screenshots show the source update with synthetic profiles and disconnected devices. Physical input support covers the implemented Xbox XUSB and Sony HID formats; game and hardware acceptance remain open. The physical controller stays visible to Windows, so a game may see both devices. [Supported inputs and boundaries](docs/controller-input.md#supported-inputs-and-boundaries).
+These controller-input screenshots show the functionality included in rc.12, using synthetic profiles and disconnected devices. Physical input support covers the implemented Xbox XUSB and Sony HID formats; game and hardware acceptance remain open. The physical controller stays visible to Windows, so a game may see both devices. [Supported inputs and boundaries](docs/controller-input.md#supported-inputs-and-boundaries).
 
-The **5 October 2026 controller connection update** connects configured controllers automatically once input is ready, retries lost connections, and keeps matching controllers connected while mappings, curves, calibration or profiles change. Automatic connection defaults to on when no preference has been saved; an existing off preference is respected. Manual disconnect and **Turn all controllers off** remain effective. [Behavior and validation](docs/controller-connections-2026-10-05.md).
+**rc.12 also includes the 5 October controller connection update:** configured controllers connect automatically once input is ready, lost connections are retried, and matching controllers stay connected while mappings, curves, calibration or profiles change. Automatic connection defaults to on when no preference has been saved; an existing off preference is respected. Manual disconnect and **Turn all controllers off** remain effective. [Behavior and validation](docs/controller-connections-2026-10-05.md).
 
-These changes are in the source checkout. The latest published download remains **rc.11** and does not include these updates.
+Download **rc.12** to use both updates. See the [rc.12 release notes](docs/release-notes-1.0.0-rc.12.md) for changes, validation and the remaining device limits.
 
 ## Release candidate
 
-**rc.11** keeps your current tab and scroll position when you select another key. Settings, mapping rows and choices update in place, and returning to a tab keeps the position you left. Scrollbars also keep their themed appearance during hover, thumb dragging and held arrow/page clicks, including tables and open drop-downs. [What's new](docs/release-notes-1.0.0-rc.11.md).
+The editor improvements from **rc.11** remain included: selecting another key keeps your current tab and scroll position. Settings, mapping rows and choices update in place, and returning to a tab keeps the position you left. Scrollbars also keep their themed appearance during hover, thumb dragging and held arrow/page clicks, including tables and open drop-downs. [What's new](docs/release-notes-1.0.0-rc.11.md).
 
 Startup lighting review and the cleanup improvements from rc.10 remain included. Matching leftover key colors require confirmation before cleanup unless you have explicitly saved permission for future matching patterns. Exit and Windows shutdown wait for actual keyboard-helper cleanup. [Lighting guide](docs/user-guide.md#optional-keyboard-lighting) · [Background startup](docs/background-startup.md).
 
-The combined update passed **16,993 local UI checks**, including **230 key-selection checks** and **2,373 scrollbar checks**. The workflow covers **62 offline suites**, Windows builds, controller-helper checks and verified packaging; see [validation status](docs/status.md) for recorded results and their exact scope, and the [release page](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.11) for the completed workflow behind its downloads. Physical hardware, real Windows shutdown and game acceptance of rc.11 remain open.
+The integrated controller-input source passed [**68 offline suites**](https://github.com/SirRanjid/analog-key-mapper/actions/runs/37487109888), including controller report parsing, all 24 × 24 input/output combinations, routing, source lifecycle and editor checks. The release workflow builds the Windows app and controller helper and verifies the packages. See [validation status](docs/status.md) for recorded results and their exact scope, and the [rc.12 release page](https://github.com/SirRanjid/analog-key-mapper/releases/tag/v1.0.0-rc.12) for its downloadable revision. Physical controller input, real Windows shutdown and game acceptance remain open.
 
 The rc.9 input-learning features remain: automatically identify standard keyboard positions, learn supported HID controls, review assignments and apply them together with one undo. Routes reconnect only to their saved device identity. Analog pressure still needs a supported protocol; standard keyboard on/off events cannot supply pressure values. [Input learning guide](docs/input-learning.md).
 
@@ -125,7 +128,7 @@ The app logo stays recognizable while a small badge shows the current status:
 
 </details>
 
-The controller-input screenshots show the **6 October 2026 source update**. Other screenshots show **1.0.0-rc.11** with synthetic example data, the English interface and QWERTY key legends. The tray-status image compares the app's rendered icon states.
+The controller-input screenshots were captured during development on **6 October 2026** and show the functionality included in **rc.12**. Other screenshots show **1.0.0-rc.11** with synthetic example data, the English interface and QWERTY key legends; those editor features remain included. The tray-status image compares the app's rendered icon states.
 
 ## Contributing and license
 

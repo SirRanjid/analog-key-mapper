@@ -54,3 +54,26 @@ jobs:
             release/*/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    needs: windows
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'Release ')
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: checked-release-${{ github.sha }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the exact checked commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify and publish the checked release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/Publish-CheckedRelease.ps1

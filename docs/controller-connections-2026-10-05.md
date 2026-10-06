@@ -1,6 +1,6 @@
 # Controller connections — 5 October 2026
 
-**Unreleased source update.** The published rc.11 download does not include these changes. See the [background startup guide](background-startup.md#automatic-controller-connections) for the settings and operating behavior.
+**Included in 1.0.0-rc.12.** This page records the 5 October 2026 connection update and its original validation. The rc.12 Windows download includes these changes. See the [background startup guide](background-startup.md#automatic-controller-connections) for the settings and operating behavior.
 
 ## Behavior
 
