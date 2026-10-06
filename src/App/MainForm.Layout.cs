@@ -44,11 +44,13 @@ namespace Tk75.App
             var brandCaption = Caption("Keyboard Mapper", 19); brandCaption.Tag = "muted"; brandCaption.Dock = DockStyle.Bottom;
             brandPanel.Controls.Add(brand); brandPanel.Controls.Add(brandCaption); header.Controls.Add(brandPanel, 0, 0); header.SetRowSpan(brandPanel, 2);
             var profileCaption = Caption("PROFIL", 20); profileCaption.Tag = "muted"; profileCaption.Margin = new Padding(10, 0, 0, 0); header.Controls.Add(profileCaption, 1, 0);
-            var deviceCaption = Caption("TASTATUR", 20); deviceCaption.Tag = "muted"; deviceCaption.Margin = new Padding(8, 0, 0, 0); header.Controls.Add(deviceCaption, 2, 0);
+            inputDeviceCaption = Caption("TASTATUR", 20); inputDeviceCaption.Tag = "muted"; inputDeviceCaption.Margin = new Padding(8, 0, 0, 0); header.Controls.Add(inputDeviceCaption, 2, 0);
             Combo(profiles, 240, null); profiles.Dock = DockStyle.Fill; profiles.Margin = new Padding(8, 4, 16, 0); header.Controls.Add(profiles, 1, 1);
             profiles.SelectedIndexChanged += delegate { if (!updating && profiles.SelectedItem != null) Attempt(delegate { SaveProfile(); LoadProfile(((ProfileItem)profiles.SelectedItem).Path); }); };
-            Combo(devices, 300, null); devices.Dock = DockStyle.Fill; devices.Margin = new Padding(6, 4, 12, 0); header.Controls.Add(devices, 2, 1);
-            var connect = new SleekButton { Text = "Verbinden", Dock = DockStyle.Fill, Tag = "primary" }; connect.Click += delegate { Attempt(Connect); }; header.Controls.Add(connect, 3, 1);
+            var inputDeviceHost = new Panel { Dock = DockStyle.Fill, Margin = new Padding(6, 4, 12, 0) };
+            Combo(devices, 300, null); devices.Dock = DockStyle.Fill; devices.Margin = Padding.Empty; inputDeviceHost.Controls.Add(devices);
+            Combo(gamepadDevices, 300, null); gamepadDevices.Dock = DockStyle.Fill; gamepadDevices.Visible = false; inputDeviceHost.Controls.Add(gamepadDevices); header.Controls.Add(inputDeviceHost, 2, 1);
+            inputConnectButton = new SleekButton { Text = "Verbinden", Dock = DockStyle.Fill, Tag = "primary" }; inputConnectButton.Click += delegate { Attempt(delegate { if (IsGamepadInput) ConnectGamepad(); else Connect(); }); }; header.Controls.Add(inputConnectButton, 3, 1);
             var menuButton = new SleekButton { Text = "•••", Dock = DockStyle.Fill }; header.Controls.Add(menuButton, 4, 1);
             var menu = BuildMainMenu(); menuButton.Click += delegate { menu.Show(menuButton, new Point(menuButton.Width - menu.Width, menuButton.Height)); };
             shell.Controls.Add(header, 0, 0); shell.Controls.Add(pageHost, 0, 1);
@@ -74,14 +76,15 @@ namespace Tk75.App
             Combo(mainControllerSlotPicker, 208, new object[0]); mainControllerSlotPicker.Dock = DockStyle.Fill; mainControllerSlotPicker.Margin = new Padding(0, 3, 0, 0);
             player.Controls.Add(mainControllerSlotPicker, 0, 1); introductionRow.Controls.Add(player, 1, 0); keyboardArea.Controls.Add(introductionRow, 0, 0);
             keyboard.Dock = DockStyle.Fill; keyboard.LayoutModel = KeyboardLayout.Tk75Iso(); keyboard.LegendStyle = KeyboardLegendStyle.Qwertz;
-            keyboard.SelectionChanged += delegate { if (!updating) SelectKeyboardKeys(); }; keyboardArea.Controls.Add(keyboard, 0, 1);
+            keyboard.SelectionChanged += delegate { if (!updating) SelectKeyboardKeys(); };
+            var inputSurface = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty }; inputSurface.Controls.Add(keyboard); BuildGamepadInputSurface(inputSurface); keyboardArea.Controls.Add(inputSurface, 0, 1);
             keyboard.KeyClicked += delegate(KeyboardKeyDefinition key) { if (!updating && activeMappingDrag == null) TryCompleteSocdCapture(key); };
             var legend = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty, Padding = new Padding(0, 4, 0, 0) };
-            var mappingHint = new Label { Text = Tr("Drag & Drop: Taste ↔ Controller", "Drag & drop: key ↔ controller"), Width = 270, Height = 29, TextAlign = ContentAlignment.MiddleLeft, Tag = "muted" };
+            inputMappingHint = new Label { Text = Tr("Drag & Drop: Taste ↔ Controller", "Drag & drop: key ↔ controller"), Width = 215, Height = 29, TextAlign = ContentAlignment.MiddleLeft, Tag = "muted" }; var mappingHint = inputMappingHint;
             keyCardTips.SetToolTip(mappingHint, Tr("Taste auf einen Controller-Button ziehen – oder den Controller-Button auf eine Taste. Strg + Klick wählt mehrere Tasten aus.", "Drag a key onto a controller button, or drag the controller button onto a key. Ctrl + click selects multiple keys."));
             mappingHint.MouseEnter += delegate { keyCardTips.SetToolTip(mappingHint, Tr("Taste auf einen Controller-Button ziehen – oder den Controller-Button auf eine Taste. Strg + Klick wählt mehrere Tasten aus.", "Drag a key onto a controller button, or drag the controller button onto a key. Ctrl + click selects multiple keys.")); };
-            legend.Controls.Add(mappingHint);
-            Combo(layoutMode, 185, new object[] { "ISO · voreingestellt", "Manuell · ANSI", "Manuell · ISO" }); layoutMode.SelectedIndex = 0;
+            BuildInputSourcePicker(legend); legend.Controls.Add(mappingHint);
+            Combo(layoutMode, 160, new object[] { "ISO · voreingestellt", "Manuell · ANSI", "Manuell · ISO" }); layoutMode.SelectedIndex = 0;
             layoutMode.SelectedIndexChanged += delegate { if (!changingLayout) ChangeLayoutFromPicker(); }; legend.Controls.Add(layoutMode); keyboardArea.Controls.Add(legend, 0, 2);
             advancedPanel.Dock = DockStyle.Fill; advancedPanel.Padding = new Padding(12); advancedPanel.Visible = false; BuildAdvancedEditor(); BuildDetailAreas();
             var sidebar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty, Padding = new Padding(8, 8, 8, 8) };
@@ -123,7 +126,7 @@ namespace Tk75.App
             profileMenu.DropDownItems.Add("Umbenennen", null, delegate { Attempt(RenameProfile); }); profileMenu.DropDownItems.Add("Löschen", null, delegate { Attempt(DeleteProfile); });
             profileMenu.DropDownItems.Add(new ToolStripSeparator()); profileMenu.DropDownItems.Add("Importieren", null, delegate { Attempt(ImportProfile); }); profileMenu.DropDownItems.Add("Exportieren", null, delegate { Attempt(ExportProfile); });
             menu.Items.Add("Rückgängig  ·  Strg+Z", null, delegate { Attempt(Undo); }); menu.Items.Add("Wiederholen  ·  Strg+Y", null, delegate { Attempt(Redo); });
-            menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Geräte neu suchen", null, delegate { Attempt(Scan); });
+            menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Geräte neu suchen", null, delegate { Attempt(delegate { if (IsGamepadInput) ScanGamepads(); else Scan(); }); });
             var layoutMenu = new ToolStripMenuItem("Tastaturabbildung"); menu.Items.Add(layoutMenu);
             layoutMenu.DropDownItems.Add("Automatisch erkennen", null, delegate { layoutMode.SelectedIndex = 0; });
             layoutMenu.DropDownItems.Add("TK75 · ANSI", null, delegate { layoutMode.SelectedIndex = 1; });
@@ -257,16 +260,17 @@ namespace Tk75.App
             finally { updating = false; } RefreshBindings(); HighlightKeys();
         }
         IEnumerable<int> LayoutIndices()
-        { return keyboard.LayoutModel == null ? Enumerable.Empty<int>() : keyboard.LayoutModel.Keys.Where(k => k.KeyIndex.HasValue).Select(k => k.KeyIndex.Value); }
+        { return IsGamepadInput ? Enumerable.Range(0, GamepadInputProfile.ControlCount) : keyboard.LayoutModel == null ? Enumerable.Empty<int>() : keyboard.LayoutModel.Keys.Where(k => k.KeyIndex.HasValue).Select(k => k.KeyIndex.Value); }
         string LayoutLabel(int index)
         { var definition = keyboard.LayoutModel == null ? null : keyboard.LayoutModel.Keys.FirstOrDefault(k => k.KeyIndex == index); return definition == null ? "Index " + index : definition.GetLegend(keyboard.LegendStyle).Replace("\n", " "); }
         void UpdateKeyCard()
         {
             int[] selected = SelectedKeys(); bool one = selected.Length == 1; bool any = selected.Length != 0;
             keyTitle.Text = one ? string.Format(Tr("Taste {0}", "Key {0}"), Label(selected[0])) : any ? string.Format(Tr("{0} Tasten", "{0} keys"), selected.Length) : Tr("Taste auswählen", "Choose a key");
+            if (IsGamepadInput) keyTitle.Text = one ? Label(selected[0]) : any ? string.Format(Tr("{0} Eingaben", "{0} inputs"), selected.Length) : Tr("Controller-Eingabe auswählen", "Choose a controller input");
             RefreshPressureRangeEditor();
             RefreshInputThresholdCaptureButtons();
-            inputDetails.Visible = (reader != null || HasLearnedInputs) && (!LiveInputReading || !LiveInputSamples);
+            inputDetails.Visible = !IsGamepadInput && (reader != null || HasLearnedInputs) && (!LiveInputReading || !LiveInputSamples);
             var keyRows = (TableLayoutPanel)inputDetails.Parent; var inputRow = keyRows.RowStyles[keyRows.GetRow(inputDetails)];
             int inputHeight = inputDetails.Visible ? 22 : 0; if (inputRow.Height != inputHeight) inputRow.Height = inputHeight;
             targets.Enabled = addTargetButton.Enabled = any; removeTargetButton.Enabled = toggleTargetButton.Enabled = SelectedBindings().Length != 0;
@@ -286,7 +290,7 @@ namespace Tk75.App
             var sample = samples[0];
             if (sample.Stale) { if (pressureCaptureReader == null) pressureRange.MeasuredValue = null; SetPressureDisplay(0, string.Format(Tr("Letzter Wert: {0} · veraltet", "Last value: {0} · stale"), sample.RawValue)); return; }
             double amount = sharedPressureRange.Depth(selected[0], sample.RawValue);
-            SetPressureDisplay((int)Math.Round(amount * 1000), string.Format(Tr("Druck · {0} · Rohwert {1}", "Pressure · {0} · raw {1}"), amount.ToString("P0"), sample.RawValue));
+            SetPressureDisplay((int)Math.Round(amount * 1000), IsGamepadInput ? Tr("Eingabe · ", "Input · ") + amount.ToString("P0") : string.Format(Tr("Druck · {0} · Rohwert {1}", "Pressure · {0} · raw {1}"), amount.ToString("P0"), sample.RawValue));
             if (pressureCaptureReader == null) pressureRange.MeasuredValue = sample.RawValue;
         }
         void SetPressureDisplay(int value, string text)
@@ -294,6 +298,7 @@ namespace Tk75.App
 
         void ChangeLayoutFromPicker()
         {
+            if (IsGamepadInput) return;
             bool iso = layoutMode.SelectedIndex == 2 || layoutMode.SelectedIndex == 0 && automaticIso;
             keyboard.LayoutModel = layoutMode.SelectedIndex == 0 && !automaticLayoutAvailable ? null : iso ? KeyboardLayout.Tk75Iso() : KeyboardLayout.Tk75Ansi();
             ApplyLegendForLayout();
@@ -312,6 +317,7 @@ namespace Tk75.App
         }
         void UpdateDetectedLayout()
         {
+            if (IsGamepadInput) return;
             ApplyDetectedModel(reader == null ? (uint?)null : reader.DeviceModelId);
         }
         void ApplyDetectedModel(uint? detected)

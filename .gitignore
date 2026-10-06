@@ -7,6 +7,8 @@ data/
 captures/
 tests/tmp/
 tests/synthetic-app-ui-*/
+tests/synthetic-gamepad-ui-*/
+tests/synthetic-gamepad-lifecycle-*/
 tests/synthetic-background-ui-*/
 tests/synthetic-shutdown-*/
 tests/synthetic-controller-reconnect-*/

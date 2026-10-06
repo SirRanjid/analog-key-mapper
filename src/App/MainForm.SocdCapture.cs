@@ -17,6 +17,7 @@ namespace Tk75.App
 
         void BeginSocdCapture()
         {
+            if (IsGamepadInput) return;
             int[] selected = SelectedKeys();
             if (selected.Length != 1 || closing || deviceDetachInProgress || activeMappingDrag != null) return;
             FlushInputDraft();
@@ -111,7 +112,8 @@ namespace Tk75.App
                 (!SelectedKeys().SequenceEqual(new[] { socdCaptureNoticeTarget.Value }) || !Object.ReferenceEquals(socdCaptureNoticeSnapshot, history.SnapshotToken)))
             { socdCaptureNotice = null; socdCaptureNoticeTarget = null; socdCaptureNoticeSnapshot = null; }
             captureOpposite.Text = socdCapture == null ? Tr("Erfassen", "Capture") : Tr("Abbrechen", "Cancel");
-            captureOpposite.Enabled = !closing && !deviceDetachInProgress && activeMappingDrag == null && (socdCapture != null || SelectedKeys().Length == 1);
+            captureOpposite.Visible = !IsGamepadInput;
+            captureOpposite.Enabled = !IsGamepadInput && !closing && !deviceDetachInProgress && activeMappingDrag == null && (socdCapture != null || SelectedKeys().Length == 1);
             keyCardTips.SetToolTip(captureOpposite, Tr("Erfassen wählen und die Gegentaste auf der Tastaturabbildung anklicken. Esc bricht ab.",
                 "Choose Capture, then click the opposite key on the keyboard. Esc cancels."));
         }

@@ -36,9 +36,26 @@ Prefer to compile it yourself? Download the separate **source ZIP**, verify its 
 
 ## Unreleased source update
 
+The **6 October 2026 controller input update** adds **Xbox and PlayStation input modes**. Choose the input source below the left-hand picture to open its own profile. A clickable controller replaces the keyboard, with remappable buttons, stick directions and triggers. Use the existing input/output drag-and-drop, response curves and multiple output slots; input and virtual output types are selected independently. [Controller input guide and current limits](docs/controller-input.md).
+
+![Xbox input controller on the left and independently configured DualSense output on the right](docs/images/controller-input-xbox.png)
+
+<details>
+<summary>PlayStation input and a button-to-stick remap</summary>
+
+![PlayStation input controller on the left and independently configured Xbox output on the right](docs/images/controller-input-playstation.png)
+
+Replace a button's normal action with an analog direction, then tune its response in the existing editor:
+
+![Xbox A remapped to left-stick-right with an S-curve in the Inputs editor](docs/images/controller-input-remap.png)
+
+</details>
+
+These controller-input screenshots show the source update with synthetic profiles and disconnected devices. Physical input support covers the implemented Xbox XUSB and Sony HID formats; game and hardware acceptance remain open. The physical controller stays visible to Windows, so a game may see both devices. [Supported inputs and boundaries](docs/controller-input.md#supported-inputs-and-boundaries).
+
 The **5 October 2026 controller connection update** connects configured controllers automatically once input is ready, retries lost connections, and keeps matching controllers connected while mappings, curves, calibration or profiles change. Automatic connection defaults to on when no preference has been saved; an existing off preference is respected. Manual disconnect and **Turn all controllers off** remain effective. [Behavior and validation](docs/controller-connections-2026-10-05.md).
 
-These changes are in the source checkout. The latest published download remains **rc.11** and does not include this update.
+These changes are in the source checkout. The latest published download remains **rc.11** and does not include these updates.
 
 ## Release candidate
 
@@ -108,7 +125,7 @@ The app logo stays recognizable while a small badge shows the current status:
 
 </details>
 
-Screenshots show **1.0.0-rc.11** with synthetic example data, the English interface and QWERTY key legends. The tray-status image compares the app's rendered icon states.
+The controller-input screenshots show the **6 October 2026 source update**. Other screenshots show **1.0.0-rc.11** with synthetic example data, the English interface and QWERTY key legends. The tray-status image compares the app's rendered icon states.
 
 ## Contributing and license
 

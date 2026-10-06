@@ -31,6 +31,15 @@ namespace Tk75.App
         }
         struct StatusLayout { public Rectangle Main, Detail, Target; public int FigureHeight; }
         public bool CompactStatus { get; set; }
+        public bool IsInputSurface { get; set; }
+        public bool GamepadMappings { get; set; }
+        readonly HashSet<OutputTarget> selectedInputs = new HashSet<OutputTarget>();
+        public void SetSelectedInputs(IEnumerable<OutputTarget> inputs)
+        {
+            var next = new HashSet<OutputTarget>(inputs);
+            if (selectedInputs.SetEquals(next)) return;
+            selectedInputs.Clear(); selectedInputs.UnionWith(next); Invalidate();
+        }
         struct Viewport
         {
             public float X, Y, Scale;
@@ -211,6 +220,7 @@ namespace Tk75.App
         {
             get
             {
+                if (IsInputSurface) return current.HasInput ? UiText.Get("Eingabe · physischer Controller", "Input · physical controller") : UiText.Get("Eingabe · Controller nicht verbunden", "Input · controller disconnected");
                 if (keyboardMode) return current.OutputEnabled ? UiText.Get("Tastaturmodus · Controller verbunden", "Keyboard mode · controller connected") : UiText.Get("Tastaturmodus · Controller aus", "Keyboard mode · controller off");
                 return current.OutputEnabled ? UiText.Get("Live-Vorschau · Controller-Ausgabe aktiv", "Live preview · controller output active")
                     : UiText.Get("Live-Vorschau · Controller-Ausgabe aus", "Live preview · controller output off");
@@ -220,6 +230,7 @@ namespace Tk75.App
         {
             get
             {
+                if (IsInputSurface) return UiText.Get("Eingabe auswählen · Strg + Klick für mehrere", "Select an input · Ctrl + click for multiple");
                 if (keyboardMode) return UiText.Get("Controller bleibt neutral · Modusschalter zum Wechseln", "Controller stays neutral · use the mode switch");
                 if (unseenInputsOnly) return UiText.Get("Weitere Tasten werden beim Drücken erkannt", "Other keys are detected when pressed");
                 if (current.Error != null) return UiText.Get("Eingaben prüfen · Vorschau neutral", "Check inputs · preview neutral");
@@ -237,7 +248,7 @@ namespace Tk75.App
             {
                 OutputTarget? target = dropTarget ?? hoverTarget;
                 return target.HasValue ? (dropTarget.HasValue ? UiText.Get("Ablegen: ", "Drop on: ") : "") + ControllerPresentation.Label(target.Value, Style) + AssignmentStatus(target.Value)
-                    : UiText.Get("Ziel wählen oder eine Taste hierher ziehen", "Select an output or drag a key here");
+                    : IsInputSurface ? UiText.Get("Sticks, Trigger und Buttons frei zuordnen", "Remap sticks, triggers and buttons") : GamepadMappings ? UiText.Get("Ziel wählen oder eine Eingabe hierher ziehen", "Select an output or drag an input here") : UiText.Get("Ziel wählen oder eine Taste hierher ziehen", "Select an output or drag a key here");
             }
         }
         void UpdateTooltip()
@@ -452,15 +463,17 @@ namespace Tk75.App
         {
             double amount = Amount(region.Target); bool active = current.HasInput && amount > 0;
             bool drop = dropTarget == region.Target, hover = !dropTarget.HasValue && hoverTarget == region.Target, available = availableTargets.Contains(region.Target);
+            bool selected = IsInputSurface && selectedInputs.Contains(region.Target);
             Color color = active ? Color.FromArgb(64 + (int)(amount * 75), 56 + (int)(amount * 69), 88 + (int)(amount * 103)) : Color.FromArgb(28, 31, 40);
             if (region.Kind == ControllerRegionKind.Face && active) color = FaceColor(region.Target);
             using (GraphicsPath path = region.CreatePath())
             {
                 using (Brush fill = new SolidBrush(color)) graphics.FillPath(fill, path);
                 if (available) using (Brush wash = new SolidBrush(Color.FromArgb(26, PartnerColor))) graphics.FillPath(wash, path);
+                if (selected) using (Brush wash = new SolidBrush(Color.FromArgb(75, ModernTheme.Accent))) graphics.FillPath(wash, path);
                 if (drop || hover) using (Brush fill = new SolidBrush(Color.FromArgb(drop ? 91 : 42, drop ? MappingDragFeedback.DropColor : ModernTheme.Accent))) graphics.FillPath(fill, path);
-                using (Pen border = new Pen(drop ? MappingDragFeedback.DropColor : available ? PartnerColor : hover || active ? ModernTheme.Accent : Color.FromArgb(73, 78, 94),
-                    drop ? 2.5f / scale : hover ? 1.8f : available ? 1.4f : 1f) { DashStyle = drop ? DashStyle.Dash : DashStyle.Solid }) graphics.DrawPath(border, path);
+                using (Pen border = new Pen(drop ? MappingDragFeedback.DropColor : selected ? ModernTheme.AccentHover : available ? PartnerColor : hover || active ? ModernTheme.Accent : Color.FromArgb(73, 78, 94),
+                    drop ? 2.5f / scale : selected ? 2f : hover ? 1.8f : available ? 1.4f : 1f) { DashStyle = drop ? DashStyle.Dash : DashStyle.Solid }) graphics.DrawPath(border, path);
                 if (region.Kind == ControllerRegionKind.Trigger)
                 {
                     RectangleF track = new RectangleF(region.Bounds.X + 7, region.Bounds.Bottom - 8, region.Bounds.Width - 14, 4);

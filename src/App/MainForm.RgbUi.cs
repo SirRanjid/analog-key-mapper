@@ -14,10 +14,12 @@ namespace Tk75.App
         readonly SleekButton rgbRestoreButton = new SleekButton { Dock = DockStyle.Fill, Margin = new Padding(8, 2, 0, 2) };
         readonly Label rgbStatus = new Label { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft, Tag = "muted", Margin = new Padding(2, 0, 8, 0) };
         bool syncingRgbUi;
+        Control rgbSettingsCard;
 
         Control BuildRgbUi()
         {
             var card = new SleekCard { Dock = DockStyle.Top, Height = 84, Padding = new Padding(4), Margin = new Padding(0, 6, 0, 6) };
+            rgbSettingsCard = card;
             var rows = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
             rows.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             rows.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); rows.RowStyles.Add(new RowStyle(SizeType.Percent, 50));

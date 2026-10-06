@@ -27,7 +27,7 @@ namespace Tk75.App
         readonly Button applyKeyBehavior = new SleekButton { Size = new Size(140, 38), Margin = new Padding(3, 3, 9, 3), Tag = "primary" };
         readonly Button resetKeyBehavior = new SleekButton { Size = new Size(140, 38), Margin = new Padding(3) };
         Button controllerToggle, keyBehaviorToggle, keySettingsToggle;
-        string detailsMode;
+        string detailsMode, lastKeyDetailsMode;
         bool updatingInput, inputDirty, applyingOppositeSelection;
         int? legendOverride;
         int[] editingInputKeys = new int[0];
@@ -55,6 +55,7 @@ namespace Tk75.App
             keyboard.RefreshLanguage(); curve.Invalidate(); controllerPreview.Invalidate();
             SyncOutputMode();
             RefreshInputModeUi();
+            RefreshGamepadModeUi();
         }
         void AddLanguageMenu(ContextMenuStrip menu)
         {
@@ -83,9 +84,16 @@ namespace Tk75.App
         }
         void ChooseInitialDetails()
         { SetDetailMode(null, false); }
+        void ShowKeyDetails()
+        {
+            // Mouse-up distinguishes a short click from a mapping drag. Keep
+            // the current key editor, including its opposite-key subsection.
+            if (detailsMode == "controller") SetDetailMode(lastKeyDetailsMode, true);
+        }
         void SetDetailMode(string mode, bool chosen, bool activate = true)
         {
             if (deviceDetachInProgress || closing) return;
+            if (mode != "controller") lastKeyDetailsMode = mode == "advanced" ? "advanced" : null;
             if (mode == detailsMode) { UpdateDetailsButtons(); UpdateDetailsTitle(); return; }
             if (mode != "input" && socdCapture != null) CancelSocdCapture(false);
             if (mode != "advanced" && inputThresholdCaptureReader != null) CancelInputThresholdCapture();
@@ -120,6 +128,7 @@ namespace Tk75.App
         void UpdateDetailsTitle()
         {
             string title = detailsMode == "controller" ? ControllerDisplayName : detailsMode == "advanced" ? Tr("Feinabstimmung", "Fine tuning") : Tr("Tasteneinstellungen", "Key settings");
+            if (IsGamepadInput && detailsMode != "controller" && detailsMode != "advanced") title = Tr("Eingabeeinstellungen", "Input settings");
             int[] selected = SelectedKeys();
             if (detailsMode != "controller" && selected.Length == 1) title += " · " + Label(selected[0]);
             else if (detailsMode != "controller" && selected.Length > 1) title += string.Format(Tr(" · {0} Tasten", " · {0} keys"), selected.Length);
@@ -129,6 +138,7 @@ namespace Tk75.App
         {
             if (controllerToggle == null) return;
             controllerToggle.Text = Tr("Controller", "Controller"); keyBehaviorToggle.Text = Tr("Gegentasten", "Opposite keys"); advancedToggle.Text = Tr("Kurve", "Curve"); keySettingsToggle.Text = Tr("Tasten", "Keys");
+            if (IsGamepadInput) { controllerToggle.Text = Tr("Ausgabe", "Output"); keySettingsToggle.Text = Tr("Eingaben", "Inputs"); }
             ((DetailTabButton)controllerToggle).IsSelected = detailsMode == "controller";
             if (detailsMode == "input") ModernTheme.Primary(keyBehaviorToggle); else ModernTheme.Secondary(keyBehaviorToggle);
             ((DetailTabButton)advancedToggle).IsSelected = detailsMode == "advanced";
@@ -172,7 +182,7 @@ namespace Tk75.App
             form.Controls.Add(oppositeKey, 0, 1); form.Controls.Add(oppositeMode, 1, 1); form.SetColumnSpan(oppositeMode, 2);
             oppositeMode.Items.Add(new OppositeModeItem(InputOpposedPolicy.Neutral)); oppositeMode.Items.Add(new OppositeModeItem(InputOpposedPolicy.LastPressed)); oppositeMode.Items.Add(new OppositeModeItem(InputOpposedPolicy.FirstPressed)); oppositeMode.SelectedIndex = 0;
             BuildSocdDragUi(form, 2);
-            var explanation = Caption(Tr("Nur echte Tastendrücke. Das gewählte Tastenpaar wird gemeinsam geregelt.", "Physical key presses only. The selected pair shares one opposite-direction rule."), 36); explanation.Tag = "muted"; form.Controls.Add(explanation, 0, 3); form.SetColumnSpan(explanation, 3);
+            var explanation = Caption(Tr("Das gewählte Eingabepaar wird gemeinsam geregelt.", "The selected input pair shares one opposite-direction rule."), 36); explanation.Tag = "muted"; form.Controls.Add(explanation, 0, 3); form.SetColumnSpan(explanation, 3);
             applyKeyBehavior.Click += delegate { Attempt(SaveKeyBehavior); }; resetKeyBehavior.Click += delegate { Attempt(ResetKeyBehavior); };
             rapidTrigger.CheckStateChanged += delegate { if (!updatingInput) { MarkInputDirty(InputActivationFields.RapidTrigger); SetInputFieldAvailability(); RefreshCurveInputPreview(); } };
             oppositeKey.SelectedIndexChanged += delegate { ApplyOppositeSelection(); };

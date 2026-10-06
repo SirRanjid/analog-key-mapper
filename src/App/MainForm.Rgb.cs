@@ -125,11 +125,11 @@ namespace Tk75.App
             {
                 RgbBackupWork work = rgbBackupWork;
                 Profile profile = UiReadProfile;
-                bool shortcutActive = modeHotkey && modeShortcutRegistrationActive && !modeShortcutDialogOpen;
+                bool shortcutActive = !IsGamepadInput && modeHotkey && modeShortcutRegistrationActive && !modeShortcutDialogOpen;
                 KeyboardLayout layout = keyboard.LayoutModel;
                 int? shortcutIndex = profile.ModeSwitchLightingEnabled && shortcutActive
                     ? HotkeyPhysicalKeyResolver.ResolveIndex(layout, profile.ModeSwitchHotkey.KeyCode) : null;
-                RgbLightingPlan plan = GetRgbLightingPlan(work, profile, runtime.ActiveControllerIds, runtime.KeyboardMode,
+                RgbLightingPlan plan = GetRgbLightingPlan(work, profile, runtime.ActiveControllerIds, IsGamepadInput || runtime.KeyboardMode,
                     shortcutActive, shortcutIndex, layout);
                 lock (work.Gate)
                 {

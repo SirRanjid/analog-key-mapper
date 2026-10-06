@@ -19,6 +19,7 @@ namespace Tk75.App
         CalibrationDocument displayedPressureRange;
         int[] displayedPressureKeys = new int[0];
         bool updatingPressureRange;
+        bool? pressureRangeGamepadMode;
         readonly object pressureCaptureGate = new object();
         PressureRangeCapture pressureCapture;
         Dictionary<int, PressureRangeCapture> pressureCaptureCandidates;
@@ -93,6 +94,19 @@ namespace Tk75.App
         void RefreshPressureRangeEditor()
         {
             int[] selected = SelectedKeys();
+            var rangePanel = pressureRange.Parent;
+            var rangeCard = rangePanel == null ? null : rangePanel.Parent as TableLayoutPanel;
+            if (rangeCard != null && pressureRangeGamepadMode != IsGamepadInput) {
+                pressureRangeGamepadMode = IsGamepadInput; rangePanel.Visible = !IsGamepadInput;
+                var row = rangeCard.RowStyles[rangeCard.GetRow(rangePanel)]; float height = IsGamepadInput ? 0 : 80;
+                if (row.Height != height) row.Height = height;
+            }
+            if (IsGamepadInput) {
+                CancelPressureCapture(); pressureRange.Enabled = pressureScaleMaximum.Enabled = calibrateRange.Enabled = false;
+                keyHint.Text = selected.Length == 0 ? Tr("Links eine Eingabe wählen. Jede Richtung lässt sich einzeln zuordnen.", "Select an input on the left. Map each direction independently.") :
+                    Tr("Ziele hinzufügen oder entfernen · Kurve und Deadzone je Zuordnung", "Add or remove targets · curve and deadzone per mapping");
+                return;
+            }
             if (pressureCaptureReader != null && (!selected.SequenceEqual(pressureCaptureKeys) || !Object.ReferenceEquals(InputView, pressureCaptureReader))) CancelPressureCapture();
             updatingPressureRange = true;
             try

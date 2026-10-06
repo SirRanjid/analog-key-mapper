@@ -61,6 +61,7 @@ namespace Tk75.App
             Padding compactPadding = new Padding(8, 2, 8, 2);
             if (inputModeButton.Padding != compactPadding) inputModeButton.Padding = compactPadding;
             string text = runtime.KeyboardMode ? Tr("Modus: Tastatur", "Mode: Keyboard") : Tr("Modus: Controller", "Mode: Controller");
+            if (IsGamepadInput) text = runtime.KeyboardMode ? Tr("Remapping pausiert", "Remapping paused") : Tr("Remapping aktiv", "Remapping active");
             if (modeHotkey) text += " · " + ShortcutLabel;
             if (inputModeButton.Text != text) inputModeButton.Text = text;
             string hint = Tr(
@@ -68,6 +69,7 @@ namespace Tk75.App
                 "Click to switch. Keyboard mode allows normal typing and keeps the connected controller neutral. Controller mode uses your mappings. ‘Controller input only’ prevents additional keyboard input. Find the profile default and shortcuts in the menu.") +
                 (String.IsNullOrEmpty(modeShortcutError) ? "" : " " + modeShortcutError);
             RefreshStopShortcutUi();
+            if (IsGamepadInput) hint = Tr("Pausiert oder aktiviert die virtuelle Ausgabe. Der physische Controller bleibt für Windows sichtbar.", "Pause or resume virtual output. The physical controller remains visible to Windows.");
             if (keyCardTips.GetToolTip(inputModeButton) != hint) keyCardTips.SetToolTip(inputModeButton, hint);
             RefreshSuppressionUi();
         }
@@ -116,7 +118,7 @@ namespace Tk75.App
         {
             if (IsDisposed || Disposing) return;
             Profile profile = UiReadProfile;
-            bool enabled = applicationInputActive && !closing && !rgbClosePending && profile.KeyboardSuppressionMode != KeyboardSuppressionMode.Off;
+            bool enabled = !IsGamepadInput && applicationInputActive && !closing && !rgbClosePending && profile.KeyboardSuppressionMode != KeyboardSuppressionMode.Off;
             keyboardSuppression.SetEnabled(enabled);
             if (!enabled) return;
             var eligible = new List<SuppressionKey>();

@@ -142,6 +142,13 @@ namespace Tk75.Mapping
                 if (kind == "profile")
                 {
                     if (name == "Name") Scalar(member, "string");
+                    else if (name == "InputDeviceId" || name == "InputDeviceName") Scalar(member, member.GetAttribute("type") == "null" ? "null" : "string");
+                    else if (name == "InputMode")
+                    {
+                        Scalar(member, "number"); int mode;
+                        if (!Int32.TryParse(member.InnerText, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out mode) || mode < 0 || mode > 2)
+                            throw new ArgumentException("Der Eingabemodus muss Tastatur, Xbox oder PlayStation sein.");
+                    }
                     else if (name == "Version" || name == "StickShape" || name == "OpposedPolicy" || name == "Aggregation" || name == "Controller") Scalar(member, "number");
                     else if (name == "Bindings") CheckArray(member, "binding");
                     else if (name == "Inputs") CheckArray(member, "input");

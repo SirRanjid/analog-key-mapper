@@ -144,12 +144,27 @@ namespace Tk75.App
                 string identity = WorkspaceStore.Identity(selected.Device, candidate.Fingerprint); calibration = store.LoadCalibration(identity, candidate.Fingerprint);
                 string path = store.KeyMapPath(candidate.Fingerprint); keymap = File.Exists(path) ? KeyMapStore.Load(path) : KeyMapStore.Create(candidate.Fingerprint);
                 if (keymap.ProtocolFingerprint != candidate.Fingerprint) throw new InvalidDataException(Tr("Tastenplan stimmt nicht überein.", "The key map does not match this keyboard."));
-                candidate.Fault += delegate(string error) { if (object.ReferenceEquals(reader, candidate)) runtime.Disable("Eingabefehler – Controller aus"); store.Event("Reader fault: " + error); };
+                candidate.Fault += delegate(string error) { OnReaderFault(candidate, error); };
                 candidate.Start(); reader = candidate; runtime.SetReader(reader); Configure(); ConfigureKeyboardForDevice(selected.Device); store.Event("Input session requested; protocol " + reader.Fingerprint); RefreshKeys(); RefreshBindings();
             }
             catch { runtime.SetReader(null); reader = null; candidate.Dispose(); throw; }
         }
-        string Label(int index) { var named = keymap == null ? null : keymap.Entries.FirstOrDefault(e => e.KeyIndex == index); return named == null ? LayoutLabel(index) : named.Label; }
+        void OnReaderFault(ReaderSession candidate, string error)
+        {
+            store.Event("Reader fault: " + error);
+            // Reader faults arrive on its worker. Decide against the active
+            // source on the UI thread: a retained keyboard, or a queued fault
+            // from the previous source, must not disconnect gamepad output.
+            // MappingSession already neutralizes a failed reader immediately
+            // through IsReading, independently of this UI disconnect action.
+            try {
+                BeginInvoke((Action)delegate {
+                    if (!closing && !applicationResourcesDisposed && object.ReferenceEquals(ActiveRoutingReader, candidate))
+                        runtime.Disable("Eingabefehler – Controller aus");
+                });
+            } catch (InvalidOperationException) { } // Window already closed.
+        }
+        string Label(int index) { if (IsGamepadInput && index >= 0 && index < GamepadInputProfile.ControlCount) return ControllerPresentation.Label(GamepadInputProfile.Target(index), GamepadInputStyle); var named = keymap == null ? null : keymap.Entries.FirstOrDefault(e => e.KeyIndex == index); return named == null ? LayoutLabel(index) : named.Label; }
         int[] SelectedKeys() { return keys.SelectedRows.Cast<DataGridViewRow>().Select(r => (int)r.Cells[0].Value).OrderBy(x => x).ToArray(); }
         string[] SelectedBindings() { return bindings.SelectedRows.Cast<DataGridViewRow>().Select(r => (string)r.Tag).ToArray(); }
         string[] SelectedSettingsBindings()
@@ -187,7 +202,7 @@ namespace Tk75.App
                     var named = keymap == null ? null : keymap.Entries.FirstOrDefault(e => e.KeyIndex == i); keyboard.SetKeyLabel(i, named == null ? null : named.Label);
                 }
                 if (keys.CurrentCell != null && !showAll.Checked && !known.Contains(keys.CurrentCell.RowIndex)) keys.CurrentCell = null;
-                for (int i = 0; i < 256; i++) keys.Rows[i].Visible = showAll.Checked || known.Contains(i);
+                for (int i = 0; i < 256; i++) keys.Rows[i].Visible = IsGamepadInput ? i < GamepadInputProfile.ControlCount : showAll.Checked || known.Contains(i);
                 var selected = new HashSet<int>(selection);
                 for (int i = 0; i < 256; i++) keys.Rows[i].Selected = keys.Rows[i].Visible && selected.Contains(i);
             }
@@ -198,6 +213,7 @@ namespace Tk75.App
             bool previous = updating; updating = true;
             try { keyboard.SetSelectedKeys(SelectedKeys()); keyboard.SetMappedKeys(CurrentControllerBindings(history.Current).Select(b => b.KeyIndex)); }
             finally { updating = previous; }
+            RefreshGamepadSelection();
         }
         void RefreshBindings()
         {
@@ -340,6 +356,7 @@ namespace Tk75.App
             runtime.KeyboardMode = nextKeyboardMode;
             ApplyProfileInputModePreference(); RefreshKeyboardSuppression(false); SyncOutputMode();
             RefreshKeyBehaviorAnnotations();
+            RefreshGamepadModeUi();
         }
         void Commit(Profile profile)
         {
@@ -373,7 +390,7 @@ namespace Tk75.App
             finally { updating = false; }
         }
         void NewProfile(bool duplicate)
-        { string name = Ask("Profilname", duplicate ? history.Current.Name + Tr(" Kopie", " copy") : Tr("Neues Profil", "New profile")); if (name == null) return; SaveProfile(); var profile = duplicate ? history.Current : new Profile(); profile.Name = name; MappingValidation.RequireValid(profile); profilePath = store.NewProfilePath(); history = new EditHistory(profile); SaveProfile(); Configure(); ReloadProfiles(); RefreshKeys(); RefreshBindings(); SyncBehavior(); }
+        { string name = Ask("Profilname", duplicate ? history.Current.Name + Tr(" Kopie", " copy") : Tr("Neues Profil", "New profile")); if (name == null) return; SaveProfile(); var profile = duplicate ? history.Current : IsGamepadInput ? GamepadInputProfile.Create(UiReadProfile.InputMode, name) : new Profile(); profile.Name = name; MappingValidation.RequireValid(profile); profilePath = store.NewProfilePath(); history = new EditHistory(profile); SaveProfile(); Configure(); ReloadProfiles(); RefreshKeys(); RefreshBindings(); SyncBehavior(); }
         void RenameProfile() { string name = Ask("Profilname", history.Current.Name); if (name == null) return; var profile = history.Current; profile.Name = name; Commit(profile); SaveProfile(); ReloadProfiles(); }
         void DeleteProfile()
         {
@@ -430,6 +447,7 @@ namespace Tk75.App
             if (keys.Visible)
                 foreach (var entry in snapshot) { if (!keys.Rows[entry.KeyIndex].Visible) keys.Rows[entry.KeyIndex].Visible = true; SetCellValue(keys.Rows[entry.KeyIndex].Cells[2], entry.Known ? entry.RawValue.ToString() + (entry.Stale ? Tr(" · alt", " · stale") : "") : "—"); }
             if (keyboard.Visible) UpdateKeyboardValues(snapshot);
+            if (IsGamepadInput) UpdateGamepadLive();
             bool reading = LiveInputReading, sampled = LiveInputSamples;
             if (lastCardReading != reading || lastCardSamples != sampled) { UpdateKeyCard(); lastCardReading = reading; lastCardSamples = sampled; }
             if (pressure.Visible || pressureText.Visible) UpdatePressure(snapshot);
@@ -448,6 +466,7 @@ namespace Tk75.App
                 }
             }
             deviceStatus.Text = reader == null ? HasLearnedInputs ? Tr("Gelernte Eingaben · ", "Learned inputs · ") + (reading ? Tr("verbunden", "connected") : Tr("Gerät nicht verfügbar", "device unavailable")) : DiscoveryStatus() : UiText.Get(reader.Status) + " · " + snapshot.Length + Tr(" Tasten gesehen", " keys seen");
+            if (IsGamepadInput) deviceStatus.Text = GamepadInputStatus();
             string nextOutputStatus = OutputAvailability == null ? UiText.Get(runtime.Status) : selectedControllerKind == ControllerKind.DualSense ? Tr("PS5-Ausgabe · Einrichtung noch offen", "PS5 output · setup pending") : UiText.Get("Vorschau · Controller noch in Prüfung");
             bool anyEnabled = runtime.AnyEnabled;
             if (anyEnabled && !runtime.Enabled) nextOutputStatus = Tr("Andere Controller verbunden", "Other controllers connected");

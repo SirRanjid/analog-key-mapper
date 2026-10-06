@@ -68,7 +68,7 @@ namespace Tk75.App
                     string path = Marshal.PtrToStringUni(IntPtr.Add(message.LParam, 28), (size - 28) / 2).TrimEnd('\0');
                     autoConnect.ObserveRemoval(path);
                     var active = reader;
-                    if (active != null && string.Equals(active.Device.devicePath, path, StringComparison.OrdinalIgnoreCase)) DetachRemovedReader(active);
+                    if (!IsGamepadInput && active != null && string.Equals(active.Device.devicePath, path, StringComparison.OrdinalIgnoreCase)) DetachRemovedReader(active);
                 }
             }
             discoveryGeneration++; discoveryPending = true; discoveryTimer.Stop(); discoveryTimer.Start();
@@ -116,7 +116,7 @@ namespace Tk75.App
         {
             OpenSavedLearnedSources();
             var active = reader;
-            if (active != null && !DeviceDiscoveryPolicy.ContainsPath(metadata, active.Device.devicePath)) DetachRemovedReader(active);
+            if (!IsGamepadInput && active != null && !DeviceDiscoveryPolicy.ContainsPath(metadata, active.Device.devicePath)) DetachRemovedReader(active);
             bool recovered = discoveryFailed; discoveryFailed = false;
             if (lastInventory != null && DeviceDiscoveryPolicy.SameInventory(lastInventory, metadata))
             { if (recovered) SetDiscoverySelectionStatus(metadata); TryAutoConnectKeyboard(); return; }
@@ -144,6 +144,7 @@ namespace Tk75.App
         }
         void TryAutoConnectKeyboard()
         {
+            if (IsGamepadInput) return;
             var selected = devices.SelectedItem as DeviceItem;
             string path = autoConnect.TryBegin(lastInventory ?? new DeviceDiscoveryMetadata[0], selected == null ? null : selected.Device.devicePath,
                 !discoveryEnabled || closing || reader != null || deviceDetachInProgress);

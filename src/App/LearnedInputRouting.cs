@@ -31,7 +31,7 @@ namespace Tk75.App
         {
             internal int KeyIndex, PhysicalKey;
             internal string Label, ControlId;
-            internal bool Travel, TravelMatches;
+            internal bool Travel, TravelMatches, Gamepad;
             internal LearnedInputRoute Interpretation;
             internal ILearnedInputDeviceSource Source;
             internal bool RelativeKnown;
@@ -63,7 +63,7 @@ namespace Tk75.App
                 if (binding == null || (uint)binding.KeyIndex >= 256 || byKey[binding.KeyIndex] != null)
                     throw new ArgumentException("Learned inputs require distinct logical key indices in 0..255.", "bindings");
                 var route = new RuntimeRoute { KeyIndex = binding.KeyIndex, Label = binding.SourceName,
-                    ControlId = binding.ControlId, Travel = binding.Backend == "travel", PhysicalKey = -1 };
+                    ControlId = binding.ControlId, Travel = binding.Backend == "travel", Gamepad = binding.Backend == "gamepad", PhysicalKey = -1 };
                 if (route.Travel)
                 {
                     if (!binding.SourceKeyIndex.HasValue || (uint)binding.SourceKeyIndex.Value >= 256 ||
@@ -74,7 +74,7 @@ namespace Tk75.App
                 }
                 else
                 {
-                    if (binding.Backend != "hid" && binding.Backend != "keyboard") throw new ArgumentException("Unsupported input backend.", "bindings");
+                    if (binding.Backend != "hid" && binding.Backend != "keyboard" && binding.Backend != "gamepad") throw new ArgumentException("Unsupported input backend.", "bindings");
                     route.Interpretation = new LearnedInputRoute(binding.SourceDeviceId, binding.ControlId, (InputControlKind)binding.Kind,
                         binding.Minimum, binding.Maximum, binding.Rest, binding.Active, binding.Direction, binding.HatValue);
                     ILearnedInputDeviceSource source;
@@ -212,7 +212,11 @@ namespace Tk75.App
             }
             double raw;
             if (!route.Source.TryGetValue(route.ControlId, out raw) || !Finite(raw) || !Reading(route.Source)) return false;
-            value = Math.Round(route.Interpretation.Normalize(raw) * scaleMaximum);
+            value = route.Interpretation.Normalize(raw) * scaleMaximum;
+            // Controller axes must retain their native precision, independent
+            // of the keyboard's pressure range. Existing learned keyboard/HID
+            // routes retain their original integer-pressure interpretation.
+            if (!route.Gamepad) value = Math.Round(value);
             return true;
         }
         public KeyStateSnapshot[] GetUiSnapshot(double maxAgeMs)

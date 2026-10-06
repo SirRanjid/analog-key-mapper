@@ -150,10 +150,10 @@ namespace Tk75.App
             foreach (int index in selected)
             {
                 KeyInputSettings input; physical.TryGetValue(index, out input);
-                string description = DescribePhysicalBehavior(input); descriptions.Add(description); explained.Add(Label(index) + ": " + description);
+                string description = IsGamepadInput && input == null ? GamepadInputProfile.IsAnalog(index) ? Tr("Analog · 0–100 %", "Analog · 0–100%") : Tr("Digital · 0 / 1", "Digital · 0 / 1") : DescribePhysicalBehavior(input); descriptions.Add(description); explained.Add(Label(index) + ": " + description);
             }
             selectionStatus.Text = selected.Length == 0 ? Tr("Keine Taste ausgewählt", "No key selected") :
-                (selected.Length == 1 ? Tr("Taste: ", "Key: ") : Tr("Tasten: ", "Keys: ")) +
+                (IsGamepadInput ? Tr("Eingabe: ", "Input: ") : selected.Length == 1 ? Tr("Taste: ", "Key: ") : Tr("Tasten: ", "Keys: ")) +
                 (descriptions.Distinct().Count() == 1 ? descriptions[0] : Tr("Unterschiedliches Verhalten", "Mixed behavior"));
             keyCardTips.SetToolTip(selectionStatus, Tr("Physisches Tastenverhalten · gilt für alle zugeordneten Ausgänge", "Physical key behavior · applies to all mapped outputs") + "\n" + string.Join("\n", explained.ToArray()));
             mappingSummarySnapshot = token; mappingSummaryController = controller; mappingSummaryLanguage = language;

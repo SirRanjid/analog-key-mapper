@@ -50,7 +50,7 @@ namespace Tk75.App
                 var candidates = LayoutIndices().Concat(profile.Bindings.Select(b => b.KeyIndex)).Concat(profile.Inputs.Select(i => i.KeyIndex))
                     .Concat(reader == null ? Enumerable.Empty<int>() : reader.GetSnapshot().Select(s => s.KeyIndex))
                     .Concat(keymap == null ? Enumerable.Empty<int>() : keymap.Entries.Select(e => e.KeyIndex))
-                    .Distinct().Where(i => i != selected[0]).OrderBy(i => Label(i), StringComparer.CurrentCultureIgnoreCase);
+                    .Distinct().Where(i => i != selected[0] && (!IsGamepadInput || i < GamepadInputProfile.ControlCount)).OrderBy(i => Label(i), StringComparer.CurrentCultureIgnoreCase);
                 foreach (int candidate in candidates) choices.Add(new OppositeKeyItem(candidate, Label(candidate)));
             }
             RefreshChoices(oppositeKey, choices, (before, after) => before.Index == after.Index && before.Preserve == after.Preserve && before.ToString() == after.ToString());

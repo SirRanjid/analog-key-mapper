@@ -17,6 +17,9 @@ namespace Tk75.Mapping
     public enum AggregationMode { Maximum, ClampedSum }
     public enum InputOpposedPolicy { Neutral, LastPressed, FirstPressed }
     public enum ControllerKind { Xbox360, DualSense }
+    // The source family is independent of the virtual output controller type.
+    // Zero preserves the meaning of profiles saved before controller inputs.
+    public enum InputMode { Keyboard = 0, XboxController = 1, PlayStationController = 2 }
     public enum KeyboardSuppressionMode { Off = 0, AllMapped = 1, SelectedMapped = 2 }
 
     [DataContract]
@@ -159,6 +162,9 @@ namespace Tk75.Mapping
         [DataMember(Order = 15, EmitDefaultValue = false)] public bool ModeSwitchLightingEnabled;
         [DataMember(Order = 16)] public int ModeSwitchRgbColor;
         [DataMember(Order = 17, EmitDefaultValue = false)] public List<LearnedKeyBinding> LearnedInputs;
+        [DataMember(Order = 18, EmitDefaultValue = false)] public InputMode InputMode;
+        [DataMember(Order = 19, EmitDefaultValue = false)] public string InputDeviceId;
+        [DataMember(Order = 20, EmitDefaultValue = false)] public string InputDeviceName;
         public Profile() { Defaults(); Version = 1; Name = "Neues Profil"; Bindings = new List<Binding>(); }
         [OnDeserializing] private void OnReading(StreamingContext context) { Defaults(); }
         private void Defaults() { StickShape = StickShape.Circle; OpposedPolicy = OpposedPolicy.Neutral; Aggregation = AggregationMode.Maximum; Inputs = new List<KeyInputSettings>(); Controller = ControllerKind.Xbox360; Controllers = new List<ControllerDefinition>(); SuppressedKeyboardKeys = new List<int>(); RgbOverrideEnabled = false; ModeSwitchHotkey = new HotkeySettings(); EmergencyStopHotkey = new HotkeySettings { KeyCode = 0x77 }; ControllerInputEnabled = true; KeyboardSuppressionMode = Tk75.Mapping.KeyboardSuppressionMode.Off; ModeSwitchLightingEnabled = false; ModeSwitchRgbColor = 0xFFC65C; }

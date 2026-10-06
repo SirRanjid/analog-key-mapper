@@ -11,6 +11,12 @@ namespace Tk75.Mapping
             foreach (char c in value) if (Char.IsControl(c)) return false;
             return true;
         }
+        static bool ValidDeviceIdentity(string value)
+        {
+            if (value == null || value.Length != 64) return false;
+            foreach (char c in value) if (!(c >= '0' && c <= '9' || c >= 'a' && c <= 'f')) return false;
+            return true;
+        }
         public static bool IsFinite(double value) { return !double.IsNaN(value) && !double.IsInfinity(value); }
         private static bool Unit(double value) { return IsFinite(value) && value >= 0 && value <= 1; }
         public static List<string> ValidateHotkey(HotkeySettings value)
@@ -90,6 +96,12 @@ namespace Tk75.Mapping
             if (!Enum.IsDefined(typeof(OpposedPolicy), value.OpposedPolicy)) errors.Add("Unbekannte Gegenrichtungsregel.");
             if (!Enum.IsDefined(typeof(AggregationMode), value.Aggregation)) errors.Add("Unbekannte Zusammenfassung.");
             if (!Enum.IsDefined(typeof(ControllerKind), value.Controller)) errors.Add("Unbekannter Controllertyp.");
+            if (!Enum.IsDefined(typeof(InputMode), value.InputMode)) errors.Add("Unbekannter Eingabemodus.");
+            bool gamepad = value.InputMode == InputMode.XboxController || value.InputMode == InputMode.PlayStationController;
+            if (value.InputDeviceId != null && !ValidDeviceIdentity(value.InputDeviceId)) errors.Add("Der Eingabecontroller benötigt eine gültige Gerätekennung.");
+            if (value.InputDeviceName != null && !ValidLearnedText(value.InputDeviceName, 128)) errors.Add("Der Name des Eingabecontrollers muss 1..128 Zeichen enthalten.");
+            if ((value.InputDeviceId == null) != (value.InputDeviceName == null)) errors.Add("Gerätekennung und Name des Eingabecontrollers müssen gemeinsam angegeben werden.");
+            if (!gamepad && (value.InputDeviceId != null || value.InputDeviceName != null)) errors.Add("Ein Eingabecontroller benötigt einen Controller-Eingabemodus.");
             if (!Enum.IsDefined(typeof(KeyboardSuppressionMode), value.KeyboardSuppressionMode)) errors.Add("Unbekannter Modus für die Tastensperre.");
             if (value.ModeSwitchRgbColor < 0 || value.ModeSwitchRgbColor > 0xFFFFFF) errors.Add("Die Farbe der Modustaste muss ein RGB-Wert in 0..16777215 sein.");
             var controllerIds = new HashSet<string>(StringComparer.Ordinal);
@@ -122,10 +134,8 @@ namespace Tk75.Mapping
                 {
                     if (input == null) { errors.Add("A learned input is missing."); continue; }
                     if ((uint)input.KeyIndex >= 256 || !learnedKeys.Add(input.KeyIndex)) errors.Add("Learned input destinations must be unique keys in 0..255.");
-                    if (input.Backend != "travel" && input.Backend != "hid" && input.Backend != "keyboard") errors.Add("Unknown learned input backend.");
-                    bool identity = input.SourceDeviceId != null && input.SourceDeviceId.Length == 64;
-                    if (identity) foreach (char c in input.SourceDeviceId) if (!(c >= '0' && c <= '9' || c >= 'a' && c <= 'f')) identity = false;
-                    if (!identity) errors.Add("A learned input needs a valid device identity.");
+                    if (input.Backend != "travel" && input.Backend != "hid" && input.Backend != "keyboard" && input.Backend != "gamepad") errors.Add("Unknown learned input backend.");
+                    if (!ValidDeviceIdentity(input.SourceDeviceId)) errors.Add("A learned input needs a valid device identity.");
                     if (!ValidLearnedText(input.SourceName, 128) || !ValidLearnedText(input.ControlId, 128)) errors.Add("Learned input names and identifiers must contain 1..128 characters.");
                     if (input.Kind < 0 || input.Kind > 3 || input.Direction != 1 && input.Direction != -1) errors.Add("Invalid learned input type or direction.");
                     if (!IsFinite(input.Minimum) || !IsFinite(input.Maximum) || input.Minimum >= input.Maximum || input.Minimum < -4294967296.0 || input.Maximum > 4294967296.0 ||
@@ -144,8 +154,22 @@ namespace Tk75.Mapping
                             errors.Add("A keyboard travel route needs a valid physical key.");
                     }
                     else if (input.SourceKeyIndex.HasValue) errors.Add("External inputs must not claim a physical keyboard lighting index.");
+                    if (input.Backend == "gamepad")
+                    {
+                        // Stable standardized controller controls: signed stick
+                        // directions and triggers are absolute 0..1 channels.
+                        OutputTarget control;
+                        if (!Enum.TryParse<OutputTarget>(input.ControlId, false, out control) || !Enum.IsDefined(typeof(OutputTarget), control) || input.ControlId != control.ToString() ||
+                            input.Kind != ((int)control <= (int)OutputTarget.RightTrigger ? 1 : 0) || input.Minimum != 0 || input.Maximum != 1 || input.Rest != 0 || input.Active != 1 || input.Direction != 1)
+                            errors.Add("Ungültiges standardisiertes Controller-Eingabeelement.");
+                    }
+                    if (gamepad && (input.Backend != "gamepad" || input.KeyIndex < 0 || input.KeyIndex > (int)OutputTarget.DpadRight ||
+                        input.ControlId != ((OutputTarget)input.KeyIndex).ToString() || input.SourceDeviceId != (value.InputDeviceId ?? new string('0', 64))))
+                        errors.Add("Controller-Eingaben müssen zur ausgewählten Quelle und zum angezeigten Eingabeelement passen.");
                 }
             }
+            if (gamepad && (value.LearnedInputs == null || value.LearnedInputs.Count != (int)OutputTarget.DpadRight + 1))
+                errors.Add("Ein Controller-Eingabeprofil benötigt alle standardisierten Eingabeelemente.");
             if (value.Inputs == null || value.Inputs.Count > 256) errors.Add("Tasteinstellungen fehlen oder überschreiten 256 Einträge.");
             else
             {
@@ -154,6 +178,8 @@ namespace Tk75.Mapping
                 {
                     errors.AddRange(ValidateInputSettings(input));
                     if (input == null) continue;
+                    if (gamepad && (input.KeyIndex < 0 || input.KeyIndex > (int)OutputTarget.DpadRight || input.OppositeKeyIndex.HasValue && input.OppositeKeyIndex.Value > (int)OutputTarget.DpadRight))
+                        errors.Add("Controller-Einstellungen verweisen auf ein unbekanntes Eingabeelement.");
                     if (inputs.ContainsKey(input.KeyIndex)) errors.Add("Eine physische Taste hat mehrere Eingabeeinstellungen.");
                     else inputs.Add(input.KeyIndex, input);
                 }
@@ -173,6 +199,7 @@ namespace Tk75.Mapping
                 if (binding == null) { errors.Add("Leeres Binding."); continue; }
                 if (string.IsNullOrWhiteSpace(binding.BindingId) || binding.BindingId.Length > 128 || !ids.Add(binding.BindingId)) errors.Add("BindingId muss nichtleer, hoechstens 128 Zeichen lang und eindeutig sein.");
                 if (binding.KeyIndex < 0 || binding.KeyIndex > 255) errors.Add("Tastenindex muss in 0..255 liegen.");
+                if (gamepad && (binding.KeyIndex < 0 || binding.KeyIndex > (int)OutputTarget.DpadRight)) errors.Add("Zuordnung verweist auf ein unbekanntes Controller-Eingabeelement.");
                 if (!ValidControllerId(binding.ControllerId) || !controllerIds.Contains(binding.ControllerId)) errors.Add("Zuordnung verweist auf einen unbekannten Controller.");
                 if (!assignments.Add(Tuple.Create(binding.KeyIndex, binding.Target, binding.ControllerId)))
                     errors.Add("Dieselbe Taste darf demselben Ziel desselben Controllers nur einmal zugeordnet sein.");

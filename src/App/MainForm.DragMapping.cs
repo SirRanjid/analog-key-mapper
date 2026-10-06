@@ -199,8 +199,9 @@ namespace Tk75.App
             }
             controllerPreview.SetKeyAssignments(CurrentControllerBindings(profile).Select(binding =>
             {
-                KeyboardKeyDefinition key = keyboard.LayoutModel == null ? null : keyboard.LayoutModel.FindByIndex(binding.KeyIndex);
+                KeyboardKeyDefinition key = IsGamepadInput || keyboard.LayoutModel == null ? null : keyboard.LayoutModel.FindByIndex(binding.KeyIndex);
                 string legend = key == null ? Label(binding.KeyIndex) : key.GetLegend(keyboard.LegendStyle);
+                if (IsGamepadInput && binding.KeyIndex < GamepadInputProfile.ControlCount) legend = GamepadInputShortLabel(binding.KeyIndex);
                 legend = legend.Replace("\r", " ").Replace("\n", " ");
                 string description = legend;
                 if (key != null)
@@ -286,7 +287,7 @@ namespace Tk75.App
                 SetDragHint(hint);
                 return;
             }
-            SetDragHint(Tr("Taste auf Controller ziehen – oder Controller-Button auf Taste.", "Drag a key onto the controller — or a controller button onto a key."));
+            SetDragHint(IsGamepadInput ? Tr("Links: Eingabe · rechts: Ausgabe · zum Zuordnen ziehen.", "Left: input · right: output · drag to assign.") : Tr("Taste auf Controller ziehen – oder Controller-Button auf Taste.", "Drag a key onto the controller — or a controller button onto a key."));
         }
         void SetDragHint(string text)
         {
@@ -367,6 +368,7 @@ namespace Tk75.App
                 source.EnabledChanged += unavailable; source.VisibleChanged += unavailable; source.Disposed += unavailable;
                 Deactivate += lostFocus;
                 keyboard.SetAvailableKeys(drag.Target.HasValue ? drag.Pairings.MissingKeys(LayoutIndices(), drag.Target.Value) : new int[0]);
+                gamepadInputPreview.SetAvailableTargets(IsGamepadInput && drag.Target.HasValue ? drag.Pairings.MissingKeys(LayoutIndices(), drag.Target.Value).Select(GamepadInputProfile.Target) : new OutputTarget[0]);
                 controllerPreview.SetAvailableTargets(drag.Keys != null ? drag.Pairings.AvailableTargets(drag.Keys) : new OutputTarget[0]);
                 SetDefaultDragHint();
                 drag.Preview = new DragPreviewWindow(visual);
@@ -418,6 +420,7 @@ namespace Tk75.App
         }
         void ClearMappingDragVisuals()
         {
+            if (!gamepadInputPreview.IsDisposed) { gamepadInputPreview.SetDropTarget(null); gamepadInputPreview.SetAvailableTargets(new OutputTarget[0]); }
             SetSocdDropHighlight(false);
             if (!controllerPreview.IsDisposed) { controllerPreview.SetDropTarget(null); controllerPreview.SetAvailableTargets(new OutputTarget[0]); }
             if (!keyboard.IsDisposed) { keyboard.SetDropKeys(new int[0]); keyboard.SetAvailableKeys(new int[0]); }
@@ -477,13 +480,13 @@ namespace Tk75.App
         }
         void AddDroppedMapping(int[] indices, OutputTarget target)
         {
-            if (keyboard.LayoutModel == null || indices.Any(i => keyboard.LayoutModel.FindByIndex(i) == null)) throw new InvalidOperationException(Tr("Die Tastaturabbildung hat sich geändert. Bitte erneut zuordnen.", "The keyboard layout changed. Please map again."));
+            if (IsGamepadInput ? indices.Any(i => i < 0 || i >= GamepadInputProfile.ControlCount) : keyboard.LayoutModel == null || indices.Any(i => keyboard.LayoutModel.FindByIndex(i) == null)) throw new InvalidOperationException(Tr("Die Eingabeabbildung hat sich geändert. Bitte erneut zuordnen.", "The input layout changed. Please map again."));
             var before = history.Current; var next = MappingAssignments.Add(before, indices, target, runtime.SelectedControllerId);
             string[] added = next.Bindings.Skip(before.Bindings.Count).Select(b => b.BindingId).ToArray();
             if (added.Length != 0) Commit(next);
             else added = next.Bindings.Where(b => b.ControllerId == runtime.SelectedControllerId && indices.Contains(b.KeyIndex) && b.Target == target).Select(b => b.BindingId).ToArray();
-            updating = true; try { keyboard.SetSelectedKeys(indices); } finally { updating = false; }
-            SelectKeyboardKeys(); SelectTarget(target);
+            updating = true; try { if (IsGamepadInput) { keys.ClearSelection(); foreach (int index in indices) keys.Rows[index].Selected = true; } else keyboard.SetSelectedKeys(indices); } finally { updating = false; }
+            if (IsGamepadInput) { RefreshBindings(); HighlightKeys(); } else SelectKeyboardKeys(); SelectTarget(target);
             updating = true;
             try
             {

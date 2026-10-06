@@ -120,6 +120,12 @@ namespace Tk75.App
         void RefreshSocdDropTarget()
         {
             RefreshSocdCaptureUi();
+            if (IsGamepadInput) {
+                socdDropTarget.Text = Tr("Gegenrichtung oben auswählen", "Choose the opposite input above");
+                socdDropTarget.AccessibleName = socdDropTarget.Text;
+                socdDropTarget.AccessibleDescription = socdDropTarget.Text;
+                keyCardTips.SetToolTip(socdDropTarget, socdDropTarget.Text); return;
+            }
             int[] selected = SelectedKeys();
             int? target = activeMappingDrag != null && SocdContextCurrent(activeMappingDrag.Socd) ? activeMappingDrag.Socd.Target : selected.Length == 1 ? (int?)selected[0] : null;
             if (socdCapture != null)

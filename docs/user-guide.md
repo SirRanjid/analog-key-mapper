@@ -2,6 +2,8 @@
 
 [Download and build](building.md) · [Compatibility and tests](status.md) · [Back to the project](../README.md)
 
+The current source also supports **Xbox and PlayStation controller inputs**. Choose the input source below the left-hand picture to open its controller profile; the keyboard picture becomes a remappable controller. See the [controller input guide](controller-input.md) for setup, screenshots and supported devices. This source update is not included in the rc.11 download.
+
 ## Open the Windows application
 
 Download the **Windows x64 ZIP** from [Releases](https://github.com/SirRanjid/analog-key-mapper/releases), extract it, and open the `AnalogKeyMapper` folder. Run `Verify-Checksums.bat`, then open `AnalogKeyMapper.exe`. The editor requires Windows x64 and .NET Framework 4.x; it does not require a compiler or installer.

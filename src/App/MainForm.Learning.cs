@@ -19,6 +19,9 @@ namespace Tk75.App
         int learnedSourceGeneration;
         bool learnedSourcesOpening, rebuildingInputRouting;
         string learnedPressureIdentity;
+        bool gamepadCalibrationActive;
+        CalibrationDocument keyboardCalibrationBeforeGamepad;
+        ReaderSession keyboardReaderBeforeGamepad;
         ToolStripMenuItem learnUnknownMenu;
         readonly object learnedOpenGate = new object();
         readonly HashSet<LearnedSourceBatch> learnedOpenBatches = new HashSet<LearnedSourceBatch>();
@@ -45,7 +48,7 @@ namespace Tk75.App
         {
             get
             {
-                if (learnedInputRouting == null || !Object.ReferenceEquals(routingReader, reader)) RebuildInputRouting();
+                if (learnedInputRouting == null || !Object.ReferenceEquals(routingReader, ActiveRoutingReader)) RebuildInputRouting();
                 return learnedInputRouting;
             }
         }
@@ -65,8 +68,8 @@ namespace Tk75.App
             try {
             CancelPressureCapture(); CancelInputThresholdCapture();
             var old = learnedInputRouting;
-            routingReader = reader;
-            learnedInputRouting = new LearnedInputRouting(reader, UiReadProfile.LearnedInputs ?? new List<LearnedKeyBinding>(),
+            routingReader = ActiveRoutingReader;
+            learnedInputRouting = new LearnedInputRouting(ActiveRoutingReader, UiReadProfile.LearnedInputs ?? new List<LearnedKeyBinding>(),
                 sharedPressureRange.ScaleMaximum, sources);
             if (!deviceDetachInProgress) { if (HasLearnedInputs) runtime.SetInputSource(learnedInputRouting); else runtime.SetReader(reader); }
             routingBindings = bindings; routingScale = sharedPressureRange.ScaleMaximum; routingSources = sources;
@@ -76,7 +79,7 @@ namespace Tk75.App
         }
         bool InputRoutingMatches(string bindings, ILearnedInputDeviceSource[] sources)
         {
-            return learnedInputRouting != null && Object.ReferenceEquals(routingReader, reader) && routingBindings == bindings &&
+            return learnedInputRouting != null && Object.ReferenceEquals(routingReader, ActiveRoutingReader) && routingBindings == bindings &&
                 routingScale == sharedPressureRange.ScaleMaximum && routingSources.SequenceEqual(sources);
         }
         void ConfigureLearnedInputs()
@@ -110,7 +113,7 @@ namespace Tk75.App
                 var opened = new List<ILearnedInputDeviceSource>();
                 try
                 {
-                    foreach (var option in DiscoverLearnInputDevices(null))
+                    foreach (var option in DiscoverLearnInputDevices(null, true))
                         if (requested.Contains(option.DeviceId))
                             try { opened.Add(option.Open()); } catch (Exception error) { store.Event("Learned input unavailable: " + error.Message); }
                 }
@@ -157,6 +160,14 @@ namespace Tk75.App
         }
         void EnsureLearnedPressureRange()
         {
+            if (IsGamepadInput) {
+                if (!gamepadCalibrationActive) { keyboardCalibrationBeforeGamepad = calibration; keyboardReaderBeforeGamepad = reader; gamepadCalibrationActive = true; }
+                calibration = null; return;
+            }
+            if (gamepadCalibrationActive) {
+                if (Object.ReferenceEquals(reader, keyboardReaderBeforeGamepad)) calibration = keyboardCalibrationBeforeGamepad;
+                gamepadCalibrationActive = false; keyboardCalibrationBeforeGamepad = null; keyboardReaderBeforeGamepad = null;
+            }
             if (reader != null) { learnedPressureIdentity = null; return; }
             if (!HasLearnedInputs)
             {
@@ -204,12 +215,15 @@ namespace Tk75.App
                 learnUnknownMenu.Text = count == 0 ? Tr("Eingaben bereits bekannt", "Inputs already identified") :
                     String.Format(Tr("Unbekannte Eingaben lernen … ({0})", "Learn unknown inputs… ({0})"), count);
                 learnUnknownMenu.Enabled = count != 0 && !closing && !deviceDetachInProgress;
-                forget.Visible = UiReadProfile.LearnedInputs != null && UiReadProfile.LearnedInputs.Any(binding => SelectedKeys().Contains(binding.KeyIndex));
+                forget.Visible = !IsGamepadInput && UiReadProfile.LearnedInputs != null && UiReadProfile.LearnedInputs.Any(binding => SelectedKeys().Contains(binding.KeyIndex));
+                learnUnknownMenu.Visible = !IsGamepadInput;
             };
         }
-        static LearnInputDeviceChoice[] DiscoverLearnInputDevices(LearnInputDeviceChoice primary)
+        static LearnInputDeviceChoice[] DiscoverLearnInputDevices(LearnInputDeviceChoice primary, bool includeGamepads = false)
         {
             var choices = new List<LearnInputDeviceChoice>(); if (primary != null) choices.Add(primary);
+            if (includeGamepads) foreach (var gamepad in GamepadInputSource.Enumerate())
+            { var selectedGamepad = gamepad; choices.Add(new LearnInputDeviceChoice { Backend = "gamepad", Name = gamepad.DisplayName, DeviceId = gamepad.DeviceId, Open = delegate { return GamepadInputSource.Open(selectedGamepad); } }); }
             foreach (var device in HidInventory.Enumerate())
             {
                 if (device.error != null) continue;

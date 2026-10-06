@@ -11,7 +11,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'Der App-UI-Test benoetigt Windows.' }
 $workspace = Split-Path -Parent $PSScriptRoot
-$testFolder = Join-Path $PSScriptRoot ('synthetic-app-ui-' + [Guid]::NewGuid().ToString('N'))
+# Keep the synthetic path short enough for Framework calibration filenames plus
+# their atomic-write suffix, including when the checkout is nested deeply.
+do { $testFolder = Join-Path $PSScriptRoot ('synthetic-app-ui-' + [Guid]::NewGuid().ToString('N').Substring(0,8)) }
+while (Test-Path -LiteralPath $testFolder)
 [void][System.IO.Directory]::CreateDirectory($testFolder)
 $testProcess = $null; $success = $false
 try {
