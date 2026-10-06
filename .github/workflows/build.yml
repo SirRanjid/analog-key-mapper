@@ -44,14 +44,20 @@ jobs:
           go test -mod=vendor -count=1 ./cmd/tk75-output-host
           if ($LASTEXITCODE -ne 0) { throw 'Helper checks failed.' }
       - name: Package and verify exact build versions
-        run: ./scripts/Package-Release.ps1
+        id: package
+        run: |
+          $packageVersion = (Get-Content -LiteralPath RELEASE_VERSION.json -Raw | ConvertFrom-Json).version
+          if ($packageVersion -notmatch '^\d+\.\d+\.\d+(-(preview|rc)\.\d+)?$') { throw 'Invalid package version.' }
+          ./scripts/Package-Release.ps1 -Version $packageVersion
+          "version=$packageVersion" >> $env:GITHUB_OUTPUT
       - name: Save checked source and Windows packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: AnalogKeyMapper-checked-packages
           path: |
-            release/*/*.zip
-            release/*/SHA256SUMS.txt
+            release/${{ steps.package.outputs.version }}/AnalogKeyMapper-${{ steps.package.outputs.version }}-source.zip
+            release/${{ steps.package.outputs.version }}/AnalogKeyMapper-${{ steps.package.outputs.version }}-windows-x64.zip
+            release/${{ steps.package.outputs.version }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
